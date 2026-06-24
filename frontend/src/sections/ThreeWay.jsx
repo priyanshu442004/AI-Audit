@@ -1,6 +1,7 @@
 import React from 'react'
 import DonutChart from '../components/DonutChart'
 import DataTable from '../components/DataTable'
+import AiInsightBox from '../components/AiInsightBox'
 
 export default function ThreeWay({ data }) {
   const kpis   = data?.kpis   || {}
@@ -11,82 +12,108 @@ export default function ThreeWay({ data }) {
   const pvg    = charts.po_vs_grpo   || {}
 
   return (
-    <>
-      <div className="mb-6">
-        <h2 className="section-title">3-Way Matching Exceptions</h2>
-        <p className="section-subtitle">PO vs GRPO vs Invoice comparison</p>
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-3xl">
+          Three-Way Match Verification
+        </h2>
+        <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+          Compares Purchase Order (PO), Goods Receipt (GRPO), and AP Invoice details to verify quantity and unit price alignment.
+        </p>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+      <AiInsightBox section="threeway" kpis={kpis} />
+
+      {/* KPIs Grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {[
-          { label: 'Total Records',       value: kpis.total_records },
-          { label: 'Fully Matched',       value: kpis.fully_matched,   color: 'metric-success' },
-          { label: 'Quantity Exceptions', value: kpis.qty_exceptions,  color: 'metric-risk' },
-          { label: 'Rate Exceptions',     value: kpis.rate_exceptions, color: 'metric-warning' },
+          { label: 'Audited Records', value: kpis.total_records, desc: 'Matched transaction rows' },
+          { label: 'Fully Matched (Perfect)', value: kpis.fully_matched, color: 'text-green-600 dark:text-green-400', desc: 'No price or quantity variance' },
+          { label: 'Quantity Mismatch', value: kpis.qty_exceptions, color: 'text-rose-600 dark:text-rose-400', desc: 'Receipt qty != invoice qty' },
+          { label: 'Pricing Mismatch', value: kpis.rate_exceptions, color: 'text-amber-600 dark:text-amber-500', desc: 'Unit rate difference found' }
         ].map(k => (
-          <div key={k.label} className="app-card rounded-lg p-5">
-            <div className="app-label mb-3">{k.label}</div>
-            <div className={`metric-value ${k.color || 'app-title'}`}>{k.value ?? '—'}</div>
+          <div key={k.label} className="group relative overflow-hidden rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 p-5 shadow-sm">
+            <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">{k.label}</div>
+            <div className={`text-2xl font-black tracking-tight ${k.color || 'text-slate-900 dark:text-white'}`}>
+              {(k.value ?? '—').toLocaleString()}
+            </div>
+            {k.desc && <div className="text-[10px] text-slate-400 mt-1">{k.desc}</div>}
           </div>
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        <div className="app-card rounded-lg p-5">
-          <h3 className="text-sm font-semibold app-title mb-4">Matching Results</h3>
-          <div className="flex items-center justify-center mb-4">
+      {/* Comparisons */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 p-5 shadow-sm flex flex-col justify-between">
+          <div>
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white">Three-Way Verification Outcomes</h3>
+            <p className="text-xs text-slate-400 mt-0.5">Matching status breakdown of audited transactions</p>
+          </div>
+          <div className="flex items-center justify-center my-6">
             <DonutChart
               segments={donut.segments || []}
               centerText={(donut.total || 0).toLocaleString()}
-              centerSub="Records"
+              centerSub="Audited Invoices"
             />
           </div>
-          <div className="space-y-2">
+          <div className="space-y-2 text-xs border-t border-slate-100 dark:border-slate-800/80 pt-3">
             {(donut.segments || []).map(s => (
-              <div key={s.label} className="flex justify-between text-sm">
-                <span className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-sm" style={{ background: s.color }} />
+              <div key={s.label} className="flex justify-between items-center">
+                <span className="flex items-center gap-2 text-slate-600 dark:text-slate-300 font-medium">
+                  <span className="w-2.5 h-2.5 rounded-full" style={{ background: s.color }} />
                   {s.label}
                 </span>
-                <span className="font-semibold dark:text-white">{(s.value || 0).toLocaleString()}</span>
+                <span className="font-semibold text-slate-950 dark:text-white">{(s.value || 0).toLocaleString()}</span>
               </div>
             ))}
           </div>
         </div>
 
-        <div className="app-card rounded-lg p-5">
-          <h3 className="text-sm font-semibold app-title mb-4">PO vs GRPO Comparison</h3>
-          <div className="grid grid-cols-3 gap-4 mt-4">
+        <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 p-5 shadow-sm flex flex-col justify-between">
+          <div>
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white">Purchase Order vs Goods Receipt</h3>
+            <p className="text-xs text-slate-400 mt-0.5">Comparison of order quantity against receipt quantity</p>
+          </div>
+          
+          <div className="grid grid-cols-3 gap-3 my-4">
             {[
-              { label: 'Matched Correctly', value: pvg.matched,    bg: 'bg-green-50 dark:bg-slate-800', text: 'metric-success' },
-              { label: 'PO > GRPO',         value: pvg.po_gt_grpo, bg: 'bg-rose-50 dark:bg-slate-800',  text: 'metric-risk' },
-              { label: 'PO < GRPO',         value: pvg.po_lt_grpo, bg: 'bg-amber-50 dark:bg-slate-800', text: 'metric-warning' },
+              { label: 'Exact Match', value: pvg.matched, bg: 'bg-green-50/50 dark:bg-green-950/20', text: 'text-green-700 dark:text-green-400' },
+              { label: 'PO > GRPO (Short)', value: pvg.po_gt_grpo, bg: 'bg-rose-50/50 dark:bg-rose-950/20', text: 'text-rose-700 dark:text-rose-400' },
+              { label: 'PO < GRPO (Excess)', value: pvg.po_lt_grpo, bg: 'bg-amber-50/50 dark:bg-amber-950/20', text: 'text-amber-700 dark:text-amber-400' }
             ].map(c => (
-              <div key={c.label} className={`text-center ${c.bg} rounded-lg p-3`}>
-                <div className={`text-[10px] font-medium ${c.text}`}>{c.label}</div>
-                <div className={`text-lg font-bold ${c.text}`}>{(c.value || 0).toLocaleString()}</div>
+              <div key={c.label} className={`${c.bg} rounded-xl p-3 text-center border border-slate-100 dark:border-slate-800/80`}>
+                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">{c.label}</div>
+                <div className={`text-base font-black ${c.text}`}>{(c.value || 0).toLocaleString()}</div>
               </div>
             ))}
           </div>
-          <div className="mt-4 app-subtle rounded-lg p-3">
-            <h4 className="text-xs font-semibold mb-2 app-body">Qty Performance</h4>
+
+          <div className="rounded-xl border border-slate-100 dark:border-slate-800/80 p-4 space-y-2.5">
+            <h4 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider mb-1">Volume Metric Highlights</h4>
             {[
-              { label: 'Total PO Qty',   value: pvg.total_po_qty },
-              { label: 'Total GRPO Qty', value: pvg.total_grpo_qty },
-              { label: 'Short Receipt',  value: pvg.short_receipt, color: 'metric-risk' },
+              { label: 'Total Ordered Volume', value: pvg.total_po_qty },
+              { label: 'Total Received Volume', value: pvg.total_grpo_qty },
+              { label: 'Short Receipts Delta', value: pvg.short_receipt, color: 'text-rose-600 dark:text-rose-400' }
             ].map(r => (
-              <div key={r.label} className="flex items-center justify-between">
-                <span className="text-xs app-faint">{r.label}</span>
-                <span className={`text-xs font-bold dark:text-white ${r.color || ''}`}>
+              <div key={r.label} className="flex items-center justify-between text-xs">
+                <span className="text-slate-500 dark:text-slate-400 font-medium">{r.label}</span>
+                <span className={`font-bold font-mono text-slate-900 dark:text-white ${r.color || ''}`}>
                   {(r.value || 0).toLocaleString()} units
                 </span>
               </div>
             ))}
           </div>
+          
+          <div className="text-[10px] text-slate-400 border-t border-slate-100 dark:border-slate-800/80 pt-3 text-center">
+            Short receipts may indicate outstanding supplier backorders or receipt errors.
+          </div>
         </div>
       </div>
 
-      {tables.map(t => <DataTable key={t.title} title={t.title} rows={t.rows} />)}
-    </>
+      {/* Tables */}
+      <div className="space-y-6">
+        {tables.map(t => <DataTable key={t.title} title={t.title} rows={t.rows} />)}
+      </div>
+    </div>
   )
 }

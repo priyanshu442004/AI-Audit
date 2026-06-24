@@ -1,0 +1,47 @@
+# Dependencies
+node_modules/
+/frontend/node_modules/
+/backend/venv/
+venv/
+env/
+.venv/
+ENV/
+
+# Production build outputs
+/frontend/dist/
+dist/
+
+# Local env files (security)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
+
+# Python caching
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Prisma & database files
+/generated/prisma
+*.db
+*.sqlite
+*.sqlite3
+
+# IDE / System files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp

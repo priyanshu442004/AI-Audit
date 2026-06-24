@@ -18,8 +18,8 @@ const GLOSSARY = [
 ]
 
 const REGULATIONS = [
-  { title: 'MSMED Act, 2006, Sections 15 & 16', desc: '45-day payment rule and compound interest for MSEs.' },
-  { title: 'CGST Act, 2017', desc: 'Levy of tax, ITC eligibility, tax invoice format.' },
+  { title: 'MSMED Act, 2006, Sections 15 & 16', desc: '45-day payment rule and compound interest for Micro & Small Enterprises.' },
+  { title: 'CGST Act, 2017', desc: 'Levy of tax, ITC eligibility, tax invoice format guidelines.' },
   { title: 'Income-Tax Act, 1961, Section 206AA', desc: 'Higher TDS rate where PAN is not furnished.' },
   { title: 'Companies Act, 2013, Section 143', desc: 'Auditor responsibility on internal financial controls.' },
   { title: 'CARO 2020, Clause 3(ii)(b)', desc: 'Auditor reporting on inventory and procurement controls.' },
@@ -28,27 +28,31 @@ const REGULATIONS = [
 
 export default function Appendix() {
   return (
-    <>
-      <div className="mb-6">
-        <h2 className="section-title">Appendix &amp; Technical Notes</h2>
-        <p className="section-subtitle">Methodology, data sources, and risk legend for the IKIO P2P Audit</p>
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-3xl">
+          Appendix &amp; Technical Notes
+        </h2>
+        <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+          Methodology, definitions, compliance framework, and operational rules governing the P2P audit.
+        </p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Risk Legend */}
-        <div className="app-card rounded-lg p-5">
-          <h3 className="text-sm font-semibold app-title mb-3">Risk Classification Legend</h3>
-          <div className="space-y-2 text-sm">
+        <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 p-5 shadow-sm">
+          <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-3">Risk Classification Framework</h3>
+          <div className="space-y-3.5">
             {[
-              { level: 'High Risk',    color: 'rose',  desc: 'Critical exceptions needing immediate action (e.g., 45-day MSME breaches, invoice without GE)' },
-              { level: 'Medium Risk',  color: 'amber', desc: 'Significant data gaps requiring process improvement (e.g., missing GSTIN/PAN, rate mismatches)' },
-              { level: 'Monitor',      color: 'blue',  desc: 'Trends to track over time (e.g., early payment by SME category, payment aging distribution)' },
+              { level: 'High Risk / Exception', bg: 'bg-rose-500/10 border-rose-500/20 text-rose-700 dark:text-rose-400', dot: 'bg-rose-500', desc: 'Critical exceptions needing immediate action (e.g., 45-day MSME breaches, invoice without gate entry).' },
+              { level: 'Medium Risk / Warning', bg: 'bg-amber-500/10 border-amber-500/20 text-amber-700 dark:text-amber-400', dot: 'bg-amber-500', desc: 'Significant data gaps requiring process improvement (e.g., missing GSTIN/PAN, rate mismatches).' },
+              { level: 'Operational Metric', bg: 'bg-blue-500/10 border-blue-500/20 text-blue-700 dark:text-blue-400', dot: 'bg-blue-500', desc: 'Trends to track over time (e.g., early payment by SME category, payment aging distribution).' },
             ].map(r => (
-              <div key={r.level} className={`flex items-center gap-3 p-2 rounded-lg bg-${r.color}-50 dark:bg-${r.color}-900/20`}>
-                <span className={`w-2 h-2 rounded-full bg-${r.color}-500 shrink-0`} />
+              <div key={r.level} className={`flex items-start gap-3 p-3.5 rounded-xl border ${r.bg}`}>
+                <span className={`w-2.5 h-2.5 rounded-full ${r.dot} shrink-0 mt-1.5`} />
                 <div>
-                  <span className={`font-medium text-${r.color}-700 dark:text-${r.color}-300`}>{r.level}</span>
-                  <p className="text-xs app-muted">{r.desc}</p>
+                  <span className="text-xs font-bold uppercase tracking-wider">{r.level}</span>
+                  <p className="text-xs text-slate-600 dark:text-slate-300 font-medium mt-1 leading-relaxed">{r.desc}</p>
                 </div>
               </div>
             ))}
@@ -56,20 +60,24 @@ export default function Appendix() {
         </div>
 
         {/* Data Sources */}
-        <div className="app-card rounded-lg p-5">
-          <h3 className="text-sm font-semibold app-title mb-3">Data Sources</h3>
-          <div className="space-y-2 text-sm">
+        <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 p-5 shadow-sm">
+          <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-3">Audited Data Registers</h3>
+          <p className="text-xs text-slate-400 mb-4">Input data feeds mapped directly from company records.</p>
+          <div className="space-y-2 text-xs">
             {[
-              { label: 'PO Data',        name: 'Purchase Orders' },
-              { label: 'GRPO Data',      name: 'Goods Receipt PO' },
-              { label: 'Invoice Data',   name: 'Invoice Register' },
-              { label: 'Gate Entry Data',name: 'Gate Entry Log' },
-              { label: 'Vendor Master',  name: 'Vendor Database' },
-              { label: 'GL Balances',    name: 'General Ledger' },
+              { label: 'AP Credit Note', name: 'AP Credit Note-ITL.csv' },
+              { label: 'AP Invoice Report', name: 'AP Invoice Report ITL.csv' },
+              { label: 'BP Master', name: 'BP Master-ITL.csv' },
+              { label: 'Gate Entry Report', name: 'Gate Entry Report-ITL.csv' },
+              { label: 'General Ledger', name: 'General Ledger ITL.csv' },
+              { label: 'GRPO Report', name: 'GRPO Report ITL.csv' },
+              { label: 'Item Master', name: 'Item Master-ITL.csv' },
+              { label: 'Purchase Order Report', name: 'Purchase Order Report-ITL.csv' },
+              { label: 'Purchase Register', name: 'Purchase Register -ITL.csv' },
             ].map(d => (
-              <div key={d.label} className="flex items-center justify-between border-b app-divider pb-1.5">
-                <span className="app-muted">{d.label}</span>
-                <span className="app-title font-medium">{d.name}</span>
+              <div key={d.label} className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/80 pb-2">
+                <span className="font-semibold text-slate-600 dark:text-slate-400">{d.label}</span>
+                <span className="font-mono text-[11px] text-slate-900 dark:text-white">{d.name}</span>
               </div>
             ))}
           </div>
@@ -77,40 +85,45 @@ export default function Appendix() {
       </div>
 
       {/* Audit Methodology */}
-      <div className="app-card rounded-lg p-6 mb-6">
-        <h3 className="text-sm font-semibold app-title mb-4">Audit Methodology</h3>
-        <div className="space-y-5">
+      <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 p-6 shadow-sm">
+        <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-4">Audit Methodology &amp; Staging Rules</h3>
+        <div className="space-y-6">
           {[
-            { n:1, title:'Data Extraction', body:'All six ERP datasets (PO, GRPO, GE, Purchase Register, GL, Vendor Master) loaded as-uploaded.' },
-            { n:2, title:'Cleaning & Normalisation', bullets:[
-              'Dates parsed in dd-mm-yyyy.',
-              'Vendor names normalised (lowercase, suffix-stripped) for duplicate detection.',
-              'GSTIN validated against the 15-character standard.',
-              'General Ledger nested header rows parsed into flat transaction list.',
-              'Payment Delay Days rounded to whole integers (no decimal points).',
+            { n: 1, title: 'Data Extraction', body: 'All nine mandatory ERP datasets (AP Credit Note, AP Invoice, BP Master, Gate Entry, GL, GRPO, Item Master, Purchase Order, Purchase Register) parsed in multi-part form arrays.' },
+            { n: 2, title: 'Cleaning & Normalisation', bullets: [
+              'Standardized date strings parsing into local ISO (dd-mm-yyyy) format.',
+              'Vendor identifiers normalized for duplicate, PAN, and tax master mapping.',
+              'GSTIN syntax checking against 15-character statutory standards.',
+              'General Ledger hierarchical debit/credit balances parsed into single transactional lines.',
+              'All calculated payment delay numbers rounded to whole integers.',
             ]},
-            { n:3, title:'Analysis Rules', bullets:[
-              'Variance threshold: 5% for both quantity and price.',
-              'Quantity bucketing: 0–5% (within tolerance) and >5% (out of tolerance).',
-              'Goods vs Services classification by Item Code prefix.',
-              'FIFO payment matching for invoice ↔ payment linkage.',
-              'MSME 45-day breach computed per MSMED Act §16.',
+            { n: 3, title: 'Staging & Pipeline Rules', bullets: [
+              'Pricing variances calculated with 5% standard tolerance limits.',
+              'Quantity receipt variance divided by within-tolerance (0-5%) and exceeding-tolerance (>5%).',
+              'Physical materials and services separation via "SV" item code prefixes.',
+              'FIFO chronological clearing logic matching outstanding invoices against payment logs.',
+              'Statutory MSME calculations matching dates against the 45-day limit.',
             ]},
-            { n:5, title:'Limitations', bullets:[
-              'Analysis is based on uploaded data; transactions after the snapshot are not reflected.',
-              'MSME penalty uses an indicative 27% p.a. rate (3 × RBI Bank Rate of 9%).',
-              'Service-line classification assumes Item Codes follow the documented prefix convention.',
-            ]},
+            { n: 4, title: 'Audit Scope & Limits', bullets: [
+              'Based purely on historical snapshot files; does not represent live bank balances.',
+              'Penalty interest calculated indicatively based on standard 3x RBI bank rate (approx. 27.00% p.a.).',
+              'Categorization assumes standard company prefixes are consistently maintained by buyers.',
+            ]}
           ].map(step => (
             <div key={step.n} className="flex gap-4">
-              <div className="w-7 h-7 rounded-full bg-slate-600 text-white text-xs font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{step.n}</div>
+              <span className="w-8 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 text-xs font-black flex items-center justify-center flex-shrink-0 mt-0.5 shadow-sm">
+                0{step.n}
+              </span>
               <div>
-                <div className="text-sm font-semibold app-title mb-1">{step.title}</div>
-                {step.body && <p className="text-xs app-muted leading-relaxed">{step.body}</p>}
+                <div className="text-xs font-bold text-slate-900 dark:text-white mb-1">{step.title}</div>
+                {step.body && <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed font-medium">{step.body}</p>}
                 {step.bullets && (
-                  <ul className="text-xs app-muted leading-relaxed space-y-0.5 list-none">
+                  <ul className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed space-y-1 mt-1 font-medium list-none">
                     {step.bullets.map(b => (
-                      <li key={b} className="flex gap-1.5"><span className="text-slate-600 font-bold">•</span>{b}</li>
+                      <li key={b} className="flex gap-2">
+                        <span className="text-blue-500 font-bold">•</span>
+                        <span>{b}</span>
+                      </li>
                     ))}
                   </ul>
                 )}
@@ -121,23 +134,23 @@ export default function Appendix() {
       </div>
 
       {/* Glossary */}
-      <div className="app-card rounded-lg overflow-hidden mb-6">
-        <div className="px-6 py-4 border-b app-divider">
-          <h3 className="text-sm font-semibold app-title">Glossary of Terms</h3>
+      <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 shadow-sm overflow-hidden">
+        <div className="px-6 py-4.5 border-b border-slate-100 dark:border-slate-800/80">
+          <h3 className="text-sm font-bold text-slate-900 dark:text-white">Glossary of Procurement Terms</h3>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="app-subtle">
-              <tr>
-                <th className="text-left px-4 py-3 text-[10px] font-semibold app-label uppercase w-36">Term</th>
-                <th className="text-left px-4 py-3 text-[10px] font-semibold app-label uppercase">Definition</th>
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-slate-50/50 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800/80">
+                <th className="px-6 py-3 text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider w-40">Acronym / Term</th>
+                <th className="px-6 py-3 text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Operational Definition</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200 dark:divide-slate-700">
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {GLOSSARY.map(g => (
-                <tr key={g.term} className="app-row-hover">
-                  <td className="px-4 py-3 font-semibold app-title text-xs">{g.term}</td>
-                  <td className="px-4 py-3 app-muted text-[11px]">{g.def}</td>
+                <tr key={g.term} className="hover:bg-slate-50/40 dark:hover:bg-slate-800/20 transition-colors duration-150">
+                  <td className="px-6 py-3 text-xs font-bold text-slate-900 dark:text-white">{g.term}</td>
+                  <td className="px-6 py-3 text-xs text-slate-600 dark:text-slate-400 font-medium leading-relaxed">{g.def}</td>
                 </tr>
               ))}
             </tbody>
@@ -145,28 +158,26 @@ export default function Appendix() {
         </div>
       </div>
 
-      {/* Regulatory References */}
-      <div className="app-card rounded-lg p-6 mb-6">
-        <h3 className="text-sm font-semibold app-title mb-4">Regulatory References</h3>
-        <div className="space-y-2.5">
+      {/* Regulations */}
+      <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 p-5 shadow-sm">
+        <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-4">Statutory &amp; Regulatory Context</h3>
+        <div className="space-y-3">
           {REGULATIONS.map(r => (
-            <div key={r.title} className="flex gap-3 p-3 app-subtle rounded-lg">
-              <span className="text-slate-600 font-bold text-xs mt-0.5 shrink-0">•</span>
+            <div key={r.title} className="flex gap-3 p-3 bg-slate-50/50 dark:bg-slate-800/20 border border-slate-100 dark:border-slate-800/60 rounded-xl">
+              <span className="text-blue-500 font-bold text-xs mt-0.5 shrink-0">•</span>
               <div>
-                <span className="text-xs font-semibold app-title">{r.title}</span>
-                <span className="text-xs app-muted"> — {r.desc}</span>
+                <span className="text-xs font-bold text-slate-900 dark:text-white">{r.title}</span>
+                <p className="text-xs text-slate-400 mt-0.5 font-medium">{r.desc}</p>
               </div>
             </div>
           ))}
         </div>
       </div>
 
-      <div className="app-card rounded-lg p-6">
-        <h3 className="text-sm font-semibold app-title mb-4">Report Preparation Notes</h3>
-        <p className="text-xs app-muted">
-          <span className="font-semibold app-body">Data Period:</span> FY 2025-26 (January 2026 to March 2026).
-        </p>
+      <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 p-5 shadow-sm text-xs flex justify-between items-center text-slate-500 dark:text-slate-400 font-medium">
+        <span>Report Staged &amp; Generated for current snapshot period.</span>
+        <span>FY 2025-26</span>
       </div>
-    </>
+    </div>
   )
 }

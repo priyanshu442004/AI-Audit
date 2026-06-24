@@ -47,16 +47,7 @@ export default function Header({ onMenuClick }) {
           </div>
         </div>
         
-        <div className="flex items-center gap-3 text-xs font-medium">
-          <div className="hidden sm:flex items-center gap-1.5 text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-500/10 px-2.5 py-1 rounded-md ring-1 ring-inset ring-green-600/20 dark:ring-green-500/20">
-            <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
-            All Data Verified
-          </div>
-          <div className="w-px h-4 border-l app-divider hidden sm:block"></div>
-          <span className="app-muted bg-slate-50 dark:bg-slate-800/50 px-2.5 py-1 rounded-md border app-divider">
-            Version: Final
-          </span>
-        </div>
+        {/* Right side is intentionally empty per user request */}
       </div>
     </header>
   )

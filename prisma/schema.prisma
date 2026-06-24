@@ -1,0 +1,38 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model AuditSession {
+  id        String         @id @default(uuid())
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  status    String         // UPLOADED, PROCESSING, COMPLETED, FAILED
+  files     UploadedFile[]
+  result    AuditResult?
+}
+
+model UploadedFile {
+  id         String       @id @default(uuid())
+  sessionId  String
+  session    AuditSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  role       String
+  filename   String
+  rowCount   Int
+  uploadedAt DateTime     @default(now())
+}
+
+model AuditResult {
+  id         String       @id @default(uuid())
+  sessionId  String       @unique
+  session    AuditSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  data       Json
+  createdAt  DateTime     @default(now())
+}

@@ -7,12 +7,15 @@ MSME_PENALTY_RATE_PA = 0.27        # 27% p.a. (3 × RBI Bank Rate 9%)
 SERVICES_ITEM_PREFIX = "SV"        # Item codes starting with this = services
 
 FILE_ROLES = {
-    "vendor_master":     "Vendor Master Sheet",
-    "purchase_order":    "Purchase Order",
+    "vendor_master":     "BP Master",
+    "purchase_order":    "Purchase Order Report",
     "gate_entry":        "Gate Entry Report",
     "grpo":              "GRPO Report",
     "purchase_register": "Purchase Register",
     "general_ledger":    "General Ledger",
+    "ap_credit_note":    "AP Credit Note",
+    "ap_invoice_report": "AP Invoice Report",
+    "item_master":       "Item Master",
 }
 
 # Canonical alias dict.

@@ -1,7 +1,7 @@
 import React from 'react'
 import DonutChart from '../components/DonutChart'
-import BarRow from '../components/BarRow'
 import DataTable from '../components/DataTable'
+import AiInsightBox from '../components/AiInsightBox'
 import { BAR_COLORS, CHART_COLORS } from '../theme'
 
 export default function GateEntry({ data }) {
@@ -12,73 +12,94 @@ export default function GateEntry({ data }) {
   const pve  = charts.pass_vs_exception || { total: 0, segments: [] }
   const checks = charts.detailed_checks || []
 
-  const maxCheck = Math.max(...checks.map(c => c.value || 0), 1)
-
   return (
-    <>
-      <div className="mb-6">
-        <h2 className="section-title">Gate Entry Date Integrity</h2>
-        <p className="section-subtitle">Vendor Bill Date ≤ GE Date ≤ GRPO Date ≤ AP Date rule</p>
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-3xl">
+          Gate Entry Integrity
+        </h2>
+        <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+          Chronological validation of transaction dates: Vendor Bill Date ≤ Gate Entry (GE) Date ≤ Goods Receipt (GRPO) Date.
+        </p>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+      <AiInsightBox section="gateentry" kpis={kpis} />
+
+      {/* KPI Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {[
-          { label: 'Gate Entries',   value: kpis.gate_entries },
-          { label: 'GRPO Documents', value: kpis.grpo_docs },
-          { label: 'Exceptions',     value: kpis.exceptions,    color: 'metric-risk' },
-          { label: 'Integrity',      value: `${kpis.integrity_pct ?? 0}%`, color: 'metric-success' },
+          { label: 'Gate Entries', value: kpis.gate_entries, desc: 'Logged entry items' },
+          { label: 'GRPO Documents', value: kpis.grpo_docs, desc: 'Goods receipts processed' },
+          { label: 'Anomalies / Errors', value: kpis.exceptions, color: 'text-rose-600 dark:text-rose-400', desc: 'Out-of-order date entries' },
+          { label: 'Compliance Index', value: `${kpis.integrity_pct ?? 0}%`, color: 'text-green-600 dark:text-green-400', desc: 'Overall date match score' }
         ].map(k => (
-          <div key={k.label} className="app-card rounded-lg p-5">
-            <div className="app-label mb-3">{k.label}</div>
-            <div className={`metric-value ${k.color || 'app-title'}`}>{k.value ?? '—'}</div>
+          <div key={k.label} className="group relative overflow-hidden rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 p-5 shadow-sm">
+            <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">{k.label}</div>
+            <div className={`text-2xl font-black tracking-tight ${k.color || 'text-slate-900 dark:text-white'}`}>
+              {(k.value ?? '—').toLocaleString()}
+            </div>
+            {k.desc && <div className="text-[10px] text-slate-400 mt-1">{k.desc}</div>}
           </div>
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        <div className="app-card rounded-lg p-5">
-          <h3 className="text-sm font-semibold app-title mb-4">Pass vs Exception</h3>
-          <div className="flex items-center justify-center mb-4">
+      {/* Charts section */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 p-5 shadow-sm flex flex-col justify-between">
+          <div>
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white">Audit Pass vs Exception Ratio</h3>
+            <p className="text-xs text-slate-400 mt-0.5">Chronology verification outcome</p>
+          </div>
+          <div className="flex items-center justify-center my-6">
             <DonutChart
               segments={(pve.segments || []).map(s => ({
                 ...s, color: s.label === 'Pass' ? CHART_COLORS.success : CHART_COLORS.risk,
               }))}
               centerText={`${kpis.integrity_pct ?? 0}%`}
-              centerSub="Pass"
+              centerSub="Valid Chronology"
             />
           </div>
-          <div className="space-y-2">
+          <div className="space-y-2 text-xs border-t border-slate-100 dark:border-slate-800/80 pt-3">
             {(pve.segments || []).map(s => (
-              <div key={s.label} className="flex justify-between text-sm">
-                <span className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-sm" style={{ background: s.label === 'Pass' ? CHART_COLORS.success : CHART_COLORS.risk }} />
-                  {s.label === 'Pass' ? 'Pass (Correct Order)' : 'Exception (GE > GRPO)'}
+              <div key={s.label} className="flex justify-between items-center">
+                <span className="flex items-center gap-2 text-slate-600 dark:text-slate-300 font-medium">
+                  <span className={`w-2.5 h-2.5 rounded-full ${s.label === 'Pass' ? 'bg-green-600' : 'bg-rose-600'}`} />
+                  {s.label === 'Pass' ? 'Correct Date Sequence' : 'Sequence Discrepancy (GE > GRPO)'}
                 </span>
-                <span className="font-semibold dark:text-white">{(s.value || 0).toLocaleString()}</span>
+                <span className="font-semibold text-slate-950 dark:text-white">{(s.value || 0).toLocaleString()}</span>
               </div>
             ))}
           </div>
         </div>
 
-        <div className="app-card rounded-lg p-5">
-          <h3 className="text-sm font-semibold app-title mb-4">Detailed Checks</h3>
-          <div className="space-y-2">
+        <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 p-5 shadow-sm flex flex-col justify-between">
+          <div>
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white">Chronological Control Checks</h3>
+            <p className="text-xs text-slate-400 mt-0.5">Performance of specific chronological validation rules</p>
+          </div>
+          <div className="space-y-4 my-6 flex-1 flex flex-col justify-center">
             {checks.map(c => {
               const colors = {
-                'Total': BAR_COLORS.neutral, 'GE = GRPO (same)': BAR_COLORS.success,
-                'GE < GRPO (normal)': BAR_COLORS.info, 'GE > GRPO (error)': BAR_COLORS.risk,
-                'Missing GRPO Date': BAR_COLORS.warning, 'Missing Bill Date': 'bg-slate-300',
+                'Total': 'bg-slate-500', 
+                'GE = GRPO (same)': 'bg-emerald-600',
+                'GE < GRPO (normal)': 'bg-blue-600', 
+                'GE > GRPO (error)': 'bg-rose-600',
+                'Missing GRPO Date': 'bg-amber-600', 
+                'Missing Bill Date': 'bg-slate-400',
               }
+              const progressColor = colors[c.label] || 'bg-slate-400'
               return (
-                <div key={c.label} className="flex items-center gap-3">
-                  <span className="text-xs app-muted w-36">{c.label}</span>
-                  <div className="flex-1 app-track rounded-full h-5 overflow-hidden">
-                    <div className={`h-full rounded-full ${colors[c.label] || 'bg-slate-400'}`}
-                      style={{ width: `${Math.max(c.pct, 0.3)}%` }} />
+                <div key={c.label} className="space-y-1">
+                  <div className="flex justify-between text-xs font-semibold text-slate-600 dark:text-slate-300">
+                    <span>{c.label}</span>
+                    <span className="font-bold text-slate-950 dark:text-white">{(c.value || 0).toLocaleString()}</span>
                   </div>
-                  <span className="text-xs font-semibold dark:text-white w-12 text-right">
-                    {(c.value || 0).toLocaleString()}
-                  </span>
+                  <div className="bg-slate-100 dark:bg-slate-800 rounded-full h-3 overflow-hidden">
+                    <div 
+                      className={`h-full rounded-full ${progressColor} transition-all duration-500`}
+                      style={{ width: `${Math.max(c.pct, 1)}%` }} 
+                    />
+                  </div>
                 </div>
               )
             })}
@@ -86,7 +107,10 @@ export default function GateEntry({ data }) {
         </div>
       </div>
 
-      {tables.map(t => <DataTable key={t.title} title={t.title} rows={t.rows} />)}
-    </>
+      {/* Details Table */}
+      <div className="space-y-6">
+        {tables.map(t => <DataTable key={t.title} title={t.title} rows={t.rows} />)}
+      </div>
+    </div>
   )
 }
