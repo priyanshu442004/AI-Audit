@@ -23,6 +23,7 @@ export const useStore = create((set, get) => ({
   page: 'upload',      // 'upload' | 'loading' | 'dashboard'
   sessionId: null,
   results: null,
+  showUploadModal: false,
 
   // Loading progress
   progress: { pct: 0, message: 'Preparing data…', stage: '' },
@@ -39,6 +40,7 @@ export const useStore = create((set, get) => ({
   setResults: (r) => set({ results: r }),
   setProgress: (p) => set({ progress: p }),
   setActiveSection: (s) => set({ activeSection: s }),
+  setShowUploadModal: (show) => set({ showUploadModal: show }),
 
   setTheme: (theme) => {
     const next = THEMES.has(theme) ? theme : 'light'

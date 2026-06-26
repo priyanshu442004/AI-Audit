@@ -46,3 +46,10 @@ def set_result(session_id: str, result: dict) -> None:
     s = _store.get(session_id)
     if s:
         s.result = result
+
+
+def get_or_create_session(session_id: str) -> Session:
+    if session_id not in _store:
+        _store[session_id] = Session(session_id=session_id)
+    return _store[session_id]
+

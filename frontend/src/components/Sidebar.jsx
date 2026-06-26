@@ -9,6 +9,7 @@ const LINK_GROUPS = [
     links: [
       { id: 'cover',        label: 'Report Cover',         icon: 'M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z' },
       { id: 'executive',    label: 'Executive Summary',    icon: 'M13 10V3L4 14h7v7l9-11h-7z' },
+      { id: 'history',      label: 'Audit History',        icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0' },
     ],
   },
   {

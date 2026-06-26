@@ -3,9 +3,10 @@ import { useStore } from './store'
 import UploadPage  from './pages/UploadPage'
 import LoadingPage from './pages/LoadingPage'
 import Dashboard   from './pages/Dashboard'
+import { analyzeStream } from './api'
 
 export default function App() {
-  const { page, sessionId, initTheme, setPage, setSessionId, setResults } = useStore()
+  const { page, sessionId, initTheme, setPage, setSessionId, setResults, setProgress } = useStore()
 
   useEffect(() => {
     initTheme()
@@ -14,12 +15,17 @@ export default function App() {
     const params = new URLSearchParams(window.location.search)
     const sid = params.get('session_id')
 
-    if (path === '/dashboard' && sid) {
+    if (path === '/dashboard') {
+      const targetSid = sid || 'combined'
       setPage('loading')
-      setSessionId(sid)
-      fetch(`/api/result/${sid}`)
-        .then(res => {
-          if (!res.ok) throw new Error('Session not found')
+      setSessionId(targetSid)
+      
+      fetch(`/api/result/${targetSid}`)
+        .then(async res => {
+          if (!res.ok) {
+            const body = await res.json().catch(() => ({}))
+            throw { status: res.status, detail: body.detail || 'Not found' }
+          }
           return res.json()
         })
         .then(data => {
@@ -27,9 +33,26 @@ export default function App() {
           setPage('dashboard')
         })
         .catch(err => {
-          console.error(err)
-          setPage('upload')
-          window.history.replaceState(null, '', '/uploads')
+          console.error('Initial result fetch error:', err)
+          if (err.detail === 'Result not yet computed') {
+            // Start combined stream
+            analyzeStream(targetSid, {
+              onProgress: ({ pct, message }) => setProgress({ pct, message }),
+              onResult: (result) => {
+                setResults(result)
+                setPage('dashboard')
+              },
+              onError: (msg) => {
+                setPage('upload')
+                window.history.replaceState(null, '', '/uploads')
+              },
+            })
+          } else {
+            // No files uploaded or session not found
+            setResults(null)
+            setPage('dashboard')
+            useStore.getState().setShowUploadModal(true)
+          }
         })
     } else {
       setPage('upload')
@@ -58,21 +81,41 @@ export default function App() {
       const params = new URLSearchParams(window.location.search)
       const sid = params.get('session_id')
 
-      if (path === '/dashboard' && sid) {
+      if (path === '/dashboard') {
+        const targetSid = sid || 'combined'
         setPage('loading')
-        setSessionId(sid)
-        fetch(`/api/result/${sid}`)
-          .then(res => {
-            if (!res.ok) throw new Error('Session not found')
+        setSessionId(targetSid)
+        
+        fetch(`/api/result/${targetSid}`)
+          .then(async res => {
+            if (!res.ok) {
+              const body = await res.json().catch(() => ({}))
+              throw { status: res.status, detail: body.detail || 'Not found' }
+            }
             return res.json()
           })
           .then(data => {
             setResults(data)
             setPage('dashboard')
           })
-          .catch(() => {
-            setPage('upload')
-            window.history.replaceState(null, '', '/uploads')
+          .catch(err => {
+            if (err.detail === 'Result not yet computed') {
+              analyzeStream(targetSid, {
+                onProgress: ({ pct, message }) => setProgress({ pct, message }),
+                onResult: (result) => {
+                  setResults(result)
+                  setPage('dashboard')
+                },
+                onError: (msg) => {
+                  setPage('upload')
+                  window.history.replaceState(null, '', '/uploads')
+                },
+              })
+            } else {
+              setResults(null)
+              setPage('dashboard')
+              useStore.getState().setShowUploadModal(true)
+            }
           })
       } else {
         setPage('upload')
@@ -81,7 +124,7 @@ export default function App() {
 
     window.addEventListener('popstate', handlePopState)
     return () => window.removeEventListener('popstate', handlePopState)
-  }, [setPage, setSessionId, setResults])
+  }, [setPage, setSessionId, setResults, setProgress])
 
   if (page === 'loading')   return <LoadingPage />
   if (page === 'dashboard') return <Dashboard />

@@ -17,6 +17,8 @@ import GrpoExcept   from '../sections/GrpoExcept'
 import ThreeWay     from '../sections/ThreeWay'
 import DataMap      from '../sections/DataMap'
 import Appendix     from '../sections/Appendix'
+import History      from '../sections/History'
+import UploadModal  from '../components/UploadModal'
 
 const SECTIONS = {
   cover:         Cover,
@@ -33,10 +35,11 @@ const SECTIONS = {
   threeway:      ThreeWay,
   datamap:       DataMap,
   appendix:      Appendix,
+  history:       History,
 }
 
 export default function Dashboard() {
-  const { activeSection, results } = useStore()
+  const { activeSection, results, showUploadModal } = useStore()
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   const Section = SECTIONS[activeSection] || Cover
@@ -54,6 +57,8 @@ export default function Dashboard() {
           </div>
         </main>
       </div>
+
+      {showUploadModal && <UploadModal />}
     </div>
   )
 }

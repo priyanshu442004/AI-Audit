@@ -20,23 +20,27 @@ from app.analysis import (
 async def run_pipeline(
     session: Session,
     emit: Callable[[str, int, str], Any],
+    dfs_override: dict[str, pd.DataFrame] = None,
 ) -> dict:
     """
     emit(stage, pct, message) is called at each step.
     Returns the full output contract dict.
     """
-    files = session.files
+    if dfs_override is not None:
+        dfs = dfs_override
+    else:
+        files = session.files
 
-    # ── Load DataFrames ──────────────────────────────────────────────────────
-    await emit("loading", 5, "Validating data sources…")
+        # ── Load DataFrames ──────────────────────────────────────────────────────
+        await emit("loading", 5, "Validating data sources…")
 
-    dfs = {}
-    for role, uf in files.items():
-        try:
-            df = load_file(io.BytesIO(uf.data), uf.filename)
-            dfs[role] = df
-        except Exception as exc:
-            raise ValueError(f"Failed to read {uf.filename} ({role}): {exc}") from exc
+        dfs = {}
+        for role, uf in files.items():
+            try:
+                df = load_file(io.BytesIO(uf.data), uf.filename)
+                dfs[role] = df
+            except Exception as exc:
+                raise ValueError(f"Failed to read {uf.filename} ({role}): {exc}") from exc
 
     await emit("loading", 12, "Cleaning and normalising columns…")
 

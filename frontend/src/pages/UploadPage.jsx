@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { uploadFiles, analyzeStream } from '../api'
 import { useStore } from '../store'
 import logo from '../assets/logo.jpeg'
@@ -20,7 +20,19 @@ export default function UploadPage() {
   const [uploaded, setUploaded] = useState({})  // role → File
   const [error, setError] = useState('')
   const [dragActive, setDragActive] = useState({}) // role → boolean
+  const [hasHistory, setHasHistory] = useState(false)
   const inputRefs = useRef({})
+
+  useEffect(() => {
+    fetch('/api/history')
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data) && data.length > 0) {
+          setHasHistory(true)
+        }
+      })
+      .catch(console.error)
+  }, [])
 
   const handleFile = (role, file) => {
     if (!file) return
@@ -66,12 +78,30 @@ export default function UploadPage() {
     if (!isComplete) return
     setError('')
     try {
-      const items = Object.entries(uploaded).map(([role, file]) => ({ role, file }))
-      const { session_id } = await uploadFiles(items)
-      setSessionId(session_id)
       setPage('loading')
-
-      analyzeStream(session_id, {
+      const items = Object.entries(uploaded).map(([role, file]) => ({ role, file }))
+      const total = items.length
+      
+      for (let i = 0; i < total; i++) {
+        const { role, file } = items[i]
+        const slot = FILE_SLOTS.find(s => s.role === role)
+        const label = slot ? slot.label : role
+        
+        setProgress({
+          pct: Math.round((i / total) * 5),
+          message: `Uploading ${file.name} (${label}) to S3 (${i + 1}/${total})...`
+        })
+        
+        await uploadFiles([{ role, file }])
+      }
+      
+      setProgress({
+        pct: 5,
+        message: 'Initializing analytical pipeline...'
+      })
+      
+      setSessionId('combined')
+      analyzeStream('combined', {
         onProgress: ({ pct, message }) => setProgress({ pct, message }),
         onResult: (result) => {
           setResults(result)
@@ -84,6 +114,7 @@ export default function UploadPage() {
       })
     } catch (e) {
       setError(e.message || 'An unexpected error occurred during analysis.')
+      setPage('upload')
     }
   }
 
@@ -219,14 +250,40 @@ export default function UploadPage() {
         </div>
 
         {/* Action Button */}
-        <div className="flex flex-col items-center gap-3">
-          <button
-            disabled={!isComplete}
-            onClick={handleSubmit}
-            className="w-full sm:w-auto px-10 py-4 rounded-xl text-base font-bold text-white shadow-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-40 disabled:cursor-not-allowed disabled:from-slate-500 disabled:to-slate-600 transition-all duration-300"
-          >
-            {isComplete ? 'Launch P2P Audit Analysis' : 'Upload All Mandatory Files to Start'}
-          </button>
+        <div className="flex flex-col items-center gap-4">
+          <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
+            <button
+              disabled={!isComplete}
+              onClick={handleSubmit}
+              className="w-full sm:w-auto px-10 py-4 rounded-xl text-base font-bold text-white shadow-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-40 disabled:cursor-not-allowed disabled:from-slate-500 disabled:to-slate-600 transition-all duration-300"
+            >
+              {isComplete ? 'Launch P2P Audit Analysis' : 'Upload All Mandatory Files to Start'}
+            </button>
+
+            {hasHistory && (
+              <button
+                onClick={() => {
+                  setSessionId('combined')
+                  setPage('loading')
+                  analyzeStream('combined', {
+                    onProgress: ({ pct, message }) => setProgress({ pct, message }),
+                    onResult: (result) => {
+                      setResults(result)
+                      setPage('dashboard')
+                    },
+                    onError: (msg) => {
+                      setError(msg)
+                      setPage('upload')
+                    },
+                  })
+                }}
+                className="w-full sm:w-auto px-10 py-4 rounded-xl text-base font-bold text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 shadow-md transition-all duration-300 bg-white/40 dark:bg-slate-900/30 backdrop-blur-sm"
+              >
+                Go directly to Dashboard (S3 History)
+              </button>
+            )}
+          </div>
+          
           <span className="text-xs text-slate-400 dark:text-slate-500">
             Accepts CSV, XLSX, and XLS file extensions.
           </span>
