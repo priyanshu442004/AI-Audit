@@ -12,6 +12,10 @@ const DEFAULT_NARRATIVES = {
     `Quantity variance analysis flagged ${kpis.qty_above_5pct ?? 0} instances exceeding the 5% tolerance threshold. This suggests potential over-delivery or receipt errors that must be reconciled against the supplier billing files to prevent financial leakage.`,
   pricevariance: (kpis) => 
     `Pricing analysis identified ₹${kpis.savings_l ?? 0} Lakhs in potential savings. The largest price variance was observed on key item categories, indicating that standard purchase rates were not consistently applied across vendor accounts.`,
+  pricevariancesame: (kpis) => 
+    `Same-vendor price variance analysis evaluated ${kpis.vendor_items ?? 0} items. We identified ${kpis.variance_lines ?? 0} instances of unit rate deviations within individual vendors, and ${kpis.uom_inconsistent ?? 0} vendors with inconsistent Unit of Measure (UOM) profiles.`,
+  pricevariancecross: (kpis) => 
+    `Cross-vendor price variance analysis evaluated ${kpis.vendor_items ?? 0} items. We identified ${kpis.variance_lines ?? 0} instances where identical item codes were purchased at different rates across different vendors, highlighting potential purchasing leakage.`,
   glbalances: (kpis) => 
     `GL Vendor balance analysis shows a total GL liability of ₹${kpis.total_gl_balance_cr ?? 0} Cr, with a variance of ₹${kpis.variance_cr ?? 0} Cr against the AP invoice register. High-risk debit balances total ₹${kpis.debit_balances_l ?? 0} L, requiring immediate follow-up.`,
   paymentaging: (kpis) => 

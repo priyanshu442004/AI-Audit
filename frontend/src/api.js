@@ -67,3 +67,23 @@ export async function fetchInsight(section, kpis, topRisks = []) {
   const data = await res.json()
   return data.narrative || ''
 }
+
+/**
+ * Fetch same-vendor price variance.
+ * @returns {Promise<{rows: Array, kpis: object}>}
+ */
+export async function fetchPriceVarianceSame() {
+  const res = await fetch(`${BASE}/analysis/price-variance-same`)
+  if (!res.ok) throw new Error('Failed to load same-vendor price variance')
+  return res.json()
+}
+
+/**
+ * Fetch cross-vendor price variance.
+ * @returns {Promise<{rows: Array, kpis: object}>}
+ */
+export async function fetchPriceVarianceCross() {
+  const res = await fetch(`${BASE}/analysis/price-variance-cross`)
+  if (!res.ok) throw new Error('Failed to load cross-vendor price variance')
+  return res.json()
+}

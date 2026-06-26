@@ -35,6 +35,14 @@ def normalize_id(val) -> str:
         val_str = val_str[:-2]
     return val_str
 
+def clean_str_val(val, default="—") -> str:
+    if pd.isna(val) or val is None:
+        return default
+    val_str = str(val).strip()
+    if val_str.lower() in ("nan", "none", "null", ""):
+        return default
+    return val_str
+
 def parse_single_date(val) -> pd.Timestamp | None:
     if pd.isna(val) or val is None or str(val).strip().lower() in ("nan", "none", ""):
         return None
@@ -108,11 +116,13 @@ def run(dfs_or_df: dict[str, pd.DataFrame] | pd.DataFrame) -> dict:
     col_grpo_item_code = None
     col_grpo_no = None
     col_grpo_qty = None
+    col_grpo_ge_no = None
     if df_grpo is not None and not df_grpo.empty:
         col_grpo_po_no = find_col(df_grpo, ["po number", "po no", "po no.", "purchase order number", "purchase order no"])
         col_grpo_item_code = find_col(df_grpo, ["item code", "item_code", "item no", "item no.", "itemno"])
         col_grpo_no = find_col(df_grpo, ["grpo no", "grpo no.", "receipt no", "grpo number", "grpono"])
         col_grpo_qty = find_col(df_grpo, ["po qty", "grpo qty", "received qty", "quantity", "qty", "received quantity"])
+        col_grpo_ge_no = find_col(df_grpo, ["gate entry no", "ge no", "gate entry number", "gateentryno", "security entry no", "linked gate entry", "gate no", "entry no"])
 
     # ── 3. Column Detection in AP Sheet ──────────────────────────────────────
     col_ap_po_no = None
@@ -138,41 +148,88 @@ def run(dfs_or_df: dict[str, pd.DataFrame] | pd.DataFrame) -> dict:
         col_ge_date = find_col(df_ge, ["gate entry date", "ge date", "date"])
 
     # ── 6. Pre-aggregate and Build Lookup Dictionaries for O(1) Performance ──
-    grpo_lookup = {}
+    # ── 6. Pre-aggregate and Build Lookup Dictionaries for O(1) Performance ──
+    grpo_by_po_item = {}
+    grpo_qty_lookup = {}
+    grpo_to_ge_no = {}
     if df_grpo is not None and not df_grpo.empty and col_grpo_po_no and col_grpo_item_code:
-        # Group by PO number and Item Code
-        for (po, item), group in df_grpo.groupby([col_grpo_po_no, col_grpo_item_code]):
-            po_str = normalize_id(po)
-            item_str = normalize_id(item).upper()
-            grns = list(group[col_grpo_no].dropna().apply(normalize_id).unique())
-            grns = [g for g in grns if g and g.lower() not in ["nan", "none", ""]]
-            qty_sum = group[col_grpo_qty].apply(parse_numeric_val).sum()
-            grpo_lookup[(po_str, item_str)] = (grns, qty_sum)
+        po_vals = df_grpo[col_grpo_po_no].apply(normalize_id).values
+        item_vals = df_grpo[col_grpo_item_code].apply(normalize_id).str.upper().values
+        grn_vals = df_grpo[col_grpo_no].apply(normalize_id).values if col_grpo_no else [""] * len(df_grpo)
+        qty_vals = df_grpo[col_grpo_qty].apply(parse_numeric_val).values if col_grpo_qty else [0.0] * len(df_grpo)
+        ge_no_vals = df_grpo[col_grpo_ge_no].apply(normalize_id).values if col_grpo_ge_no else [""] * len(df_grpo)
+        
+        for po, item, grn, qty, ge_n in zip(po_vals, item_vals, grn_vals, qty_vals, ge_no_vals):
+            if not po or not item:
+                continue
+            key = (po, item)
+            if key not in grpo_by_po_item:
+                grpo_by_po_item[key] = []
+            if grn and str(grn).lower() not in ("nan", "none", ""):
+                if grn not in grpo_by_po_item[key]:
+                    grpo_by_po_item[key].append(grn)
+            
+            qty_key = (po, item, grn)
+            grpo_qty_lookup[qty_key] = grpo_qty_lookup.get(qty_key, 0.0) + qty
+            
+            if grn and ge_n and str(ge_n).lower() not in ("nan", "none", ""):
+                grpo_to_ge_no[(po, grn)] = ge_n
+                grpo_to_ge_no[grn] = ge_n
 
     ap_lookup = {}
     if df_ap is not None and not df_ap.empty and col_ap_po_no and col_ap_grpo_no:
-        for (po, grpo), group in df_ap.groupby([col_ap_po_no, col_ap_grpo_no]):
-            po_str = normalize_id(po)
-            grpo_str = normalize_id(grpo)
-            invs = list(group[col_ap_inv_no].dropna().apply(normalize_id).unique())
-            invs = [i for i in invs if i and i.lower() not in ["nan", "none", ""]]
-            ap_lookup[(po_str, grpo_str)] = invs
+        po_vals = df_ap[col_ap_po_no].apply(normalize_id).values
+        grpo_vals = df_ap[col_ap_grpo_no].apply(normalize_id).values
+        inv_vals = df_ap[col_ap_inv_no].apply(normalize_id).values if col_ap_inv_no else [""] * len(df_ap)
+        
+        for po, grpo, inv in zip(po_vals, grpo_vals, inv_vals):
+            if not po or not grpo:
+                continue
+            key = (po, grpo)
+            if key not in ap_lookup:
+                ap_lookup[key] = set()
+            if inv and str(inv).lower() not in ("nan", "none", ""):
+                ap_lookup[key].add(inv)
+        
+        ap_lookup = {k: list(v) for k, v in ap_lookup.items()}
 
     cn_lookup = {}
     if df_cn is not None and not df_cn.empty and col_cn_ap_inv_no:
-        for inv, group in df_cn.groupby(col_cn_ap_inv_no):
-            inv_str = normalize_id(inv)
-            cns = list(group[col_cn_no].dropna().apply(normalize_id).unique())
-            cns = [c for c in cns if c and c.lower() not in ["nan", "none", ""]]
-            cn_lookup[inv_str] = cns
+        inv_vals = df_cn[col_cn_ap_inv_no].apply(normalize_id).values
+        cn_vals = df_cn[col_cn_no].apply(normalize_id).values if col_cn_no else [""] * len(df_cn)
+        
+        for inv, cn in zip(inv_vals, cn_vals):
+            if not inv:
+                continue
+            if inv not in cn_lookup:
+                cn_lookup[inv] = set()
+            if cn and str(cn).lower() not in ("nan", "none", ""):
+                cn_lookup[inv].add(cn)
+        
+        cn_lookup = {k: list(v) for k, v in cn_lookup.items()}
 
-    ge_lookup = {}
-    if df_ge is not None and not df_ge.empty and col_ge_po_no:
-        for po, group in df_ge.groupby(col_ge_po_no):
-            po_str = normalize_id(po)
-            dates = list(group[col_ge_date].dropna().astype(str).str.strip().unique())
-            dates = [d for d in dates if d and d.lower() not in ["nan", "none", ""]]
-            ge_lookup[po_str] = dates
+    ge_no_to_date = {}
+    po_to_ge_dates = {}
+    if df_ge is not None and not df_ge.empty:
+        col_ge_no = find_col(df_ge, ["gate entry no", "gate entry no.", "ge no", "ge no.", "gate entry number", "security entry no", "security entry number"])
+        col_ge_po_no = find_col(df_ge, ["purchase order number", "purchase order no", "po number", "po no", "po no."])
+        col_ge_date = find_col(df_ge, ["gate entry date", "ge date", "date"])
+        
+        ge_nos = df_ge[col_ge_no].apply(normalize_id).values if col_ge_no else [""] * len(df_ge)
+        po_vals = df_ge[col_ge_po_no].apply(normalize_id).values if col_ge_po_no else [""] * len(df_ge)
+        date_vals = df_ge[col_ge_date].astype(str).str.strip().values if col_ge_date else [""] * len(df_ge)
+        
+        for g_no, po, dt in zip(ge_nos, po_vals, date_vals):
+            dt_clean = clean_str_val(dt, "")
+            if not dt_clean or dt_clean == "—":
+                continue
+            if g_no:
+                ge_no_to_date[g_no] = dt_clean
+            if po:
+                if po not in po_to_ge_dates:
+                    po_to_ge_dates[po] = []
+                if dt_clean not in po_to_ge_dates[po]:
+                    po_to_ge_dates[po].append(dt_clean)
 
     # Holiday dates parsing
     holiday_dates = set()
@@ -192,31 +249,39 @@ def run(dfs_or_df: dict[str, pd.DataFrame] | pd.DataFrame) -> dict:
     rows = []
 
     for row in po_records:
-        po_num = str(row.get(col_po_no, "")).strip() if col_po_no else ""
-        doc_date = str(row.get(col_doc_date, "")).strip() if col_doc_date else ""
-        post_date = str(row.get(col_post_date, "")).strip() if col_post_date else ""
+        po_num = clean_str_val(row.get(col_po_no), "") if col_po_no else ""
+        po_num_norm = normalize_id(po_num)
+        
+        # Enforce strict PO number checking - skip row if blank, null or nan
+        if not po_num_norm or po_num_norm.lower() in ("nan", "none", "null"):
+            continue
+
+        doc_date = clean_str_val(row.get(col_doc_date)) if col_doc_date else "—"
+        post_date = clean_str_val(row.get(col_post_date)) if col_post_date else "—"
         
         # Determine status
-        doc_status = ""
-        if col_doc_status:
-            doc_status = str(row.get(col_doc_status, "")).strip()
-        
-        # Fallback if doc_status is missing but open_qty is present
-        if not doc_status or pd.isna(doc_status) or doc_status == "nan":
+        doc_status = clean_str_val(row.get(col_doc_status), "") if col_doc_status else ""
+        if not doc_status or doc_status == "—":
             open_qty_val = 0.0
             if col_open_qty:
                 open_qty_val = parse_numeric_val(row.get(col_open_qty))
             doc_status = "OPEN" if open_qty_val > 0 else "Closed"
+        
+        # Normalize status to Closed or OPEN
+        if doc_status.strip().upper() == "OPEN":
+            doc_status = "OPEN"
+        else:
+            doc_status = "Closed"
 
-        currency = str(row.get(col_currency, "")).strip() if col_currency else ""
-        vendor_code = str(row.get(col_vendor_code, "")).strip() if col_vendor_code else ""
-        vendor_name = str(row.get(col_vendor_name, "")).strip() if col_vendor_name else ""
+        currency = clean_str_val(row.get(col_currency), "INR") if col_currency else "INR"
+        vendor_code = clean_str_val(row.get(col_vendor_code)) if col_vendor_code else "—"
+        vendor_name = clean_str_val(row.get(col_vendor_name)) if col_vendor_name else "—"
         vendor_country = "India" if currency.upper() == "INR" else "USA"
-        vendor_group = str(row.get(col_vendor_group, "")).strip() if col_vendor_group else ""
-        item_code = str(row.get(col_item_code, "")).strip() if col_item_code else ""
-        item_desc = str(row.get(col_item_desc, "")).strip() if col_item_desc else ""
-        item_group = str(row.get(col_item_group, "")).strip() if col_item_group else ""
-        uom = str(row.get(col_uom, "")).strip() if col_uom else ""
+        vendor_group = clean_str_val(row.get(col_vendor_group)) if col_vendor_group else "—"
+        item_code = clean_str_val(row.get(col_item_code)) if col_item_code else "—"
+        item_desc = clean_str_val(row.get(col_item_desc)) if col_item_desc else "—"
+        item_group = clean_str_val(row.get(col_item_group)) if col_item_group else "—"
+        uom = clean_str_val(row.get(col_uom)) if col_uom else "—"
 
         ordered_qty = parse_numeric_val(row.get(col_po_qty)) if col_po_qty else 0.0
         po_price = parse_numeric_val(row.get(col_po_price)) if col_po_price else 0.0
@@ -225,115 +290,126 @@ def run(dfs_or_df: dict[str, pd.DataFrame] | pd.DataFrame) -> dict:
         line_val_inr = parse_numeric_val(row.get(col_line_total)) if col_line_total else (ordered_qty * rate_inr)
 
         # Lookups with normalized IDs
-        po_num_norm = normalize_id(po_num)
         item_code_norm = normalize_id(item_code).upper()
 
-        grn_nos, received_qty = grpo_lookup.get((po_num_norm, item_code_norm), ([], 0.0))
-        grn_no_str = ", ".join(grn_nos)
-
-        ap_invoices = []
-        for g in grn_nos:
-            ap_invoices.extend(ap_lookup.get((po_num_norm, g), []))
-        ap_invoices = list(set(ap_invoices))
-        ap_invoice_no_str = ", ".join(ap_invoices)
-
-        cn_nos = []
-        for inv in ap_invoices:
-            cn_nos.extend(cn_lookup.get(inv, []))
-        cn_nos = list(set(cn_nos))
-        cn_no_str = ", ".join(cn_nos)
-
-        pending_qty = ordered_qty - received_qty
-        pct_received = (received_qty / ordered_qty * 100.0) if ordered_qty > 0 else 0.0
-
-        # Open Value (INR)
-        if doc_status.strip().upper() == "OPEN":
-            open_value_inr = pending_qty * rate_inr
+        grn_nos = grpo_by_po_item.get((po_num_norm, item_code_norm), [])
+        
+        combinations = []
+        if grn_nos:
+            for g_no in grn_nos:
+                ge_n = grpo_to_ge_no.get((po_num_norm, g_no)) or grpo_to_ge_no.get(g_no)
+                ge_dt = ge_no_to_date.get(ge_n) if ge_n else None
+                if not ge_dt:
+                    fallback_dates = po_to_ge_dates.get(po_num_norm, [])
+                    ge_dt = fallback_dates[0] if fallback_dates else "—"
+                
+                ap_invoices = ap_lookup.get((po_num_norm, g_no), [])
+                if not ap_invoices:
+                    ap_invoices = ap_lookup.get(("", g_no), [])
+                
+                if ap_invoices:
+                    for ap_inv in ap_invoices:
+                        credit_notes = cn_lookup.get(ap_inv, [])
+                        if credit_notes:
+                            for cn in credit_notes:
+                                combinations.append((g_no, ap_inv, cn, ge_dt))
+                        else:
+                            combinations.append((g_no, ap_inv, "—", ge_dt))
+                else:
+                    combinations.append((g_no, "—", "—", ge_dt))
         else:
-            open_value_inr = "PO is closed"
+            fallback_dates = po_to_ge_dates.get(po_num_norm, [])
+            ge_dt = fallback_dates[0] if fallback_dates else "—"
+            combinations.append(("—", "—", "—", ge_dt))
 
-        # Gate Entry Date
-        ge_dates = ge_lookup.get(po_num_norm, [])
-        ge_date_str = ", ".join(ge_dates)
+        for g_no, ap_inv, cn, ge_dt in combinations:
+            received_qty_row = grpo_qty_lookup.get((po_num_norm, item_code_norm, g_no), 0.0) if g_no != "—" else 0.0
+            pending_qty_row = ordered_qty - received_qty_row
+            pct_received_row = (received_qty_row / ordered_qty * 100.0) if ordered_qty > 0 else 0.0
+            
+            if doc_status == "OPEN":
+                open_value_inr_row = pending_qty_row * rate_inr
+            else:
+                open_value_inr_row = "PO is closed"
+                
+            diff = received_qty_row - ordered_qty
+            if diff > 0 and ordered_qty > 0:
+                var_pct = (diff / ordered_qty) * 100.0
+                variance_str = f"+{var_pct:.2f}%"
+            else:
+                var_pct = 0.0
+                variance_str = "0.00%"
 
-        # Days Open
-        days_open = 0
-        if doc_status.strip().upper() == "OPEN":
-            dt_post_parsed = parse_single_date(post_date)
-            if dt_post_parsed is not None:
-                try:
-                    dt_target = pd.to_datetime("2026-03-31")
-                    days_open = (dt_target - dt_post_parsed).days
-                except:
-                    days_open = 0
-        else:
-            days_open = "PO is closed"
+            # Days Open
+            days_open = 0
+            if doc_status == "OPEN":
+                dt_post_parsed = parse_single_date(post_date)
+                if dt_post_parsed is not None:
+                    try:
+                        dt_target = pd.to_datetime("2026-03-31")
+                        days_open = (dt_target - dt_post_parsed).days
+                    except:
+                        days_open = 0
+            else:
+                days_open = "PO is closed"
 
-        # %age Variance
-        diff = received_qty - ordered_qty
-        if diff > 0 and ordered_qty > 0:
-            var_pct = (diff / ordered_qty) * 100.0
-            variance_str = f"+{var_pct:.2f}%"
-        else:
-            var_pct = 0.0
-            variance_str = "0.00%"
+            # Pending Flag
+            pending_flag = 1 if received_qty_row > ordered_qty else 0
 
-        # Pending Flag
-        pending_flag = 1 if received_qty > ordered_qty else 0
+            # Open>90d & No receipt
+            is_open_90_no_rcpt = 0
+            if doc_status == "OPEN" and isinstance(days_open, (int, float)) and days_open > 90 and received_qty_row == 0:
+                is_open_90_no_rcpt = 1
 
-        # Open>90d & No receipt
-        is_open_90_no_rcpt = 0
-        if doc_status.strip().upper() == "OPEN" and isinstance(days_open, (int, float)) and days_open > 90 and received_qty == 0:
-            is_open_90_no_rcpt = 1
+            # Recv<50%
+            recv_lt_50 = 1 if (ordered_qty > 0 and received_qty_row < ordered_qty * 0.5) else 0
 
-        # Recv<50%
-        recv_lt_50 = 1 if (ordered_qty > 0 and received_qty < ordered_qty * 0.5) else 0
+            # Holiday flag
+            holiday_flag = 0
+            for dt_val in [post_date, doc_date]:
+                if not dt_val or dt_val == "—":
+                    continue
+                dt_parsed = parse_single_date(dt_val)
+                if dt_parsed is not None:
+                    dt_str = dt_parsed.strftime("%Y-%m-%d")
+                    if dt_str in holiday_dates or dt_str in STATIC_HOLIDAYS or dt_parsed.dayofweek in [5, 6]:
+                        holiday_flag = 1
+                        break
 
-        # Holiday flag (checks if post date or doc date falls on weekend or holiday)
-        holiday_flag = 0
-        for dt_val in [post_date, doc_date]:
-            if not dt_val:
-                continue
-            dt_parsed = parse_single_date(dt_val)
-            if dt_parsed is not None:
-                dt_str = dt_parsed.strftime("%Y-%m-%d")
-                if dt_str in holiday_dates or dt_str in STATIC_HOLIDAYS or dt_parsed.dayofweek in [5, 6]:
-                    holiday_flag = 1
-                    break
+            rows.append({
+                "PO Number": po_num_norm,
+                "Document Date": doc_date,
+                "Posting Date": post_date,
+                "Doc Status": doc_status,
+                "Currency": currency,
+                "Vendor Code": vendor_code,
+                "Vendor Name": vendor_name,
+                "Vendor Country": vendor_country,
+                "Vendor Group": vendor_group,
+                "Item code": item_code,
+                "Item Description": item_desc,
+                "Item Group": item_group,
+                "UOM": uom,
+                "GRN No.": g_no,
+                "AP Invoice No.": ap_inv,
+                "AP Credit Note": cn,
+                "Ordered Qty.": ordered_qty,
+                "Received Qty.": received_qty_row,
+                "Pending Qty.": pending_qty_row,
+                "%age Received": f"{pct_received_row:.2f}%",
+                "Rate(INR)": rate_inr,
+                "Line Value(INR)": line_val_inr,
+                "Open Value(INR)": open_value_inr_row if isinstance(open_value_inr_row, str) else round(open_value_inr_row, 2),
+                "Gate Entry Date": ge_dt,
+                "Days Open": days_open,
+                "%age Variance": variance_str,
+                "variance_pct_raw": var_pct,
+                "Pending Flag": pending_flag,
+                "Open>90d & No receipt": is_open_90_no_rcpt,
+                "Recv<50%": recv_lt_50,
+                "Holiday flag": holiday_flag
+            })
 
-        rows.append({
-            "PO Number": po_num,
-            "Document Date": doc_date,
-            "Posting Date": post_date,
-            "Doc Status": doc_status,
-            "Currency": currency,
-            "Vendor Code": vendor_code,
-            "Vendor Name": vendor_name,
-            "Vendor Country": vendor_country,
-            "Vendor Group": vendor_group,
-            "Item code": item_code,
-            "Item Description": item_desc,
-            "Item Group": item_group,
-            "UOM": uom,
-            "GRN No.": grn_no_str,
-            "AP Invoice No.": ap_invoice_no_str,
-            "AP Credit Note": cn_no_str,
-            "Ordered Qty.": ordered_qty,
-            "Received Qty.": received_qty,
-            "Pending Qty.": pending_qty,
-            "%age Received": f"{pct_received:.2f}%",
-            "Rate(INR)": rate_inr,
-            "Line Value(INR)": line_val_inr,
-            "Open Value(INR)": open_value_inr if isinstance(open_value_inr, str) else round(open_value_inr, 2),
-            "Gate Entry Date": ge_date_str,
-            "Days Open": days_open,
-            "%age Variance": variance_str,
-            "variance_pct_raw": var_pct, # Helper for frontend coloring
-            "Pending Flag": pending_flag,
-            "Open>90d & No receipt": is_open_90_no_rcpt,
-            "Recv<50%": recv_lt_50,
-            "Holiday flag": holiday_flag
-        })
 
     # ── 8. Compute KPIs for Frontend and Tests ───────────────────────────────
     unique_pos = len(set(r["PO Number"] for r in rows if r["PO Number"]))
@@ -352,7 +428,7 @@ def run(dfs_or_df: dict[str, pd.DataFrame] | pd.DataFrame) -> dict:
         if r["GRN No."]:
             for part in r["GRN No."].split(","):
                 part_clean = part.strip()
-                if part_clean:
+                if part_clean and part_clean != "—":
                     all_grns.add(part_clean)
     unique_grn_count = len(all_grns)
 
@@ -361,7 +437,7 @@ def run(dfs_or_df: dict[str, pd.DataFrame] | pd.DataFrame) -> dict:
         if r["AP Invoice No."]:
             for part in r["AP Invoice No."].split(","):
                 part_clean = part.strip()
-                if part_clean:
+                if part_clean and part_clean != "—":
                     all_ap_invs.add(part_clean)
     unique_ap_count = len(all_ap_invs)
 
@@ -376,7 +452,7 @@ def run(dfs_or_df: dict[str, pd.DataFrame] | pd.DataFrame) -> dict:
     if open_lines_pending > 0:
         vendor_open_counts = {}
         for r in rows:
-            if str(r["Doc Status"]).strip().upper() == "OPEN" and r["Vendor Code"]:
+            if str(r["Doc Status"]).strip().upper() == "OPEN" and r["Vendor Code"] and r["Vendor Code"] != "—":
                 vendor_open_counts[r["Vendor Code"]] = vendor_open_counts.get(r["Vendor Code"], 0) + 1
         if vendor_open_counts:
             top_vendor_open = max(vendor_open_counts.values())
@@ -412,7 +488,7 @@ def run(dfs_or_df: dict[str, pd.DataFrame] | pd.DataFrame) -> dict:
 
     vendor_open_dict = {}
     for r in rows:
-        if str(r["Doc Status"]).strip().upper() == "OPEN" and r["Vendor Code"]:
+        if str(r["Doc Status"]).strip().upper() == "OPEN" and r["Vendor Code"] and r["Vendor Code"] != "—":
             vc = r["Vendor Code"]
             if vc not in vendor_open_dict:
                 vendor_open_dict[vc] = {

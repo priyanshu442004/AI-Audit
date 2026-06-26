@@ -30,6 +30,15 @@ from app.s3 import upload_file_to_s3, download_file_from_s3
 # Initialize the database on startup
 init_db()
 
+cached_dfs: dict[str, pd.DataFrame] | None = None
+
+def get_cached_dfs_or_load() -> dict[str, pd.DataFrame]:
+    global cached_dfs
+    if cached_dfs is None:
+        cached_dfs = load_combined_dfs()
+    return cached_dfs
+
+
 class SafeJSONEncoder(json.JSONEncoder):
     """JSON encoder that safely handles NaN, infinity, and other special values."""
     def encode(self, o):
@@ -61,10 +70,21 @@ def sanitize_for_json(obj):
         return obj
 
 
+import hashlib
+import pickle
+
+CACHE_DIR = os.path.join(os.path.dirname(__file__), "../.cache_dfs")
+os.makedirs(CACHE_DIR, exist_ok=True)
+
+def get_cache_path(s3_key: str) -> str:
+    key_hash = hashlib.md5(s3_key.encode()).hexdigest()
+    return os.path.join(CACHE_DIR, f"{key_hash}.pkl")
+
 def load_combined_dfs(on_progress=None) -> dict[str, pd.DataFrame]:
     """
-    Load all active S3 files, group them by role,
+    Load all active S3 files concurrently, group them by role,
     and concatenate them into a combined dictionary of DataFrames.
+    Uses a local pickle cache to speed up loads.
     """
     active_files = get_active_files()
     
@@ -84,20 +104,73 @@ def load_combined_dfs(on_progress=None) -> dict[str, pd.DataFrame]:
     total_files = len(flat_files)
     dfs_lists = {}
     
-    for idx, (role, fi) in enumerate(flat_files):
-        if on_progress:
+    if total_files == 0:
+        return {}
+
+    import concurrent.futures
+
+    def load_single_file(task_idx, role, fi):
+        s3_key = fi['s3_key']
+        cache_path = get_cache_path(s3_key)
+        
+        # 1. Try to load from cache
+        if os.path.exists(cache_path):
             try:
-                on_progress(fi['filename'], role, idx + 1, total_files)
-            except Exception:
-                pass
+                with open(cache_path, 'rb') as f:
+                    df = pickle.load(f)
+                return role, df, fi['filename'], None
+            except Exception as e:
+                print(f"Failed to read cache for {fi['filename']}: {e}")
+                
+        # 2. Download from S3 and parse
         try:
-            data = download_file_from_s3(fi['s3_key'])
+            data = download_file_from_s3(s3_key)
             df = load_file(io.BytesIO(data), fi['filename'])
+            
+            # Save to cache for next time
+            try:
+                with open(cache_path, 'wb') as f:
+                    pickle.dump(df, f)
+            except Exception as ce:
+                print(f"Failed to write cache for {fi['filename']}: {ce}")
+                
+            return role, df, fi['filename'], None
+        except Exception as e:
+            return role, None, fi['filename'], e
+
+    results_by_idx = [None] * total_files
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=min(12, total_files)) as executor:
+        future_to_info = {}
+        for idx, (role, fi) in enumerate(flat_files):
+            fut = executor.submit(load_single_file, idx, role, fi)
+            future_to_info[fut] = (idx, role, fi)
+            
+        completed_count = 0
+        for future in concurrent.futures.as_completed(future_to_info):
+            idx, role, fi = future_to_info[future]
+            completed_count += 1
+            if on_progress:
+                try:
+                    on_progress(fi['filename'], role, completed_count, total_files)
+                except Exception:
+                    pass
+            try:
+                role, df, filename, err = future.result()
+                if err:
+                    print(f"Error loading file {filename} for role {role}: {err}")
+                else:
+                    results_by_idx[idx] = df
+            except Exception as e:
+                print(f"Unexpected error in thread for {fi['filename']}: {e}")
+
+    # Reassemble in the exact original order
+    for idx, (role, fi) in enumerate(flat_files):
+        df = results_by_idx[idx]
+        if df is not None:
             if role not in dfs_lists:
                 dfs_lists[role] = []
             dfs_lists[role].append(df)
-        except Exception as e:
-            print(f"Error loading file {fi['filename']} for role {role}: {e}")
             
     dfs = {}
     for role, role_dfs in dfs_lists.items():
@@ -128,7 +201,7 @@ async def upload_files(
     roles: list[str] = Form(...),
 ):
     """
-    Upload files, save to S3, record in database,
+    Upload files concurrently, save to S3, record in database,
     and invalidate the combined analysis cache.
     """
     if len(files) != len(roles):
@@ -144,15 +217,22 @@ async def upload_files(
     if combined_sess:
         combined_sess.result = None
 
-    file_info = []
-    for uf, role in zip(files, roles):
+    global cached_dfs
+    cached_dfs = None
+
+    loop = asyncio.get_running_loop()
+
+    async def process_single(uf: UploadFile, r: str):
         data = await uf.read()
         try:
-            # 1. Upload to S3
-            s3_res = upload_file_to_s3(data, uf.filename, role)
-            # 2. Add to Database
-            db_res = add_uploaded_file(role, uf.filename, s3_res["s3_key"], s3_res["s3_url"], s3_res["row_count"])
-            file_info.append({
+            # 1. Upload to S3 (blocking, run in thread pool)
+            s3_res = await loop.run_in_executor(None, lambda: upload_file_to_s3(data, uf.filename, r))
+            # 2. Add to Database (blocking, run in thread pool)
+            db_res = await loop.run_in_executor(
+                None, 
+                lambda: add_uploaded_file(r, uf.filename, s3_res["s3_key"], s3_res["s3_url"], s3_res["row_count"])
+            )
+            return {
                 "id": db_res["id"],
                 "role": db_res["role"],
                 "filename": db_res["filename"],
@@ -160,17 +240,20 @@ async def upload_files(
                 "s3Url": db_res["s3_url"],
                 "rowCount": db_res["row_count"],
                 "uploadedAt": str(db_res["uploaded_at"]),
-            })
+            }
         except Exception as exc:
             raise HTTPException(422, f"Cannot process/upload '{uf.filename}': {exc}")
+
+    tasks = [process_single(uf, r) for uf, r in zip(files, roles)]
+    file_info = await asyncio.gather(*tasks)
 
     return {"session_id": "combined", "files": file_info}
 
 
 # ── Audit History Management ──────────────────────────────────────────────────
 @app.get("/api/history")
-async def list_history():
-    """List all active uploaded files."""
+def list_history():
+    """List all active uploaded files. Runs in standard threadpool."""
     try:
         files = get_active_files()
         return [
@@ -190,8 +273,8 @@ async def list_history():
 
 
 @app.delete("/api/history/{file_id}")
-async def delete_history_file(file_id: int):
-    """Soft delete a file from database and invalidate cached analysis."""
+def delete_history_file(file_id: int):
+    """Soft delete a file from database and invalidate cached analysis. Runs in standard threadpool."""
     try:
         file_info = get_file_by_id(file_id)
         if not file_info:
@@ -199,10 +282,21 @@ async def delete_history_file(file_id: int):
             
         delete_file(file_id)
         
+        # Remove local cache file if exists
+        cache_path = get_cache_path(file_info['s3_key'])
+        if os.path.exists(cache_path):
+            try:
+                os.remove(cache_path)
+            except Exception as e:
+                print(f"Failed to remove cache file: {e}")
+        
         # Invalidate combined session cache
         sess = session_store.get_session("combined")
         if sess:
             sess.result = None
+
+        global cached_dfs
+        cached_dfs = None
             
         return {"status": "success", "message": f"File '{file_info['filename']}' deleted successfully."}
     except HTTPException as he:
@@ -215,23 +309,38 @@ async def delete_history_file(file_id: int):
 async def replace_history_file(file_id: int, file: UploadFile = File(...)):
     """Replace an uploaded file with a new one in S3 and update database."""
     try:
-        file_info = get_file_by_id(file_id)
+        loop = asyncio.get_running_loop()
+        file_info = await loop.run_in_executor(None, lambda: get_file_by_id(file_id))
         if not file_info:
             raise HTTPException(404, "File not found.")
             
         role = file_info['role']
         data = await file.read()
         
+        # Remove old cache file
+        old_cache_path = get_cache_path(file_info['s3_key'])
+        if os.path.exists(old_cache_path):
+            try:
+                os.remove(old_cache_path)
+            except Exception as e:
+                print(f"Failed to remove old cache file: {e}")
+        
         # 1. Upload new file to S3
-        s3_res = upload_file_to_s3(data, file.filename, role)
+        s3_res = await loop.run_in_executor(None, lambda: upload_file_to_s3(data, file.filename, role))
         
         # 2. Update record in DB
-        updated = replace_file(file_id, file.filename, s3_res["s3_key"], s3_res["s3_url"], s3_res["row_count"])
+        updated = await loop.run_in_executor(
+            None,
+            lambda: replace_file(file_id, file.filename, s3_res["s3_key"], s3_res["s3_url"], s3_res["row_count"])
+        )
         
         # Invalidate combined session cache
         sess = session_store.get_session("combined")
         if sess:
             sess.result = None
+
+        global cached_dfs
+        cached_dfs = None
             
         return {
             "status": "success",
@@ -280,7 +389,9 @@ async def analyze(session_id: str):
                             lambda: queue.put_nowait({"stage": "loading", "pct": pct, "message": msg})
                         )
                         
+                    global cached_dfs
                     dfs = await loop.run_in_executor(None, lambda: load_combined_dfs(sync_on_progress))
+                    cached_dfs = dfs
                     
                     if not dfs:
                         raise ValueError("No active sheets found or failed to load them.")
@@ -343,7 +454,7 @@ async def analyze(session_id: str):
 
 # ── AI Insights ───────────────────────────────────────────────────────────────
 @app.post("/api/insights/{section}")
-async def insights(section: str, body: dict):
+def insights(section: str, body: dict):
     """
     Returns AI-generated narrative for a section.
     Body: {kpis: {...}, top_risks?: [...]}
@@ -361,13 +472,13 @@ async def insights(section: str, body: dict):
 
 # ── Health ────────────────────────────────────────────────────────────────────
 @app.get("/api/health")
-async def health():
+def health():
     return {"status": "ok"}
 
 
 # ── Get stored result ─────────────────────────────────────────────────────────
 @app.get("/api/result/{session_id}")
-async def get_result(session_id: str):
+def get_result(session_id: str):
     if session_id == "combined":
         sess = session_store.get_session("combined")
         if sess is None or sess.result is None:
@@ -384,3 +495,28 @@ async def get_result(session_id: str):
     if sess.result is None:
         raise HTTPException(404, "Result not yet computed.")
     return sanitize_for_json(sess.result)
+
+
+# ── Price Variance Endpoints ───────────────────────────────────────────────
+@app.get("/api/analysis/price-variance-same")
+async def get_price_variance_same():
+    try:
+        loop = asyncio.get_running_loop()
+        dfs = await loop.run_in_executor(None, get_cached_dfs_or_load)
+        from app.analysis.price_variance_new import run_variance_analysis
+        res = await loop.run_in_executor(None, lambda: run_variance_analysis(dfs, "same"))
+        return sanitize_for_json(res)
+    except Exception as e:
+        raise HTTPException(500, f"Error computing same-vendor price variance: {str(e)}")
+
+@app.get("/api/analysis/price-variance-cross")
+async def get_price_variance_cross():
+    try:
+        loop = asyncio.get_running_loop()
+        dfs = await loop.run_in_executor(None, get_cached_dfs_or_load)
+        from app.analysis.price_variance_new import run_variance_analysis
+        res = await loop.run_in_executor(None, lambda: run_variance_analysis(dfs, "cross"))
+        return sanitize_for_json(res)
+    except Exception as e:
+        raise HTTPException(500, f"Error computing cross-vendor price variance: {str(e)}")
+

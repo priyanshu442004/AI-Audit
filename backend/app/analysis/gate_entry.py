@@ -41,6 +41,14 @@ def normalize_id(val) -> str:
         val_str = val_str[:-2]
     return val_str
 
+def clean_str_val(val, default="—") -> str:
+    if pd.isna(val) or val is None:
+        return default
+    val_str = str(val).strip()
+    if val_str.lower() in ("nan", "none", "null", ""):
+        return default
+    return val_str
+
 def parse_single_date(val) -> pd.Timestamp | None:
     if pd.isna(val) or val is None:
         return None
@@ -247,15 +255,29 @@ def run(dfs_or_ge: dict[str, pd.DataFrame] | pd.DataFrame, df_grpo_raw: pd.DataF
     df_ge_raw["parsed_ge_date"] = pd.to_datetime(df_ge_raw[col_ge_date], errors='coerce', dayfirst=True) if col_ge_date else pd.NaT
     df_ge_raw["parsed_v_bill_date"] = pd.to_datetime(df_ge_raw[col_ge_vendor_bill_date], errors='coerce', dayfirst=True) if col_ge_vendor_bill_date else pd.NaT
 
+    valid_pos = set()
+    if df_po_raw is not None and not df_po_raw.empty:
+        col_po_no = find_col(df_po_raw, ["po no", "po no.", "po number", "purchase order no", "purchase order number"])
+        if col_po_no:
+            valid_pos = {normalize_id(x) for x in df_po_raw[col_po_no].dropna()}
+
     for _, row in df_ge_raw.iterrows():
         ge_no_raw = row.get(col_ge_no)
         ge_no = normalize_id(ge_no_raw)
         
+        # Strict checking: skip if ge_no is blank or null
+        if not ge_no or ge_no.lower() in ("nan", "none", "null"):
+            continue
+            
         ge_date_val = row.get("parsed_ge_date")
         ge_date = ge_date_val if pd.notna(ge_date_val) else None
         
         po_no_raw = row.get(col_ge_po_no) if col_ge_po_no else None
         po_no = normalize_id(po_no_raw)
+        
+        # Strictly validate PO number against Purchase Order Report
+        if po_no and valid_pos and po_no not in valid_pos:
+            po_no = ""
         
         # Vendor Bill Date
         v_bill_date_val = row.get("parsed_v_bill_date")
@@ -290,7 +312,7 @@ def run(dfs_or_ge: dict[str, pd.DataFrame] | pd.DataFrame, df_grpo_raw: pd.DataF
             matched_grpos = []
 
         def fmt_dt(dt):
-            return dt.strftime("%d/%m/%y") if dt else ""
+            return dt.strftime("%d/%m/%y") if dt else "—"
 
         if matched_grpos:
             for r_grpo in matched_grpos:
@@ -312,7 +334,9 @@ def run(dfs_or_ge: dict[str, pd.DataFrame] | pd.DataFrame, df_grpo_raw: pd.DataF
                     a_no = normalize_id(r_ap.get(col_ap_inv_no))
                     if a_no and a_no not in ap_numbers:
                         ap_numbers.append(a_no)
-                ap_no_str = ", ".join(ap_numbers)
+
+                if not ap_numbers:
+                    ap_numbers = ["—"]
 
                 # Vendor Country logic
                 currency = str(r_grpo.get(col_grpo_currency, "")).strip() if col_grpo_currency else ""
@@ -321,7 +345,7 @@ def run(dfs_or_ge: dict[str, pd.DataFrame] | pd.DataFrame, df_grpo_raw: pd.DataF
                 vendor_country = "India" if currency.upper() in ("INR", "") else "USA"
 
                 # Days(GRPO-GE)
-                days_val = ""
+                days_val = "—"
                 is_exc = 0
                 exceeds_3 = 0
                 if grpo_date and ge_date:
@@ -343,39 +367,53 @@ def run(dfs_or_ge: dict[str, pd.DataFrame] | pd.DataFrame, df_grpo_raw: pd.DataF
                 rate_val = parse_numeric_val(r_grpo.get(col_grpo_rate)) if col_grpo_rate else 0.0
                 value_val = parse_numeric_val(r_grpo.get(col_grpo_line_total)) if col_grpo_line_total else 0.0
 
-                rec = {
-                    "Gate Entry number": ge_no,
-                    "Gate Entry Date": fmt_dt(ge_date),
-                    "PO Number": po_no,
-                    "GRN Number": g_no,
-                    "AP Invoice Number": ap_no_str,
-                    "GRPO Date": fmt_dt(grpo_date),
-                    "Vendor Code": str(r_grpo.get(col_grpo_vendor_code, "")).strip() if col_grpo_vendor_code else "",
-                    "Vendor Name": str(r_grpo.get(col_grpo_vendor_name, "")).strip() if col_grpo_vendor_name else "",
-                    "Vendor Country": vendor_country,
-                    "Vendor Bill Number": str(r_grpo.get(col_grpo_vendor_ref, "")).strip() if col_grpo_vendor_ref else "",
-                    "Item Code": str(r_grpo.get(col_grpo_item_code, "")).strip() if col_grpo_item_code else "",
-                    "Item Description": str(r_grpo.get(col_grpo_item_desc, "")).strip() if col_grpo_item_desc else "",
-                    "Item Group": str(r_grpo.get(col_grpo_item_group, "")).strip() if col_grpo_item_group else "",
-                    "Quantity": qty_val,
-                    "Rate(INR)": rate_val,
-                    "Value(INR)": value_val,
-                    "Days(GRPO-GE)": days_val,
-                    "Seq Exception(GE>GRPO)": is_exc,
-                    "Exceeds 3 days": exceeds_3
-                }
-                records.append(rec)
-                
-                if is_exc == 1:
-                    exceptions_rows.append({
-                        "GE No": ge_no,
-                        "GE Date": fmt_dt(ge_date),
+                # Vendor fallbacks
+                v_code = clean_str_val(r_grpo.get(col_grpo_vendor_code, "")) if col_grpo_vendor_code else "—"
+                if v_code == "—" and col_ge_vendor_code:
+                    v_code = clean_str_val(row.get(col_ge_vendor_code, ""))
+                    
+                v_name = clean_str_val(r_grpo.get(col_grpo_vendor_name, "")) if col_grpo_vendor_name else "—"
+                if v_name == "—" and col_ge_vendor_name:
+                    v_name = clean_str_val(row.get(col_ge_vendor_name, ""))
+
+                v_bill_no = clean_str_val(r_grpo.get(col_grpo_vendor_ref, "")) if col_grpo_vendor_ref else "—"
+                if v_bill_no == "—" and col_ge_vendor_bill_no:
+                    v_bill_no = clean_str_val(row.get(col_ge_vendor_bill_no, ""))
+
+                for a_no in ap_numbers:
+                    rec = {
+                        "Gate Entry number": ge_no,
+                        "Gate Entry Date": fmt_dt(ge_date),
+                        "PO Number": po_no if po_no else "—",
+                        "GRN Number": g_no if g_no else "—",
+                        "AP Invoice Number": a_no,
                         "GRPO Date": fmt_dt(grpo_date),
-                        "Vendor Bill Date": fmt_dt(v_bill_date),
-                        "Vendor Bill No": rec["Vendor Bill Number"],
-                        "Vendor Code": rec["Vendor Code"],
-                        "GRPO No": g_no,
-                    })
+                        "Vendor Code": v_code,
+                        "Vendor Name": v_name,
+                        "Vendor Country": vendor_country,
+                        "Vendor Bill Number": v_bill_no,
+                        "Item Code": clean_str_val(r_grpo.get(col_grpo_item_code, "")),
+                        "Item Description": clean_str_val(r_grpo.get(col_grpo_item_desc, "")),
+                        "Item Group": clean_str_val(r_grpo.get(col_grpo_item_group, "")),
+                        "Quantity": qty_val,
+                        "Rate(INR)": rate_val,
+                        "Value(INR)": value_val,
+                        "Days(GRPO-GE)": days_val,
+                        "Seq Exception(GE>GRPO)": is_exc,
+                        "Exceeds 3 days": exceeds_3
+                    }
+                    records.append(rec)
+                    
+                    if is_exc == 1:
+                        exceptions_rows.append({
+                            "GE No": ge_no,
+                            "GE Date": fmt_dt(ge_date),
+                            "GRPO Date": fmt_dt(grpo_date),
+                            "Vendor Bill Date": fmt_dt(v_bill_date),
+                            "Vendor Bill No": v_bill_no,
+                            "Vendor Code": v_code,
+                            "GRPO No": g_no,
+                        })
         else:
             missing_grpo_date_cnt += 1
             currency = po_currency_lookup.get(po_no, "")
@@ -384,21 +422,21 @@ def run(dfs_or_ge: dict[str, pd.DataFrame] | pd.DataFrame, df_grpo_raw: pd.DataF
             rec = {
                 "Gate Entry number": ge_no,
                 "Gate Entry Date": fmt_dt(ge_date),
-                "PO Number": po_no,
-                "GRN Number": "",
-                "AP Invoice Number": "",
-                "GRPO Date": "",
-                "Vendor Code": str(row.get(col_ge_vendor_code, "")).strip() if col_ge_vendor_code else "",
-                "Vendor Name": str(row.get(col_ge_vendor_name, "")).strip() if col_ge_vendor_name else "",
+                "PO Number": po_no if po_no else "—",
+                "GRN Number": "—",
+                "AP Invoice Number": "—",
+                "GRPO Date": "—",
+                "Vendor Code": clean_str_val(row.get(col_ge_vendor_code, "")),
+                "Vendor Name": clean_str_val(row.get(col_ge_vendor_name, "")),
                 "Vendor Country": vendor_country,
-                "Vendor Bill Number": str(row.get(col_ge_vendor_bill_no, "")).strip() if col_ge_vendor_bill_no else "",
-                "Item Code": "",
-                "Item Description": "",
-                "Item Group": "",
+                "Vendor Bill Number": clean_str_val(row.get(col_ge_vendor_bill_no, "")),
+                "Item Code": "—",
+                "Item Description": "—",
+                "Item Group": "—",
                 "Quantity": 0.0,
                 "Rate(INR)": 0.0,
                 "Value(INR)": 0.0,
-                "Days(GRPO-GE)": "",
+                "Days(GRPO-GE)": "—",
                 "Seq Exception(GE>GRPO)": 0,
                 "Exceeds 3 days": 0
             }
@@ -410,12 +448,12 @@ def run(dfs_or_ge: dict[str, pd.DataFrame] | pd.DataFrame, df_grpo_raw: pd.DataF
     seq_exceptions = sum(1 for r in records if r["Seq Exception(GE>GRPO)"] == 1)
     exceeds_3_days = sum(1 for r in records if r["Exceeds 3 days"] == 1)
     
-    unique_pos = len(set(r["PO Number"] for r in records if r["PO Number"]))
-    unique_grns = len(set(r["GRN Number"] for r in records if r["GRN Number"]))
-    unique_aps = len(set(r["AP Invoice Number"] for r in records if r["AP Invoice Number"]))
+    unique_pos = len(set(r["PO Number"] for r in records if r["PO Number"] and r["PO Number"] != "—"))
+    unique_grns = len(set(r["GRN Number"] for r in records if r["GRN Number"] and r["GRN Number"] != "—"))
+    unique_aps = len(set(r["AP Invoice Number"] for r in records if r["AP Invoice Number"] and r["AP Invoice Number"] != "—"))
     
-    unique_po_flagged = len(set(r["PO Number"] for r in records if r["Seq Exception(GE>GRPO)"] == 1 and r["PO Number"]))
-    unique_grn_flagged = len(set(r["GRN Number"] for r in records if r["Seq Exception(GE>GRPO)"] == 1 and r["GRN Number"]))
+    unique_po_flagged = len(set(r["PO Number"] for r in records if r["Seq Exception(GE>GRPO)"] == 1 and r["PO Number"] and r["PO Number"] != "—"))
+    unique_grn_flagged = len(set(r["GRN Number"] for r in records if r["Seq Exception(GE>GRPO)"] == 1 and r["GRN Number"] and r["GRN Number"] != "—"))
 
     pass_count = total_lines - seq_exceptions
     integrity_pct = round(pass_count / total_lines * 100, 2) if total_lines else 0.0

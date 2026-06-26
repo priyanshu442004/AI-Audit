@@ -1,6 +1,7 @@
 import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
+from psycopg2.pool import ThreadedConnectionPool
 from dotenv import load_dotenv
 
 # Load env variables
@@ -8,10 +9,20 @@ load_dotenv(os.path.join(os.path.dirname(__file__), '../../.env'))
 
 DB_URL = os.environ.get("DATABASE_URL")
 
+_pool = None
+
 def get_connection():
+    global _pool
     if not DB_URL:
         raise ValueError("DATABASE_URL is not set in environment variables.")
-    return psycopg2.connect(DB_URL)
+    if _pool is None:
+        _pool = ThreadedConnectionPool(1, 20, DB_URL)
+    return _pool.getconn()
+
+def put_connection(conn):
+    global _pool
+    if _pool and conn:
+        _pool.putconn(conn)
 
 def init_db():
     conn = get_connection()
@@ -35,7 +46,7 @@ def init_db():
         raise e
     finally:
         cur.close()
-        conn.close()
+        put_connection(conn)
 
 def add_uploaded_file(role: str, filename: str, s3_key: str, s3_url: str, row_count: int):
     conn = get_connection()
@@ -54,7 +65,7 @@ def add_uploaded_file(role: str, filename: str, s3_key: str, s3_url: str, row_co
         raise e
     finally:
         cur.close()
-        conn.close()
+        put_connection(conn)
 
 def get_active_files():
     conn = get_connection()
@@ -72,7 +83,7 @@ def get_active_files():
         raise e
     finally:
         cur.close()
-        conn.close()
+        put_connection(conn)
 
 def get_file_by_id(file_id: int):
     conn = get_connection()
@@ -89,7 +100,7 @@ def get_file_by_id(file_id: int):
         raise e
     finally:
         cur.close()
-        conn.close()
+        put_connection(conn)
 
 def delete_file(file_id: int):
     conn = get_connection()
@@ -106,7 +117,7 @@ def delete_file(file_id: int):
         raise e
     finally:
         cur.close()
-        conn.close()
+        put_connection(conn)
 
 def replace_file(file_id: int, filename: str, s3_key: str, s3_url: str, row_count: int):
     conn = get_connection()
@@ -126,4 +137,4 @@ def replace_file(file_id: int, filename: str, s3_key: str, s3_url: str, row_coun
         raise e
     finally:
         cur.close()
-        conn.close()
+        put_connection(conn)

@@ -21,10 +21,12 @@ export default function History() {
   const [error, setError] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const [replacingId, setReplacingId] = useState(null)
+  const [selectedIds, setSelectedIds] = useState([])
   const fileInputRef = useRef(null)
 
   const fetchHistory = () => {
     setLoading(true)
+    setSelectedIds([])
     fetch('/api/history')
       .then((res) => {
         if (!res.ok) throw new Error('Failed to fetch history')
@@ -55,6 +57,27 @@ export default function History() {
       fetchHistory()
     } catch (err) {
       alert(`Error deleting file: ${err.message}`)
+    }
+  }
+
+  const handleBulkDelete = async () => {
+    if (!window.confirm(`Are you sure you want to delete the ${selectedIds.length} selected files?`)) {
+      return
+    }
+    setLoading(true)
+    try {
+      await Promise.all(
+        selectedIds.map(id =>
+          fetch(`/api/history/${id}`, { method: 'DELETE' }).then(res => {
+            if (!res.ok) throw new Error('Failed to delete some files')
+          })
+        )
+      )
+      setSelectedIds([])
+      fetchHistory()
+    } catch (err) {
+      alert(`Error performing bulk delete: ${err.message}`)
+      fetchHistory()
     }
   }
 
@@ -184,6 +207,18 @@ export default function History() {
             className="w-full pl-9 pr-4 py-2 text-sm bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
         </div>
+
+        {selectedIds.length > 0 && (
+          <button
+            onClick={handleBulkDelete}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-sm font-bold shadow-md transition-all animate-fade-in"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+            Delete Selected ({selectedIds.length})
+          </button>
+        )}
       </div>
 
       {/* Main Files Table */}
@@ -205,6 +240,20 @@ export default function History() {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-slate-50 dark:bg-slate-950/80 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 dark:border-slate-800/80">
+                  <th className="px-6 py-4 w-12 text-center">
+                    <input
+                      type="checkbox"
+                      checked={filteredFiles.length > 0 && selectedIds.length === filteredFiles.length}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedIds(filteredFiles.map(f => f.id))
+                        } else {
+                          setSelectedIds([])
+                        }
+                      }}
+                      className="rounded border-slate-300 dark:border-slate-700 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                    />
+                  </th>
                   <th className="px-6 py-4">KPI Sheet Role</th>
                   <th className="px-6 py-4">Filename</th>
                   <th className="px-6 py-4 text-right">Row Count</th>
@@ -215,21 +264,35 @@ export default function History() {
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80 text-sm">
                 {filteredFiles.map((file) => (
                   <tr key={file.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-900/30 transition-colors">
+                    <td className="px-6 py-4 w-12 text-center">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.includes(file.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedIds(prev => [...prev, file.id])
+                          } else {
+                            setSelectedIds(prev => prev.filter(id => id !== file.id))
+                          }
+                        }}
+                        className="rounded border-slate-300 dark:border-slate-700 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                      />
+                    </td>
                     <td className="px-6 py-4 font-semibold text-slate-900 dark:text-white">
                       <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400">
                         {ROLE_LABELS[file.role] || file.role}
                       </span>
                     </td>
                     <td className="px-6 py-4 text-slate-600 dark:text-slate-300 font-mono text-xs max-w-xs truncate">
-                      <a href={file.s3Url} target="_blank" rel="noopener noreferrer" className="hover:underline hover:text-blue-500" title={file.filename}>
+                      <a href={file.s3Url || file.s3_url} target="_blank" rel="noopener noreferrer" className="hover:underline hover:text-blue-500" title={file.filename}>
                         {file.filename}
                       </a>
                     </td>
                     <td className="px-6 py-4 text-right font-semibold text-slate-900 dark:text-white">
-                      {file.rowCount.toLocaleString()}
+                      {(file.rowCount ?? file.row_count ?? 0).toLocaleString()}
                     </td>
                     <td className="px-6 py-4 text-slate-500 dark:text-slate-400 text-xs">
-                      {new Date(file.uploadedAt).toLocaleString()}
+                      {new Date(file.uploadedAt || file.uploaded_at || Date.now()).toLocaleString()}
                     </td>
                     <td className="px-6 py-4 text-center">
                       <div className="flex items-center justify-center gap-2">

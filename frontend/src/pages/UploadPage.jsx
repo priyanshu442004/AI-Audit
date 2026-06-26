@@ -82,18 +82,12 @@ export default function UploadPage() {
       const items = Object.entries(uploaded).map(([role, file]) => ({ role, file }))
       const total = items.length
       
-      for (let i = 0; i < total; i++) {
-        const { role, file } = items[i]
-        const slot = FILE_SLOTS.find(s => s.role === role)
-        const label = slot ? slot.label : role
-        
-        setProgress({
-          pct: Math.round((i / total) * 5),
-          message: `Uploading ${file.name} (${label}) to S3 (${i + 1}/${total})...`
-        })
-        
-        await uploadFiles([{ role, file }])
-      }
+      setProgress({
+        pct: 2,
+        message: `Uploading all ${total} files`
+      })
+      
+      await uploadFiles(items)
       
       setProgress({
         pct: 5,
@@ -260,28 +254,26 @@ export default function UploadPage() {
               {isComplete ? 'Launch P2P Audit Analysis' : 'Upload All Mandatory Files to Start'}
             </button>
 
-            {hasHistory && (
-              <button
-                onClick={() => {
-                  setSessionId('combined')
-                  setPage('loading')
-                  analyzeStream('combined', {
-                    onProgress: ({ pct, message }) => setProgress({ pct, message }),
-                    onResult: (result) => {
-                      setResults(result)
-                      setPage('dashboard')
-                    },
-                    onError: (msg) => {
-                      setError(msg)
-                      setPage('upload')
-                    },
-                  })
-                }}
-                className="w-full sm:w-auto px-10 py-4 rounded-xl text-base font-bold text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 shadow-md transition-all duration-300 bg-white/40 dark:bg-slate-900/30 backdrop-blur-sm"
-              >
-                Go directly to Dashboard (S3 History)
-              </button>
-            )}
+            <button
+              onClick={() => {
+                setSessionId('combined')
+                setPage('loading')
+                analyzeStream('combined', {
+                  onProgress: ({ pct, message }) => setProgress({ pct, message }),
+                  onResult: (result) => {
+                    setResults(result)
+                    setPage('dashboard')
+                  },
+                  onError: (msg) => {
+                    setError(msg)
+                    setPage('upload')
+                  },
+                })
+              }}
+              className="w-full sm:w-auto px-10 py-4 rounded-xl text-base font-bold text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 shadow-md transition-all duration-300 bg-white/40 dark:bg-slate-900/30 backdrop-blur-sm"
+            >
+              Go directly to Dashboard
+            </button>
           </div>
           
           <span className="text-xs text-slate-400 dark:text-slate-500">
