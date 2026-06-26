@@ -74,7 +74,7 @@ async def run_pipeline(
     await emit("po_status", 18, "Running PO status analysis…")
     if "purchase_order" in dfs:
         try:
-            results["postatus"] = po_status.run(dfs["purchase_order"])
+            results["postatus"] = po_status.run(dfs)
         except Exception as e:
             results["postatus"] = {"error": str(e), "kpis": {}, "charts": {}, "tables": []}
 
@@ -82,7 +82,7 @@ async def run_pipeline(
     await emit("gate_entry", 28, "Checking gate-entry date integrity…")
     if "gate_entry" in dfs and "grpo" in dfs:
         try:
-            results["gateentry"] = gate_entry.run(dfs["gate_entry"], dfs["grpo"])
+            results["gateentry"] = gate_entry.run(dfs)
         except Exception as e:
             results["gateentry"] = {"error": str(e), "kpis": {}, "charts": {}, "tables": []}
 

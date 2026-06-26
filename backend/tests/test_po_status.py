@@ -1,6 +1,7 @@
 """Tests for PO Status module."""
 
 import pytest
+import pandas as pd
 from app.analysis.po_status import run
 
 
@@ -52,3 +53,75 @@ def test_all_closed(po_df):
     result = run(po_df)
     assert result["kpis"]["open_lines"] == 0
     assert result["kpis"]["closed_lines"] == 4
+
+
+def test_cross_file_joins_and_kpis(po_df, grpo_df, pr_df, ge_df):
+    # Prepare currency and posting dates in po_df
+    po_df["Document currency"] = ["INR", "USD", "INR", "INR"]
+    po_df["Document Date"] = ["2026-03-01", "2026-03-02", "2026-03-03", "2026-03-04"]
+    po_df["Posting Date"] = ["2026-03-01", "2026-03-02", "2026-03-03", "2026-03-04"]
+    po_df["Document Status"] = ["OPEN", "OPEN", "Closed", "Closed"]
+    po_df["PO Qty"] = ["100", "50", "200", "30"]
+    po_df["PO Price"] = ["10.0", "20.0", "10.0", "50.0"]
+    po_df["Document Rate"] = ["1.0", "80.0", "1.0", "1.0"]
+    po_df["Line Total"] = ["1000.0", "80000.0", "2000.0", "1500.0"]
+    po_df["Open Qty"] = ["20", "50", "0", "0"]
+
+    # Align columns in grpo_df
+    # PO001/ITEM01 got 80 received
+    grpo_df["PO Number"] = grpo_df["Base Ref"]
+    grpo_df["Item Code"] = grpo_df["Item No."]
+    grpo_df["PO Qty"] = grpo_df["Received Qty"] # alias for received qty
+    grpo_df["Posting Date"] = ["2026-03-01", "2026-03-02", "2026-03-03"]
+
+    # Align columns in pr_df (AP Invoice)
+    pr_df["PO Number"] = pr_df["PO No"]
+    pr_df["GRPO Number"] = ["G001", "G002", "G003", "G004"]
+    pr_df["AP Invoice No"] = pr_df["Invoice No"]
+
+    # Gate Entry
+    ge_df["Purchase Order Number"] = ["PO001", "PO001", "PO002", "PO003"]
+    ge_df["Gate Entry Date"] = ge_df["GE Date"]
+
+    # Combine into dfs dict
+    dfs = {
+        "purchase_order": po_df,
+        "grpo": grpo_df,
+        "ap_invoice_report": pr_df,
+        "gate_entry": ge_df,
+        "holiday": pd.DataFrame({"Date": ["2026-03-01"]}) # March 1 is holiday
+    }
+
+    result = run(dfs)
+    kpis = result["kpis"]
+
+    # Verify new KPIs
+    assert kpis["po_lines"] == 4
+    assert kpis["open_lines_pending"] == 2
+    assert kpis["po_value_india"] == 4500.0 # PO001 (1000) + PO002 (2000) + PO003 (1500)
+    assert kpis["po_value_foreign"] == 80000.0 # PO001/ITEM02 in USD (80000)
+    assert kpis["open_po_value"] == 81000.0 # PO001 (1000) + PO001/ITEM02 (80000)
+    assert kpis["unique_grn_nos"] == 3 # G001, G002, G003
+    assert kpis["unique_ap_invoices"] == 3 # INV001, INV002, INV003
+
+    # Check row-level values in table
+    table_rows = result["tables"][3]["rows"]
+    assert len(table_rows) == 4
+
+    # PO001 ITEM01
+    row0 = table_rows[0]
+    assert row0["PO Number"] == "PO001"
+    assert row0["Vendor Country"] == "India"
+    assert row0["Rate(INR)"] == 10.0
+    assert row0["Received Qty."] == 80.0
+    assert row0["Pending Qty."] == 20.0
+    assert row0["%age Received"] == "80.00%"
+    assert row0["Open Value(INR)"] == 200.0
+    assert row0["Holiday flag"] == 1 # March 1 is holiday
+
+    # PO001 ITEM02 (USD)
+    row1 = table_rows[1]
+    assert row1["Vendor Country"] == "USA"
+    assert row1["Rate(INR)"] == 1600.0 # 20.0 * 80.0
+    assert row1["Holiday flag"] == 0 # March 2 is not holiday (unless weekend)
+

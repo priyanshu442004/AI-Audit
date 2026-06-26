@@ -181,4 +181,4 @@ async def get_result(session_id: str):
         raise HTTPException(404, "Session not found.")
     if sess.result is None:
         raise HTTPException(404, "Result not yet computed.")
-    return sess.result
+    return sanitize_for_json(sess.result)
