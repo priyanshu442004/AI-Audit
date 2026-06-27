@@ -9,6 +9,10 @@ import PoStatus     from '../sections/PoStatus'
 import GateEntry    from '../sections/GateEntry'
 import PriceVarianceSame from '../sections/PriceVarianceSame'
 import PriceVarianceCross from '../sections/PriceVarianceCross'
+import GeToGrn     from '../sections/GeToGrn'
+import GrnToAp     from '../sections/GrnToAp'
+import QtyVariance  from '../sections/QtyVariance'
+import PriceVariance from '../sections/PriceVariance'
 import GlBalances   from '../sections/GlBalances'
 import PaymentAging from '../sections/PaymentAging'
 import Msme         from '../sections/Msme'
@@ -32,6 +36,23 @@ const SECTIONS = {
   datamap:            DataMap,
   appendix:           Appendix,
   history:            History,
+  cover:         Cover,
+  executive:     Executive,
+  postatus:      PoStatus,
+  gateentry:     GateEntry,
+  getogrn:       GeToGrn,
+  grntoap:       GrnToAp,
+  qtyvariance:   QtyVariance,
+  pricevariance: PriceVariance,
+  glbalances:    GlBalances,
+  paymentaging:  PaymentAging,
+  msme:          Msme,
+  vendormaster:  VendorMaster,
+  grpoexcept:    GrpoExcept,
+  threeway:      ThreeWay,
+  datamap:       DataMap,
+  appendix:      Appendix,
+  history:       History,
 }
 
 export default function Dashboard() {

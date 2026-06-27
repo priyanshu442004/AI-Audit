@@ -24,8 +24,12 @@ const DEFAULT_NARRATIVES = {
     `MSME compliance check shows ${kpis.msme_breaches ?? 0} payments exceeding the 45-day statutory limit, incurring a potential interest penalty of ₹${kpis.interest_penalty_l ?? 0} L. Immediate cash flow prioritisation is recommended.`,
   vendormaster: (kpis) => 
     `Vendor Master validation flagged ${kpis.missing_gstin ?? 0} vendors missing valid GSTINs and ${kpis.duplicate_pan ?? 0} accounts with duplicate PAN details, creating critical tax compliance and reporting vulnerabilities.`,
-  grpoexcept: (kpis) => 
+  grpoexcept: (kpis) =>
     `GRPO exceptions report indicates ${kpis.unlinked_grpo ?? 0} unlinked GRPO lines and ${kpis.invoice_before_grpo ?? 0} instances where the AP invoice date preceded the physical goods receipt.`,
+  getogrn: (kpis) =>
+    `GE to GRN reconciliation identified ${kpis.unmatched_ge_lines ?? 0} unmatched Gate Entry lines and ${kpis.unmatched_grn_lines ?? 0} orphaned GRN records. Of ${kpis.total_ge_lines ?? 0} Gate Entry lines processed, the overall match rate stands at ${kpis.match_rate_pct ?? 0}%, with ${kpis.qty_mismatch_lines ?? 0} quantity discrepancies flagged for follow-up.`,
+  grntoap: (kpis) =>
+    `GRN to AP Invoice reconciliation identified ${kpis.sla_breaches ?? 0} invoices received beyond the agreed SLA window, representing an SLA compliance rate of ${kpis.sla_compliance_pct ?? 0}%. A further ${kpis.invoices_before_grn ?? 0} sequence exceptions were detected where the AP invoice date precedes the physical goods receipt — a high-risk indicator of potential pre-invoicing. ${kpis.grns_without_invoice ?? 0} GRNs remain without a matching AP invoice and require follow-up.`,
   threeway: (kpis) => 
     `Three-way matching shows a perfect match rate of ${kpis.threeway_pct ?? 0}% on total invoice volume. The remaining ${100 - (kpis.threeway_pct ?? 0)}% of invoices have quantity, price, or document lineage variances requiring manual resolution.`
 }
