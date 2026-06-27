@@ -314,133 +314,153 @@ def run(dfs_or_ge: dict[str, pd.DataFrame] | pd.DataFrame, df_grpo_raw: pd.DataF
         def fmt_dt(dt):
             return dt.strftime("%d/%m/%y") if dt else "—"
 
+        unique_grns = []
+        unique_aps = []
+        unique_grpo_dts = []
+        unique_item_codes = []
+        unique_item_descs = []
+        unique_item_groups = []
+        unique_rates = []
+        
+        qty_sum = 0.0
+        val_sum = 0.0
+        
+        days_vals = []
+        is_exc = 0
+        exceeds_3 = 0
+        
+        v_code_grpo = "—"
+        v_name_grpo = "—"
+        v_bill_no_grpo = "—"
+        currency = ""
+        
         if matched_grpos:
             for r_grpo in matched_grpos:
                 g_no = normalize_id(r_grpo.get(col_grpo_no))
+                if g_no and g_no != "—" and g_no not in unique_grns:
+                    unique_grns.append(g_no)
+                
                 grpo_date_val = r_grpo.get("parsed_grpo_date")
                 grpo_date = grpo_date_val if pd.notna(grpo_date_val) else None
+                if grpo_date:
+                    grpo_date_str = fmt_dt(grpo_date)
+                    if grpo_date_str not in unique_grpo_dts:
+                        unique_grpo_dts.append(grpo_date_str)
+                        
+                    if ge_date:
+                        days_val = int((grpo_date - ge_date).days)
+                        days_vals.append(str(days_val))
+                        if days_val < 0:
+                            is_exc = 1
+                        if days_val > 3:
+                            exceeds_3 = 1
                 
                 # Fetch AP Invoices matching this po_no and g_no
-                matched_aps = []
                 if g_no:
                     ap_list = ap_lookup.get((po_no, g_no))
                     if not ap_list:
                         ap_list = ap_lookup.get(("", g_no))
                     if ap_list:
-                        matched_aps = ap_list
-
-                ap_numbers = []
-                for r_ap in matched_aps:
-                    a_no = normalize_id(r_ap.get(col_ap_inv_no))
-                    if a_no and a_no not in ap_numbers:
-                        ap_numbers.append(a_no)
-
-                if not ap_numbers:
-                    ap_numbers = ["—"]
-
-                # Vendor Country logic
-                currency = str(r_grpo.get(col_grpo_currency, "")).strip() if col_grpo_currency else ""
-                if not currency:
-                    currency = po_currency_lookup.get(po_no, "")
-                vendor_country = "India" if currency.upper() in ("INR", "") else "USA"
-
-                # Days(GRPO-GE)
-                days_val = "—"
-                is_exc = 0
-                exceeds_3 = 0
-                if grpo_date and ge_date:
-                    days_val = int((grpo_date - ge_date).days)
-                    if days_val < 0:
-                        is_exc = 1
-                        ge_gt_grpo_cnt += 1
-                    elif days_val > 0:
-                        ge_lt_grpo_cnt += 1
-                    else:
-                        ge_eq_grpo_cnt += 1
-                    
-                    if days_val > 3:
-                        exceeds_3 = 1
-                else:
-                    missing_grpo_date_cnt += 1
-
+                        for r_ap in ap_list:
+                            a_no = normalize_id(r_ap.get(col_ap_inv_no))
+                            if a_no and a_no != "—" and a_no not in unique_aps:
+                                unique_aps.append(a_no)
+                                
+                # Item details
+                if col_grpo_item_code:
+                    ic = clean_str_val(r_grpo.get(col_grpo_item_code, ""))
+                    if ic and ic != "—" and ic not in unique_item_codes:
+                        unique_item_codes.append(ic)
+                if col_grpo_item_desc:
+                    idsc = clean_str_val(r_grpo.get(col_grpo_item_desc, ""))
+                    if idsc and idsc != "—" and idsc not in unique_item_descs:
+                        unique_item_descs.append(idsc)
+                if col_grpo_item_group:
+                    ig = clean_str_val(r_grpo.get(col_grpo_item_group, ""))
+                    if ig and ig != "—" and ig not in unique_item_groups:
+                        unique_item_groups.append(ig)
+                        
                 qty_val = parse_numeric_val(r_grpo.get(col_grpo_qty)) if col_grpo_qty else 0.0
                 rate_val = parse_numeric_val(r_grpo.get(col_grpo_rate)) if col_grpo_rate else 0.0
                 value_val = parse_numeric_val(r_grpo.get(col_grpo_line_total)) if col_grpo_line_total else 0.0
+                
+                qty_sum += qty_val
+                val_sum += value_val
+                if rate_val > 0:
+                    rate_str = f"{rate_val:.2f}"
+                    if rate_str not in unique_rates:
+                        unique_rates.append(rate_str)
+                        
+                if v_code_grpo == "—" and col_grpo_vendor_code:
+                    v_code_grpo = clean_str_val(r_grpo.get(col_grpo_vendor_code, ""))
+                if v_name_grpo == "—" and col_grpo_vendor_name:
+                    v_name_grpo = clean_str_val(r_grpo.get(col_grpo_vendor_name, ""))
+                if v_bill_no_grpo == "—" and col_grpo_vendor_ref:
+                    v_bill_no_grpo = clean_str_val(r_grpo.get(col_grpo_vendor_ref, ""))
+                if not currency and col_grpo_currency:
+                    currency = str(r_grpo.get(col_grpo_currency, "")).strip()
 
-                # Vendor fallbacks
-                v_code = clean_str_val(r_grpo.get(col_grpo_vendor_code, "")) if col_grpo_vendor_code else "—"
-                if v_code == "—" and col_ge_vendor_code:
-                    v_code = clean_str_val(row.get(col_ge_vendor_code, ""))
-                    
-                v_name = clean_str_val(r_grpo.get(col_grpo_vendor_name, "")) if col_grpo_vendor_name else "—"
-                if v_name == "—" and col_ge_vendor_name:
-                    v_name = clean_str_val(row.get(col_ge_vendor_name, ""))
-
-                v_bill_no = clean_str_val(r_grpo.get(col_grpo_vendor_ref, "")) if col_grpo_vendor_ref else "—"
-                if v_bill_no == "—" and col_ge_vendor_bill_no:
-                    v_bill_no = clean_str_val(row.get(col_ge_vendor_bill_no, ""))
-
-                for a_no in ap_numbers:
-                    rec = {
-                        "Gate Entry number": ge_no,
-                        "Gate Entry Date": fmt_dt(ge_date),
-                        "PO Number": po_no if po_no else "—",
-                        "GRN Number": g_no if g_no else "—",
-                        "AP Invoice Number": a_no,
-                        "GRPO Date": fmt_dt(grpo_date),
-                        "Vendor Code": v_code,
-                        "Vendor Name": v_name,
-                        "Vendor Country": vendor_country,
-                        "Vendor Bill Number": v_bill_no,
-                        "Item Code": clean_str_val(r_grpo.get(col_grpo_item_code, "")),
-                        "Item Description": clean_str_val(r_grpo.get(col_grpo_item_desc, "")),
-                        "Item Group": clean_str_val(r_grpo.get(col_grpo_item_group, "")),
-                        "Quantity": qty_val,
-                        "Rate(INR)": rate_val,
-                        "Value(INR)": value_val,
-                        "Days(GRPO-GE)": days_val,
-                        "Seq Exception(GE>GRPO)": is_exc,
-                        "Exceeds 3 days": exceeds_3
-                    }
-                    records.append(rec)
-                    
-                    if is_exc == 1:
-                        exceptions_rows.append({
-                            "GE No": ge_no,
-                            "GE Date": fmt_dt(ge_date),
-                            "GRPO Date": fmt_dt(grpo_date),
-                            "Vendor Bill Date": fmt_dt(v_bill_date),
-                            "Vendor Bill No": v_bill_no,
-                            "Vendor Code": v_code,
-                            "GRPO No": g_no,
-                        })
+            if is_exc == 1:
+                ge_gt_grpo_cnt += 1
+            elif days_vals:
+                has_positive = any(int(d) > 0 for d in days_vals)
+                if has_positive:
+                    ge_lt_grpo_cnt += 1
+                else:
+                    ge_eq_grpo_cnt += 1
         else:
             missing_grpo_date_cnt += 1
-            currency = po_currency_lookup.get(po_no, "")
-            vendor_country = "India" if currency.upper() in ("INR", "") else "USA"
             
-            rec = {
-                "Gate Entry number": ge_no,
-                "Gate Entry Date": fmt_dt(ge_date),
-                "PO Number": po_no if po_no else "—",
-                "GRN Number": "—",
-                "AP Invoice Number": "—",
-                "GRPO Date": "—",
-                "Vendor Code": clean_str_val(row.get(col_ge_vendor_code, "")),
-                "Vendor Name": clean_str_val(row.get(col_ge_vendor_name, "")),
-                "Vendor Country": vendor_country,
-                "Vendor Bill Number": clean_str_val(row.get(col_ge_vendor_bill_no, "")),
-                "Item Code": "—",
-                "Item Description": "—",
-                "Item Group": "—",
-                "Quantity": 0.0,
-                "Rate(INR)": 0.0,
-                "Value(INR)": 0.0,
-                "Days(GRPO-GE)": "—",
-                "Seq Exception(GE>GRPO)": 0,
-                "Exceeds 3 days": 0
-            }
-            records.append(rec)
+        # Vendor Code/Name Fallbacks
+        v_code = v_code_grpo if v_code_grpo != "—" else clean_str_val(row.get(col_ge_vendor_code, ""))
+        v_name = v_name_grpo if v_name_grpo != "—" else clean_str_val(row.get(col_ge_vendor_name, ""))
+        v_bill_no = v_bill_no_grpo if v_bill_no_grpo != "—" else clean_str_val(row.get(col_ge_vendor_bill_no, ""))
+        
+        if not currency:
+            currency = po_currency_lookup.get(po_no, "")
+        vendor_country = "India" if currency.upper() in ("INR", "") else "USA"
+        
+        grn_str = ", ".join(unique_grns) if unique_grns else "—"
+        ap_str = ", ".join(unique_aps) if unique_aps else "—"
+        grpo_dt_str = ", ".join(unique_grpo_dts) if unique_grpo_dts else "—"
+        item_code_str = ", ".join(unique_item_codes) if unique_item_codes else "—"
+        item_desc_str = ", ".join(unique_item_descs) if unique_item_descs else "—"
+        item_group_str = ", ".join(unique_item_groups) if unique_item_groups else "—"
+        days_str = ", ".join(days_vals) if days_vals else "—"
+        rate_str = ", ".join(unique_rates) if unique_rates else "—"
+        
+        rec = {
+            "Gate Entry number": ge_no,
+            "Gate Entry Date": fmt_dt(ge_date),
+            "PO Number": po_no if po_no else "—",
+            "GRN Number": grn_str,
+            "AP Invoice Number": ap_str,
+            "GRPO Date": grpo_dt_str,
+            "Vendor Code": v_code,
+            "Vendor Name": v_name,
+            "Vendor Country": vendor_country,
+            "Vendor Bill Number": v_bill_no,
+            "Item Code": item_code_str,
+            "Item Description": item_desc_str,
+            "Item Group": item_group_str,
+            "Quantity": qty_sum,
+            "Rate(INR)": rate_str,
+            "Value(INR)": val_sum,
+            "Days(GRPO-GE)": days_str,
+            "Seq Exception(GE>GRPO)": is_exc,
+            "Exceeds 3 days": exceeds_3
+        }
+        records.append(rec)
+        if is_exc == 1:
+            exceptions_rows.append({
+                "GE No": ge_no,
+                "GE Date": fmt_dt(ge_date),
+                "GRPO Date": grpo_dt_str,
+                "Vendor Bill Date": fmt_dt(v_bill_date),
+                "Vendor Bill No": v_bill_no,
+                "Vendor Code": v_code,
+                "GRPO No": grn_str,
+            })
 
     # Calculations for KPIs & Charts
     total_lines = len(records)

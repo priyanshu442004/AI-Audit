@@ -294,121 +294,140 @@ def run(dfs_or_df: dict[str, pd.DataFrame] | pd.DataFrame) -> dict:
 
         grn_nos = grpo_by_po_item.get((po_num_norm, item_code_norm), [])
         
-        combinations = []
+        unique_grns = []
+        unique_ap_invs = []
+        unique_cns = []
+        unique_ge_dts = []
+        
+        received_qty_row = 0.0
+        
         if grn_nos:
             for g_no in grn_nos:
+                if g_no and g_no != "—" and g_no not in unique_grns:
+                    unique_grns.append(g_no)
+                
+                # Sum received quantity
+                received_qty_row += grpo_qty_lookup.get((po_num_norm, item_code_norm, g_no), 0.0)
+                
+                # Gate Entry Date
                 ge_n = grpo_to_ge_no.get((po_num_norm, g_no)) or grpo_to_ge_no.get(g_no)
                 ge_dt = ge_no_to_date.get(ge_n) if ge_n else None
                 if not ge_dt:
                     fallback_dates = po_to_ge_dates.get(po_num_norm, [])
                     ge_dt = fallback_dates[0] if fallback_dates else "—"
+                if ge_dt and ge_dt != "—" and ge_dt not in unique_ge_dts:
+                    unique_ge_dts.append(ge_dt)
                 
+                # AP Invoices
                 ap_invoices = ap_lookup.get((po_num_norm, g_no), [])
                 if not ap_invoices:
                     ap_invoices = ap_lookup.get(("", g_no), [])
                 
-                if ap_invoices:
-                    for ap_inv in ap_invoices:
-                        credit_notes = cn_lookup.get(ap_inv, [])
-                        if credit_notes:
-                            for cn in credit_notes:
-                                combinations.append((g_no, ap_inv, cn, ge_dt))
-                        else:
-                            combinations.append((g_no, ap_inv, "—", ge_dt))
-                else:
-                    combinations.append((g_no, "—", "—", ge_dt))
+                for ap_inv in ap_invoices:
+                    if ap_inv and ap_inv != "—" and ap_inv not in unique_ap_invs:
+                        unique_ap_invs.append(ap_inv)
+                        
+                    # Credit Notes
+                    credit_notes = cn_lookup.get(ap_inv, [])
+                    for cn in credit_notes:
+                        if cn and cn != "—" and cn not in unique_cns:
+                            unique_cns.append(cn)
         else:
             fallback_dates = po_to_ge_dates.get(po_num_norm, [])
             ge_dt = fallback_dates[0] if fallback_dates else "—"
-            combinations.append(("—", "—", "—", ge_dt))
-
-        for g_no, ap_inv, cn, ge_dt in combinations:
-            received_qty_row = grpo_qty_lookup.get((po_num_norm, item_code_norm, g_no), 0.0) if g_no != "—" else 0.0
-            pending_qty_row = ordered_qty - received_qty_row
-            pct_received_row = (received_qty_row / ordered_qty * 100.0) if ordered_qty > 0 else 0.0
-            
-            if doc_status == "OPEN":
-                open_value_inr_row = pending_qty_row * rate_inr
-            else:
-                open_value_inr_row = "PO is closed"
+            if ge_dt and ge_dt != "—":
+                unique_ge_dts.append(ge_dt)
                 
-            diff = received_qty_row - ordered_qty
-            if diff > 0 and ordered_qty > 0:
-                var_pct = (diff / ordered_qty) * 100.0
-                variance_str = f"+{var_pct:.2f}%"
-            else:
-                var_pct = 0.0
-                variance_str = "0.00%"
+        grn_str = ", ".join(unique_grns) if unique_grns else "—"
+        ap_inv_str = ", ".join(unique_ap_invs) if unique_ap_invs else "—"
+        cn_str = ", ".join(unique_cns) if unique_cns else "—"
+        ge_dt_str = unique_ge_dts[0] if unique_ge_dts else "—"
 
-            # Days Open
-            days_open = 0
-            if doc_status == "OPEN":
-                dt_post_parsed = parse_single_date(post_date)
-                if dt_post_parsed is not None:
-                    try:
-                        dt_target = pd.to_datetime("2026-03-31")
-                        days_open = (dt_target - dt_post_parsed).days
-                    except:
-                        days_open = 0
-            else:
-                days_open = "PO is closed"
+        pending_qty_row = ordered_qty - received_qty_row
+        pct_received_row = (received_qty_row / ordered_qty * 100.0) if ordered_qty > 0 else 0.0
+        
+        if doc_status == "OPEN":
+            open_value_inr_row = pending_qty_row * rate_inr
+        else:
+            open_value_inr_row = "PO is closed"
+            
+        diff = received_qty_row - ordered_qty
+        if diff > 0 and ordered_qty > 0:
+            var_pct = (diff / ordered_qty) * 100.0
+            variance_str = f"+{var_pct:.2f}%"
+        else:
+            var_pct = 0.0
+            variance_str = "0.00%"
 
-            # Pending Flag
-            pending_flag = 1 if received_qty_row > ordered_qty else 0
+        # Days Open
+        days_open = 0
+        if doc_status == "OPEN":
+            dt_post_parsed = parse_single_date(post_date)
+            if dt_post_parsed is not None:
+                try:
+                    dt_target = pd.to_datetime("2026-03-31")
+                    days_open = (dt_target - dt_post_parsed).days
+                except:
+                    days_open = 0
+        else:
+            days_open = "PO is closed"
 
-            # Open>90d & No receipt
-            is_open_90_no_rcpt = 0
-            if doc_status == "OPEN" and isinstance(days_open, (int, float)) and days_open > 90 and received_qty_row == 0:
-                is_open_90_no_rcpt = 1
+        # Pending Flag
+        pending_flag = 1 if received_qty_row > ordered_qty else 0
 
-            # Recv<50%
-            recv_lt_50 = 1 if (ordered_qty > 0 and received_qty_row < ordered_qty * 0.5) else 0
+        # Open>90d & No receipt
+        is_open_90_no_rcpt = 0
+        if doc_status == "OPEN" and isinstance(days_open, (int, float)) and days_open > 90 and received_qty_row == 0:
+            is_open_90_no_rcpt = 1
 
-            # Holiday flag
-            holiday_flag = 0
-            for dt_val in [post_date, doc_date]:
-                if not dt_val or dt_val == "—":
-                    continue
-                dt_parsed = parse_single_date(dt_val)
-                if dt_parsed is not None:
-                    dt_str = dt_parsed.strftime("%Y-%m-%d")
-                    if dt_str in holiday_dates or dt_str in STATIC_HOLIDAYS or dt_parsed.dayofweek in [5, 6]:
-                        holiday_flag = 1
-                        break
+        # Recv<50%
+        recv_lt_50 = 1 if (ordered_qty > 0 and received_qty_row < ordered_qty * 0.5) else 0
 
-            rows.append({
-                "PO Number": po_num_norm,
-                "Document Date": doc_date,
-                "Posting Date": post_date,
-                "Doc Status": doc_status,
-                "Currency": currency,
-                "Vendor Code": vendor_code,
-                "Vendor Name": vendor_name,
-                "Vendor Country": vendor_country,
-                "Vendor Group": vendor_group,
-                "Item code": item_code,
-                "Item Description": item_desc,
-                "Item Group": item_group,
-                "UOM": uom,
-                "GRN No.": g_no,
-                "AP Invoice No.": ap_inv,
-                "AP Credit Note": cn,
-                "Ordered Qty.": ordered_qty,
-                "Received Qty.": received_qty_row,
-                "Pending Qty.": pending_qty_row,
-                "%age Received": f"{pct_received_row:.2f}%",
-                "Rate(INR)": rate_inr,
-                "Line Value(INR)": line_val_inr,
-                "Open Value(INR)": open_value_inr_row if isinstance(open_value_inr_row, str) else round(open_value_inr_row, 2),
-                "Gate Entry Date": ge_dt,
-                "Days Open": days_open,
-                "%age Variance": variance_str,
-                "variance_pct_raw": var_pct,
-                "Pending Flag": pending_flag,
-                "Open>90d & No receipt": is_open_90_no_rcpt,
-                "Recv<50%": recv_lt_50,
-                "Holiday flag": holiday_flag
-            })
+        # Holiday flag
+        holiday_flag = 0
+        for dt_val in [post_date, doc_date]:
+            if not dt_val or dt_val == "—":
+                continue
+            dt_parsed = parse_single_date(dt_val)
+            if dt_parsed is not None:
+                dt_str = dt_parsed.strftime("%Y-%m-%d")
+                if dt_str in holiday_dates or dt_str in STATIC_HOLIDAYS or dt_parsed.dayofweek in [5, 6]:
+                    holiday_flag = 1
+                    break
+
+        rows.append({
+            "PO Number": po_num_norm,
+            "Document Date": doc_date,
+            "Posting Date": post_date,
+            "Doc Status": doc_status,
+            "Currency": currency,
+            "Vendor Code": vendor_code,
+            "Vendor Name": vendor_name,
+            "Vendor Country": vendor_country,
+            "Vendor Group": vendor_group,
+            "Item code": item_code,
+            "Item Description": item_desc,
+            "Item Group": item_group,
+            "UOM": uom,
+            "GRN No.": grn_str,
+            "AP Invoice No.": ap_inv_str,
+            "AP Credit Note": cn_str,
+            "Ordered Qty.": ordered_qty,
+            "Received Qty.": received_qty_row,
+            "Pending Qty.": pending_qty_row,
+            "%age Received": f"{pct_received_row:.2f}%",
+            "Rate(INR)": rate_inr,
+            "Line Value(INR)": line_val_inr,
+            "Open Value(INR)": open_value_inr_row if isinstance(open_value_inr_row, str) else round(open_value_inr_row, 2),
+            "Gate Entry Date": ge_dt_str,
+            "Days Open": days_open,
+            "%age Variance": variance_str,
+            "variance_pct_raw": var_pct,
+            "Pending Flag": pending_flag,
+            "Open>90d & No receipt": is_open_90_no_rcpt,
+            "Recv<50%": recv_lt_50,
+            "Holiday flag": holiday_flag
+        })
 
 
     # ── 8. Compute KPIs for Frontend and Tests ───────────────────────────────

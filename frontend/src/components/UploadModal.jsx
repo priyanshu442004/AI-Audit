@@ -90,7 +90,7 @@ export default function UploadModal() {
         
         setProgress({
           pct: Math.round((i / total) * 5),
-          message: `Uploading ${file.name} (${label}) to S3 (${i + 1}/${total})...`
+          message: `Uploading ${file.name} (${label}) (${i + 1}/${total})...`
         })
         
         await uploadFiles([{ role, file }])
@@ -148,7 +148,7 @@ export default function UploadModal() {
             Audit Initialization Required
           </h2>
           <p className="text-sm text-slate-500 dark:text-slate-400">
-            No active compliance sheets found. Upload the 9 mandatory P2P files to launch the compliance dashboard, or proceed with S3 history.
+            No active compliance sheets found. Upload the 9 mandatory P2P files to launch the compliance dashboard, or proceed with existing audit history.
           </p>
         </div>
 
@@ -249,7 +249,7 @@ export default function UploadModal() {
               onClick={handleUseHistory}
               className="w-full sm:w-auto px-8 py-3.5 rounded-xl text-sm font-bold text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all duration-300"
             >
-              Use S3 History
+              Use Existing History
             </button>
           )}
         </div>

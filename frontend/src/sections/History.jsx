@@ -145,10 +145,10 @@ export default function History() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-3xl">
-            S3 Audit History & File Management
+            Audit History & File Management
           </h2>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-            View, delete, or replace KPI datasets stored in AWS S3 and trigger aggregated reconciliation runs.
+            View, delete, or replace KPI datasets and trigger consolidated reconciliation runs.
           </p>
         </div>
 
@@ -171,23 +171,18 @@ export default function History() {
       )}
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 p-5 shadow-sm">
-          <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">AWS S3 Storage Bucket</div>
-          <div className="text-lg font-bold text-slate-900 dark:text-white">james-fixer</div>
-          <div className="text-[10px] text-slate-400 mt-0.5">Region: us-east-1</div>
-        </div>
-
-        <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 p-5 shadow-sm">
-          <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Total Active KPI Files</div>
-          <div className="text-2xl font-black text-slate-900 dark:text-white">{loading ? '...' : files.length}</div>
-          <div className="text-[10px] text-slate-400 mt-0.5">Aggregated in consolidated engine</div>
-        </div>
-
-        <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 p-5 shadow-sm">
-          <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Active DB Registry</div>
-          <div className="text-lg font-bold text-slate-900 dark:text-white">AWS RDS / PostgreSQL</div>
-          <div className="text-[10px] text-slate-400 mt-0.5">Table: s3_uploaded_files</div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-xl">
+        <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 p-5 shadow-sm flex items-center justify-between">
+          <div>
+            <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Total Active KPI Files</div>
+            <div className="text-2xl font-black text-slate-900 dark:text-white">{loading ? '...' : files.length}</div>
+            <div className="text-[10px] text-slate-400 mt-0.5">Aggregated in consolidated engine</div>
+          </div>
+          <div className="p-3 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-2xl">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+          </div>
         </div>
       </div>
 
@@ -226,7 +221,7 @@ export default function History() {
         {loading ? (
           <div className="py-20 text-center text-slate-400">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4" />
-            Fetching history files from S3...
+            Fetching history files...
           </div>
         ) : filteredFiles.length === 0 ? (
           <div className="py-20 text-center text-slate-400">
