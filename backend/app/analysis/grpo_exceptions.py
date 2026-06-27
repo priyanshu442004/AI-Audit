@@ -60,8 +60,26 @@ def run(
 
     # Try to find invoices linked to GRPO via purchase register PO ref
     if "pr_po_no" in df_pr.columns and "grpo_base_po" in df_grpo.columns:
-        invoiced_pos = set(df_pr["pr_po_no"].dropna().astype(str).str.strip())
-        grpo_no_inv  = df_grpo[~df_grpo["grpo_base_po"].astype(str).str.strip().isin(invoiced_pos)]
+        invoiced_pos = set()
+        for po_val in df_pr["pr_po_no"].dropna().astype(str):
+            for part in po_val.split(","):
+                part_clean = part.strip()
+                if part_clean.endswith(".0"):
+                    part_clean = part_clean[:-2]
+                if part_clean:
+                    invoiced_pos.add(part_clean)
+        
+        # Clean grpo_base_po and check in invoiced_pos
+        def clean_po(val):
+            if pd.isna(val) or val is None:
+                return ""
+            v = str(val).strip()
+            if v.endswith(".0"):
+                v = v[:-2]
+            return v
+            
+        grpo_base_po_cleaned = df_grpo["grpo_base_po"].apply(clean_po)
+        grpo_no_inv  = df_grpo[~grpo_base_po_cleaned.isin(invoiced_pos)]
     else:
         grpo_no_inv = df_grpo.head(0)  # cannot determine
 
@@ -86,8 +104,29 @@ def run(
     if "pr_po_no" in df_pr.columns and "grpo_base_po" in df_grpo.columns:
         # GRPOs linked to a GE
         grpo_with_ge = df_grpo[df_grpo["grpo_no"].astype(str).str.strip().isin(ge_grpo_nos)]
-        po_with_ge   = set(grpo_with_ge["grpo_base_po"].dropna().astype(str).str.strip())
-        inv_no_ge    = df_pr[~df_pr["pr_po_no"].astype(str).str.strip().isin(po_with_ge)]
+        def clean_po(val):
+            if pd.isna(val) or val is None:
+                return ""
+            v = str(val).strip()
+            if v.endswith(".0"):
+                v = v[:-2]
+            return v
+        po_with_ge   = set(grpo_with_ge["grpo_base_po"].apply(clean_po).dropna().unique())
+        
+        # Check if any of the comma separated POs in pr_po_no is in po_with_ge
+        def has_ge_link(po_val):
+            if pd.isna(po_val):
+                return False
+            for p in str(po_val).split(","):
+                p_clean = p.strip()
+                if p_clean.endswith(".0"):
+                    p_clean = p_clean[:-2]
+                if p_clean in po_with_ge:
+                    return True
+            return False
+            
+        mask = df_pr["pr_po_no"].apply(has_ge_link)
+        inv_no_ge = df_pr[~mask]
     else:
         inv_no_ge = df_pr.head(0)
 

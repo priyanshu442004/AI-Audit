@@ -85,14 +85,30 @@ def run(
     if "pr_po_no" not in df_pr.columns:
         df_pr["pr_po_no"] = None
 
+    # Explode pr_po_no if it has comma separated values to correctly aggregate invoice amounts per PO
+    df_pr_exploded = df_pr.copy()
+    if "pr_po_no" in df_pr_exploded.columns:
+        df_pr_exploded["pr_po_no"] = df_pr_exploded["pr_po_no"].fillna("").astype(str).apply(
+            lambda x: [p.strip() for p in x.split(",") if p.strip()] if x else [None]
+        )
+        df_pr_exploded = df_pr_exploded.explode("pr_po_no")
+        def clean_po(val):
+            if val is None:
+                return None
+            v = str(val).strip()
+            if v.endswith(".0"):
+                v = v[:-2]
+            return v
+        df_pr_exploded["pr_po_no"] = df_pr_exploded["pr_po_no"].apply(clean_po)
+
     # Aggregate invoice amount per PO
     pr_by_po = (
-        df_pr.groupby("pr_po_no", dropna=False)["invoice_amount"]
+        df_pr_exploded.groupby("pr_po_no", dropna=False)["invoice_amount"]
         .sum()
         .reset_index()
         .rename(columns={"pr_po_no": "po_no", "invoice_amount": "inv_amount"})
     )
-    invoiced_pos = set(df_pr["pr_po_no"].dropna().astype(str).str.strip())
+    invoiced_pos = set(df_pr_exploded["pr_po_no"].dropna().astype(str).str.strip())
 
     # ── Merge GRPO → PO ───────────────────────────────────────────────────────
     merged = df_grpo.merge(

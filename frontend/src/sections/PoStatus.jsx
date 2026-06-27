@@ -19,8 +19,8 @@ const COL_GROUPS = [
   { label: 'Vendor', cols: ['Vendor Code', 'Vendor Name', 'Vendor Country', 'Vendor Group'] },
   { label: 'Item', cols: ['Item code', 'Item Description', 'Item Group', 'UOM'] },
   { label: 'Documents', cols: ['GRN No.', 'AP Invoice No.', 'AP Credit Note'] },
-  { label: 'Quantities & Value', cols: ['Ordered Qty.', 'Received Qty.', 'Pending Qty.', '%age Received', 'Rate(INR)', 'Line Value(INR)', 'Open Value(INR)', 'Days Open'] },
-  { label: 'Flags', cols: ['%age Variance', 'Pending Flag', 'Open>90d & No receipt', 'Recv<55%', 'Holiday flag'] },
+  { label: 'Quantities & Value', cols: ['Ordered Qty.', 'Received Qty.', 'Pending Qty.', '%age Received', 'Rate(INR)', 'Line Value(INR)', 'Open Value(INR)', 'Days Open', 'variance>5%', 'Financial difference'] },
+  { label: 'Flags', cols: ['%age Variance', 'Pending Flag', 'Open>90d & No receipt', 'Recv<50%', 'Holiday flag'] },
 ]
 
 const ALL_COLS = COL_GROUPS.flatMap(g => g.cols)
@@ -526,7 +526,7 @@ export default function PoStatus({ data }) {
                       )
                     }
 
-                    if (['Rate(INR)', 'Line Value(INR)', 'Open Value(INR)'].includes(c)) return (
+                    if (['Rate(INR)', 'Line Value(INR)', 'Open Value(INR)', 'Financial difference'].includes(c)) return (
                       <td key={c} className="px-4 py-2 whitespace-nowrap font-mono text-slate-700 dark:text-slate-300">
                         {typeof val === 'number' ? formatCurrency(val) : (val === 'PO is closed'
                           ? <span className="text-slate-400 italic text-[10px]">closed</span>

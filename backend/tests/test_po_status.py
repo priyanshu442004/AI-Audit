@@ -125,3 +125,70 @@ def test_cross_file_joins_and_kpis(po_df, grpo_df, pr_df, ge_df):
     assert row1["Rate(INR)"] == 1600.0 # 20.0 * 80.0
     assert row1["Holiday flag"] == 0 # March 2 is not holiday (unless weekend)
 
+
+def test_comma_separated_po_and_variance():
+    # Setup DataFrames
+    po_data = pd.DataFrame({
+        "PO No": ["PO_VAR_1"],
+        "Vendor Code": ["V_VAR_1"],
+        "Vendor Name": ["Var Vendor"],
+        "Item No.": ["ITEM_VAR"],
+        "Item Description": ["Var Widget"],
+        "Quantity": ["100"],
+        "Price": ["10.0"],
+        "Open Qty": ["0"],
+        "Document currency": ["INR"],
+        "Document Date": ["2026-03-01"],
+        "Posting Date": ["2026-03-01"],
+        "Document Status": ["Closed"],
+        "PO Qty": ["100"],
+        "PO Price": ["10.0"],
+        "Document Rate": ["1.0"],
+        "Line Total": ["1000.0"],
+    })
+
+    grpo_data = pd.DataFrame({
+        "GRPO No": ["G_VAR_1"],
+        "PO Number": ["PO_VAR_1"],
+        "Item Code": ["ITEM_VAR"],
+        "Received Qty": ["110"], # 110 received vs 100 ordered -> variance > 5% is 110 - 105 = 5
+        "Rate": ["10.0"],
+        "Posting Date": ["2026-03-01"],
+        "Gate Entry No": ["GE_VAR_1"],
+        "Vendor Code": ["V_VAR_1"],
+    })
+
+    # AP Invoice report has comma-separated PO numbers "PO_VAR_1, PO_VAR_OTHER"
+    pr_data = pd.DataFrame({
+        "Invoice No": ["INV_VAR_1"],
+        "PO No": ["PO_VAR_1, PO_VAR_OTHER"],
+        "GRPO Number": ["G_VAR_1"],
+        "Vendor Code": ["V_VAR_1"],
+        "Invoice Date": ["2026-03-05"],
+        "Due Date": ["2026-04-05"],
+        "Amount": ["1100"],
+        "Payment Date": ["2026-03-10"],
+    })
+
+    dfs = {
+        "purchase_order": po_data,
+        "grpo": grpo_data,
+        "ap_invoice_report": pr_data,
+    }
+
+    result = run(dfs)
+    rows = result["tables"][3]["rows"]
+    
+    assert len(rows) == 1
+    row = rows[0]
+    
+    # Check comma-separated PO AP mapping
+    assert row["AP Invoice No."] == "INV_VAR_1"
+    
+    # Check variance calculation
+    # 5% of 100 is 5. Threshold = 105.
+    # Received = 110. Variance > 5% = 110 - 105 = 5.
+    # Financial difference = 5 * 10 = 50.0.
+    assert row["variance>5%"] == 5.0
+    assert row["Financial difference"] == 50.0
+

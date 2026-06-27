@@ -112,9 +112,10 @@ def run_variance_analysis(dfs: dict[str, pd.DataFrame], mode: str) -> dict:
             # group by item code
             for ic, item_group in group.groupby(col_item_code):
                 if col_uom:
-                    uoms_series = item_group[col_uom].astype(str).str.strip()
+                    uoms_series = item_group[col_uom]
                     # Clean UOM list
-                    uoms_list = [u for u in uoms_series if u and u.lower() not in ("nan", "none")]
+                    uoms_list = [str(u).strip() for u in uoms_series if pd.notna(u)]
+                    uoms_list = [u for u in uoms_list if u and u.lower() not in ("nan", "none", "")]
                     # If count of non-empty UOMs is less than group length (means blank exists), or if >1 unique UOM
                     if len(uoms_list) < len(item_group) or len(set(uoms_list)) > 1:
                         is_inconsistent = 1

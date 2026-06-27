@@ -128,17 +128,27 @@ def run(dfs_or_df: dict[str, pd.DataFrame] | pd.DataFrame) -> dict:
     col_ap_po_no = None
     col_ap_grpo_no = None
     col_ap_inv_no = None
+    col_ap_cust_ref = None
     if df_ap is not None and not df_ap.empty:
         col_ap_po_no = find_col(df_ap, ["po number", "po no", "po no.", "purchase order number", "purchase order no"])
         col_ap_grpo_no = find_col(df_ap, ["grpo number", "grpo no", "grpo no.", "grpo_number", "grpo no."])
         col_ap_inv_no = find_col(df_ap, ["ap invoice no", "ap invoice no.", "invoice no", "invoice no.", "ap_invoice_no"])
+        col_ap_cust_ref = find_col(df_ap, ["customer ref. no.", "customer ref no", "vendor ref no", "vendor ref. no", "ref no", "reference"])
 
     # ── 4. Column Detection in Credit Note Sheet ─────────────────────────────
     col_cn_ap_inv_no = None
     col_cn_no = None
+    col_cn_vendor_ref = None
+    col_cn_vendor_code = None
+    col_cn_item_code = None
+    col_cn_qty = None
     if df_cn is not None and not df_cn.empty:
         col_cn_ap_inv_no = find_col(df_cn, ["ap invoice number", "ap invoice no", "invoice number", "invoice no", "ap_invoice_no"])
         col_cn_no = find_col(df_cn, ["ap credit note no", "ap credit note number", "credit note no", "ap_credit_note_no"])
+        col_cn_vendor_ref = find_col(df_cn, ["vendor ref no", "vendor ref. no", "customer ref. no.", "customer ref no", "ref no", "reference"])
+        col_cn_vendor_code = find_col(df_cn, ["vendor code", "bp code", "supplier code", "vendorcode", "bpcode", "account code", "vendor"])
+        col_cn_item_code = find_col(df_cn, ["item code", "item_code", "item no", "item no.", "itemno"])
+        col_cn_qty = find_col(df_cn, ["credit note qty", "qty", "quantity", "credit note quantity", "quantity in doc", "quantity in document"])
 
     # ── 5. Column Detection in Gate Entry Sheet ──────────────────────────────
     col_ge_po_no = None
@@ -148,65 +158,151 @@ def run(dfs_or_df: dict[str, pd.DataFrame] | pd.DataFrame) -> dict:
         col_ge_date = find_col(df_ge, ["gate entry date", "ge date", "date"])
 
     # ── 6. Pre-aggregate and Build Lookup Dictionaries for O(1) Performance ──
-    # ── 6. Pre-aggregate and Build Lookup Dictionaries for O(1) Performance ──
     grpo_by_po_item = {}
     grpo_qty_lookup = {}
     grpo_to_ge_no = {}
     if df_grpo is not None and not df_grpo.empty and col_grpo_po_no and col_grpo_item_code:
-        po_vals = df_grpo[col_grpo_po_no].apply(normalize_id).values
-        item_vals = df_grpo[col_grpo_item_code].apply(normalize_id).str.upper().values
-        grn_vals = df_grpo[col_grpo_no].apply(normalize_id).values if col_grpo_no else [""] * len(df_grpo)
-        qty_vals = df_grpo[col_grpo_qty].apply(parse_numeric_val).values if col_grpo_qty else [0.0] * len(df_grpo)
-        ge_no_vals = df_grpo[col_grpo_ge_no].apply(normalize_id).values if col_grpo_ge_no else [""] * len(df_grpo)
-        
-        for po, item, grn, qty, ge_n in zip(po_vals, item_vals, grn_vals, qty_vals, ge_no_vals):
-            if not po or not item:
+        for _, row in df_grpo.iterrows():
+            po_raw = row.get(col_grpo_po_no)
+            item_raw = row.get(col_grpo_item_code)
+            if pd.isna(po_raw) or pd.isna(item_raw):
                 continue
-            key = (po, item)
-            if key not in grpo_by_po_item:
-                grpo_by_po_item[key] = []
-            if grn and str(grn).lower() not in ("nan", "none", ""):
-                if grn not in grpo_by_po_item[key]:
-                    grpo_by_po_item[key].append(grn)
+            item = normalize_id(item_raw).upper()
+            if not item:
+                continue
             
-            qty_key = (po, item, grn)
-            grpo_qty_lookup[qty_key] = grpo_qty_lookup.get(qty_key, 0.0) + qty
+            po_str = str(po_raw)
+            po_parts = [normalize_id(p.strip()) for p in po_str.split(",") if p.strip()]
             
-            if grn and ge_n and str(ge_n).lower() not in ("nan", "none", ""):
-                grpo_to_ge_no[(po, grn)] = ge_n
-                grpo_to_ge_no[grn] = ge_n
+            grn = normalize_id(row.get(col_grpo_no)) if col_grpo_no else ""
+            if pd.isna(grn):
+                grn = ""
+            qty = parse_numeric_val(row.get(col_grpo_qty)) if col_grpo_qty else 0.0
+            ge_n = normalize_id(row.get(col_grpo_ge_no)) if col_grpo_ge_no else ""
+            if pd.isna(ge_n):
+                ge_n = ""
+                
+            for po in po_parts:
+                if not po:
+                    continue
+                key = (po, item)
+                if key not in grpo_by_po_item:
+                    grpo_by_po_item[key] = []
+                if grn and str(grn).lower() not in ("nan", "none", ""):
+                    if grn not in grpo_by_po_item[key]:
+                        grpo_by_po_item[key].append(grn)
+                
+                qty_key = (po, item, grn)
+                grpo_qty_lookup[qty_key] = grpo_qty_lookup.get(qty_key, 0.0) + qty
+                
+                if grn and ge_n and str(ge_n).lower() not in ("nan", "none", ""):
+                    grpo_to_ge_no[(po, grn)] = ge_n
+                    grpo_to_ge_no[grn] = ge_n
 
     ap_lookup = {}
+    ap_by_po = {}
     if df_ap is not None and not df_ap.empty and col_ap_po_no and col_ap_grpo_no:
-        po_vals = df_ap[col_ap_po_no].apply(normalize_id).values
+        po_raw_vals = df_ap[col_ap_po_no].values
         grpo_vals = df_ap[col_ap_grpo_no].apply(normalize_id).values
         inv_vals = df_ap[col_ap_inv_no].apply(normalize_id).values if col_ap_inv_no else [""] * len(df_ap)
         
-        for po, grpo, inv in zip(po_vals, grpo_vals, inv_vals):
-            if not po or not grpo:
+        for po_raw, grpo, inv in zip(po_raw_vals, grpo_vals, inv_vals):
+            if not grpo:
                 continue
-            key = (po, grpo)
-            if key not in ap_lookup:
-                ap_lookup[key] = set()
-            if inv and str(inv).lower() not in ("nan", "none", ""):
-                ap_lookup[key].add(inv)
+            
+            po_str = str(po_raw) if not pd.isna(po_raw) else ""
+            po_parts = [normalize_id(p.strip()) for p in po_str.split(",") if p.strip()]
+            if not po_parts:
+                po_parts = [""]
+                
+            for po in po_parts:
+                key = (po, grpo)
+                if key not in ap_lookup:
+                    ap_lookup[key] = set()
+                if inv and str(inv).lower() not in ("nan", "none", ""):
+                    ap_lookup[key].add(inv)
         
         ap_lookup = {k: list(v) for k, v in ap_lookup.items()}
 
+    if df_ap is not None and not df_ap.empty and col_ap_po_no:
+        po_raw_vals = df_ap[col_ap_po_no].values
+        inv_vals = df_ap[col_ap_inv_no].apply(normalize_id).values if col_ap_inv_no else [""] * len(df_ap)
+        for po_raw, inv in zip(po_raw_vals, inv_vals):
+            po_str = str(po_raw) if not pd.isna(po_raw) else ""
+            po_parts = [normalize_id(p.strip()) for p in po_str.split(",") if p.strip()]
+            for po in po_parts:
+                if po:
+                    if po not in ap_by_po:
+                        ap_by_po[po] = set()
+                    if inv and str(inv).lower() not in ("nan", "none", ""):
+                        ap_by_po[po].add(inv)
+        ap_by_po = {k: list(v) for k, v in ap_by_po.items()}
+
     cn_lookup = {}
-    if df_cn is not None and not df_cn.empty and col_cn_ap_inv_no:
-        inv_vals = df_cn[col_cn_ap_inv_no].apply(normalize_id).values
-        cn_vals = df_cn[col_cn_no].apply(normalize_id).values if col_cn_no else [""] * len(df_cn)
-        
-        for inv, cn in zip(inv_vals, cn_vals):
-            if not inv:
+    cn_fallback_by_qty = {}
+    cn_fallback_by_item = {}
+    ap_ref_to_inv = {}
+    if df_ap is not None and not df_ap.empty and col_ap_cust_ref and col_ap_inv_no:
+        for _, row in df_ap.iterrows():
+            ref = row.get(col_ap_cust_ref)
+            inv = row.get(col_ap_inv_no)
+            if pd.notna(ref) and pd.notna(inv):
+                ref_str = str(ref).strip().upper()
+                inv_norm = normalize_id(inv)
+                if ref_str and inv_norm:
+                    if ref_str not in ap_ref_to_inv:
+                        ap_ref_to_inv[ref_str] = set()
+                    ap_ref_to_inv[ref_str].add(inv_norm)
+
+    if df_cn is not None and not df_cn.empty and col_cn_no:
+        for _, row in df_cn.iterrows():
+            cn = normalize_id(row.get(col_cn_no))
+            if not cn or cn.lower() in ("nan", "none", ""):
                 continue
-            if inv not in cn_lookup:
-                cn_lookup[inv] = set()
-            if cn and str(cn).lower() not in ("nan", "none", ""):
+                
+            invoices = set()
+            if col_cn_ap_inv_no:
+                inv_raw = row.get(col_cn_ap_inv_no)
+                if pd.notna(inv_raw):
+                    inv_parts = [normalize_id(p.strip()) for p in str(inv_raw).split(",") if p.strip()]
+                    for inv in inv_parts:
+                        if inv:
+                            invoices.add(inv)
+                            
+            if col_cn_vendor_ref:
+                ref_raw = row.get(col_cn_vendor_ref)
+                if pd.notna(ref_raw):
+                    for r in str(ref_raw).split(","):
+                        r_norm = str(r).strip().upper()
+                        if r_norm in ap_ref_to_inv:
+                            invoices.update(ap_ref_to_inv[r_norm])
+                            
+            for inv in invoices:
+                if inv not in cn_lookup:
+                    cn_lookup[inv] = set()
                 cn_lookup[inv].add(cn)
-        
+
+            # Build Fallback mappings
+            vc = normalize_id(row.get(col_cn_vendor_code)) if col_cn_vendor_code else ""
+            ic = normalize_id(row.get(col_cn_item_code)).upper() if col_cn_item_code else ""
+            if vc and ic:
+                # Key 1: with Qty
+                qty_val = parse_numeric_val(row.get(col_cn_qty)) if col_cn_qty else 0.0
+                qty_str = f"{qty_val:.2f}"
+                qty_key = (vc, ic, qty_str)
+                if qty_key not in cn_fallback_by_qty:
+                    cn_fallback_by_qty[qty_key] = set()
+                cn_fallback_by_qty[qty_key].add(cn)
+                
+                # Key 2: item only
+                item_key = (vc, ic)
+                if item_key not in cn_fallback_by_item:
+                    cn_fallback_by_item[item_key] = set()
+                cn_fallback_by_item[item_key].add(cn)
+                
         cn_lookup = {k: list(v) for k, v in cn_lookup.items()}
+        cn_fallback_by_qty = {k: list(v) for k, v in cn_fallback_by_qty.items()}
+        cn_fallback_by_item = {k: list(v) for k, v in cn_fallback_by_item.items()}
 
     ge_no_to_date = {}
     po_to_ge_dates = {}
@@ -301,6 +397,12 @@ def run(dfs_or_df: dict[str, pd.DataFrame] | pd.DataFrame) -> dict:
         
         received_qty_row = 0.0
         
+        # 1. Fetch AP Invoices directly by PO number
+        ap_by_po_list = ap_by_po.get(po_num_norm, [])
+        for ap_inv in ap_by_po_list:
+            if ap_inv and ap_inv != "—" and ap_inv not in unique_ap_invs:
+                unique_ap_invs.append(ap_inv)
+
         if grn_nos:
             for g_no in grn_nos:
                 if g_no and g_no != "—" and g_no not in unique_grns:
@@ -326,17 +428,37 @@ def run(dfs_or_df: dict[str, pd.DataFrame] | pd.DataFrame) -> dict:
                 for ap_inv in ap_invoices:
                     if ap_inv and ap_inv != "—" and ap_inv not in unique_ap_invs:
                         unique_ap_invs.append(ap_inv)
-                        
-                    # Credit Notes
-                    credit_notes = cn_lookup.get(ap_inv, [])
-                    for cn in credit_notes:
-                        if cn and cn != "—" and cn not in unique_cns:
-                            unique_cns.append(cn)
         else:
             fallback_dates = po_to_ge_dates.get(po_num_norm, [])
             ge_dt = fallback_dates[0] if fallback_dates else "—"
             if ge_dt and ge_dt != "—":
                 unique_ge_dts.append(ge_dt)
+
+        # 2. Lookup Credit Notes for all matched AP Invoices
+        for ap_inv in unique_ap_invs:
+            credit_notes = cn_lookup.get(ap_inv, [])
+            for cn in credit_notes:
+                if cn and cn != "—" and cn not in unique_cns:
+                    unique_cns.append(cn)
+
+        # Fallback to Vendor + Item + Qty, or Vendor + Item if no direct link
+        if not unique_cns and vendor_code and item_code_norm:
+            vc_norm = normalize_id(vendor_code)
+            if vc_norm:
+                # A. Try matching by Vendor Code, Item Code, and Quantity
+                qty_str = f"{ordered_qty:.2f}"
+                fallback_cns = cn_fallback_by_qty.get((vc_norm, item_code_norm, qty_str), [])
+                if not fallback_cns:
+                    # Also check received quantity
+                    fallback_cns = cn_fallback_by_qty.get((vc_norm, item_code_norm, f"{received_qty_row:.2f}"), [])
+                
+                # B. If still empty, check Vendor + Item (broader fallback)
+                if not fallback_cns:
+                    fallback_cns = cn_fallback_by_item.get((vc_norm, item_code_norm), [])
+                    
+                for cn in fallback_cns:
+                    if cn and cn != "—" and cn not in unique_cns:
+                        unique_cns.append(cn)
                 
         grn_str = ", ".join(unique_grns) if unique_grns else "—"
         ap_inv_str = ", ".join(unique_ap_invs) if unique_ap_invs else "—"
@@ -395,6 +517,14 @@ def run(dfs_or_df: dict[str, pd.DataFrame] | pd.DataFrame) -> dict:
                     holiday_flag = 1
                     break
 
+        # Compute variance>5% and Financial difference
+        if received_qty_row > (1.05 * ordered_qty):
+            var_gt_5_qty = received_qty_row - (1.05 * ordered_qty)
+        else:
+            var_gt_5_qty = 0.0
+        
+        financial_diff = rate_inr * var_gt_5_qty
+
         rows.append({
             "PO Number": po_num_norm,
             "Document Date": doc_date,
@@ -423,6 +553,8 @@ def run(dfs_or_df: dict[str, pd.DataFrame] | pd.DataFrame) -> dict:
             "Days Open": days_open,
             "%age Variance": variance_str,
             "variance_pct_raw": var_pct,
+            "variance>5%": round(var_gt_5_qty, 2),
+            "Financial difference": round(financial_diff, 2),
             "Pending Flag": pending_flag,
             "Open>90d & No receipt": is_open_90_no_rcpt,
             "Recv<50%": recv_lt_50,
