@@ -24,6 +24,8 @@ export const useStore = create((set, get) => ({
   sessionId: null,
   results: null,
   showUploadModal: false,
+  priceVarianceSame: null,
+  priceVarianceCross: null,
 
   // Loading progress
   progress: { pct: 0, message: 'Preparing data…', stage: '' },
@@ -37,10 +39,12 @@ export const useStore = create((set, get) => ({
   // Actions
   setPage: (page) => set({ page }),
   setSessionId: (id) => set({ sessionId: id }),
-  setResults: (r) => set({ results: r }),
+  setResults: (r) => set({ results: r, priceVarianceSame: null, priceVarianceCross: null }),
   setProgress: (p) => set({ progress: p }),
   setActiveSection: (s) => set({ activeSection: s }),
   setShowUploadModal: (show) => set({ showUploadModal: show }),
+  setPriceVarianceSame: (data) => set({ priceVarianceSame: data }),
+  setPriceVarianceCross: (data) => set({ priceVarianceCross: data }),
 
   setTheme: (theme) => {
     const next = THEMES.has(theme) ? theme : 'light'

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { fetchPriceVarianceCross } from '../api'
 import AiInsightBox from '../components/AiInsightBox'
+import { useStore } from '../store'
 
 const formatCurrency = (val) => {
   if (val === null || val === undefined) return '—'
@@ -51,8 +52,8 @@ function SortIcon({ dir }) {
 }
 
 export default function PriceVarianceCross() {
-  const [data, setData] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const { priceVarianceCross, setPriceVarianceCross } = useStore()
+  const [loading, setLoading] = useState(!priceVarianceCross)
   const [error, setError] = useState(null)
 
   // Filters and pagination state
@@ -65,16 +66,21 @@ export default function PriceVarianceCross() {
   const ITEMS_PER_PAGE = 25
 
   useEffect(() => {
+    if (priceVarianceCross) {
+      setLoading(false)
+      return
+    }
+    setLoading(true)
     fetchPriceVarianceCross()
       .then(res => {
-        setData(res)
+        setPriceVarianceCross(res)
         setLoading(false)
       })
       .catch(err => {
         setError(err.message)
         setLoading(false)
       })
-  }, [])
+  }, [priceVarianceCross, setPriceVarianceCross])
 
   const handleSearch = (e) => {
     setSearchTerm(e.target.value)
@@ -91,7 +97,7 @@ export default function PriceVarianceCross() {
     setCurrentPage(1)
   }
 
-  const rows = data?.rows || []
+  const rows = priceVarianceCross?.rows || []
 
   // Filtered rows
   const filtered = useMemo(() => {

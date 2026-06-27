@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { fetchPriceVarianceSame } from '../api'
 import AiInsightBox from '../components/AiInsightBox'
+import { useStore } from '../store'
 
 const formatCurrency = (val) => {
   if (val === null || val === undefined) return '—'
@@ -51,8 +52,8 @@ function SortIcon({ dir }) {
 }
 
 export default function PriceVarianceSame() {
-  const [data, setData] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const { priceVarianceSame, setPriceVarianceSame } = useStore()
+  const [loading, setLoading] = useState(!priceVarianceSame)
   const [error, setError] = useState(null)
 
   // Filters and pagination state
@@ -65,16 +66,21 @@ export default function PriceVarianceSame() {
   const ITEMS_PER_PAGE = 25
 
   useEffect(() => {
+    if (priceVarianceSame) {
+      setLoading(false)
+      return
+    }
+    setLoading(true)
     fetchPriceVarianceSame()
       .then(res => {
-        setData(res)
+        setPriceVarianceSame(res)
         setLoading(false)
       })
       .catch(err => {
         setError(err.message)
         setLoading(false)
       })
-  }, [])
+  }, [priceVarianceSame, setPriceVarianceSame])
 
   const handleSearch = (e) => {
     setSearchTerm(e.target.value)
@@ -91,7 +97,7 @@ export default function PriceVarianceSame() {
     setCurrentPage(1)
   }
 
-  const rows = data?.rows || []
+  const rows = priceVarianceSame?.rows || []
 
   // Filtered rows
   const filtered = useMemo(() => {
@@ -317,7 +323,7 @@ export default function PriceVarianceSame() {
 
         {/* Responsive Table */}
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse min-w-[1800px]">
+          <table className="w-full text-left border-collapse min-w-[1900px]">
             <thead>
               <tr className="bg-slate-50/50 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800">
                 {[
@@ -331,20 +337,22 @@ export default function PriceVarianceSame() {
                   { id: 'item_description', label: 'Item Description' },
                   { id: 'item_group', label: 'Item Group' },
                   { id: 'uom', label: 'UOM' },
-                  { id: 'po_rate', label: 'PO Rate(INR)' },
-                  { id: 'grpo_rate', label: 'GRPO Rate(INR)' },
-                  { id: 'price_variance', label: 'Price Variance' },
-                  { id: 'variance_pct', label: 'Price Variance %' },
-                  { id: 'grn_number', label: 'GRN No.' },
-                  { id: 'gate_entry_date', label: 'Gate Entry Date' },
-                  { id: 'variance_flag', label: 'Variance Flag' },
+                  { id: 'uom_consistent', label: 'UOM consistent' },
+                  { id: 'no_of_pos', label: '#PO' },
+                  { id: 'po_numbers', label: 'PO Numbers' },
+                  { id: 'ordered_qty', label: 'Ordered qty' },
+                  { id: 'received_qty', label: 'Received qty' },
+                  { id: 'min_price', label: 'Min Price(INR)' },
+                  { id: 'avg_price', label: 'Avg Price(INR)' },
+                  { id: 'max_price', label: 'Max Price(INR)' },
+                  { id: 'spread_gt_5', label: 'Spread > 5%' },
                 ].map(col => (
                   <th
                     key={col.id}
                     onClick={() => handleSort(col.id)}
                     className="px-4 py-3 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100/50 dark:hover:bg-slate-800/60 select-none transition-colors"
                   >
-                    <div className="flex items-center">
+                    <div className="flex items-center font-bold">
                       {col.label}
                       <SortIcon dir={sortCol === col.id ? sortDir : null} />
                     </div>
@@ -385,37 +393,43 @@ export default function PriceVarianceSame() {
                   <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">
                     {row.uom || '—'}
                   </td>
-                  <td className="px-4 py-3 text-xs font-mono text-right text-slate-900 dark:text-white">
-                    {formatCurrency(row.po_rate)}
-                  </td>
-                  <td className="px-4 py-3 text-xs font-mono text-right text-slate-600 dark:text-slate-400">
-                    {formatCurrency(row.grpo_rate)}
-                  </td>
-                  <td className="px-4 py-3 text-xs font-mono text-right text-slate-600 dark:text-slate-400">
-                    {formatCurrency(row.price_variance)}
-                  </td>
-                  <td className="px-4 py-3 text-xs text-right">
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded font-mono font-bold text-[10px] ${
-                      row.variance_pct > 0 
-                        ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400' 
-                        : 'bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-600'
-                    }`}>
-                      {row.variance_pct > 0 ? `+${row.variance_pct.toFixed(2)}%` : '0.00%'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400 max-w-[150px] truncate font-mono">
-                    {row.grn_number}
-                  </td>
-                  <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400 font-mono">
-                    {row.gate_entry_date}
-                  </td>
                   <td className="px-4 py-3 text-xs text-center">
                     <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
-                      row.variance_flag === 1
+                      row.uom_consistent === 1
+                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400'
+                        : 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400'
+                    }`}>
+                      {row.uom_consistent}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-xs font-mono text-slate-600 dark:text-slate-400">
+                    {row.no_of_pos}
+                  </td>
+                  <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400 font-mono max-w-[180px] truncate">
+                    {row.po_numbers}
+                  </td>
+                  <td className="px-4 py-3 text-xs font-mono text-slate-600 dark:text-slate-400">
+                    {row.ordered_qty}
+                  </td>
+                  <td className="px-4 py-3 text-xs font-mono text-slate-600 dark:text-slate-400">
+                    {row.received_qty}
+                  </td>
+                  <td className="px-4 py-3 text-xs font-mono text-right text-slate-900 dark:text-white">
+                    {formatCurrency(row.min_price)}
+                  </td>
+                  <td className="px-4 py-3 text-xs font-mono text-right text-slate-900 dark:text-white font-semibold">
+                    {formatCurrency(row.avg_price)}
+                  </td>
+                  <td className="px-4 py-3 text-xs font-mono text-right text-slate-900 dark:text-white">
+                    {formatCurrency(row.max_price)}
+                  </td>
+                  <td className="px-4 py-3 text-xs text-center">
+                    <span className={`inline-block px-2.5 py-0.5 rounded text-[10px] font-mono font-bold ${
+                      row.spread_gt_5 === 1
                         ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400'
                         : 'bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-600'
                     }`}>
-                      {row.variance_flag}
+                      {row.spread_gt_5}
                     </span>
                   </td>
                 </tr>
