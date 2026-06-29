@@ -60,7 +60,7 @@ export default function PriceVarianceCross() {
   const [searchTerm, setSearchTerm] = useState('')
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
-  const [sortCol, setSortCol] = useState('item_code')
+  const [sortCol, setSortCol] = useState('item_description')
   const [sortDir, setSortDir] = useState('asc')
   const [currentPage, setCurrentPage] = useState(1)
   const ITEMS_PER_PAGE = 25
@@ -323,25 +323,28 @@ export default function PriceVarianceCross() {
 
         {/* Responsive Table */}
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse min-w-[1800px]">
+          <table className="w-full text-left border-collapse min-w-[2000px]">
             <thead>
               <tr className="bg-slate-50/50 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800">
                 {[
                   { id: 'item_code', label: 'Item Code' },
                   { id: 'item_description', label: 'Item Description' },
                   { id: 'item_group', label: 'Item Group' },
-                  { id: 'uom', label: 'UOM' },
                   { id: 'vendor_code', label: 'Vendor Code' },
                   { id: 'vendor_name', label: 'Vendor Name' },
-                  { id: 'vendor_group', label: 'Vendor Group' },
                   { id: 'vendor_country', label: 'Vendor Country' },
-                  { id: 'po_rate', label: 'PO Rate(INR)' },
-                  { id: 'grpo_rate', label: 'GRPO Rate(INR)' },
-                  { id: 'price_variance', label: 'Price Variance' },
-                  { id: 'variance_pct', label: 'Price Variance %' },
-                  { id: 'grn_number', label: 'GRN No.' },
-                  { id: 'gate_entry_date', label: 'Gate Entry Date' },
-                  { id: 'variance_flag', label: 'Variance Flag' },
+                  { id: 'po_numbers', label: 'PO Numbers' },
+                  { id: 'grn_number', label: 'GRN No' },
+                  { id: 'uom', label: 'UOM' },
+                  { id: 'ordered_qty', label: 'Ordered Quantity' },
+                  { id: 'received_qty', label: 'Received quantiti' },
+                  { id: 'rate_inr', label: 'Rate(INR)' },
+                  { id: 'item_min_rate', label: 'Item Min. Rate(INR)' },
+                  { id: 'item_max_rate', label: 'Item Max. Rate(INR)' },
+                  { id: 'vendor_position', label: 'Vendor Position' },
+                  { id: 'pct_above_lowest', label: '%age above lowest' },
+                  { id: 'higher_gt_5', label: 'Higher>5%' },
+                  { id: 'uom_consistency', label: 'UOM consistency' }
                 ].map(col => (
                   <th
                     key={col.id}
@@ -359,62 +362,93 @@ export default function PriceVarianceCross() {
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {paginated.map((row, i) => (
                 <tr key={i} className="hover:bg-slate-50/40 dark:hover:bg-slate-800/20 transition-colors duration-150">
+                  {/* 1. Item Code */}
                   <td className="px-4 py-3 text-xs font-mono font-bold text-slate-900 dark:text-white">
                     {row.item_code || '—'}
                   </td>
-                  <td className="px-4 py-3 text-xs font-medium text-slate-700 dark:text-slate-300 max-w-[200px] truncate">
+                  {/* 2. Item Description */}
+                  <td className="px-4 py-3 text-xs font-medium text-slate-700 dark:text-slate-300 max-w-[250px] truncate" title={row.item_description}>
                     {row.item_description || '—'}
                   </td>
+                  {/* 3. Item Group */}
                   <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">
                     {row.item_group || '—'}
                   </td>
-                  <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">
-                    {row.uom || '—'}
-                  </td>
+                  {/* 4. Vendor Code */}
                   <td className="px-4 py-3 text-xs font-mono font-bold text-slate-900 dark:text-white">
                     {row.vendor_code || '—'}
                   </td>
-                  <td className="px-4 py-3 text-xs font-medium text-slate-700 dark:text-slate-300">
+                  {/* 5. Vendor Name */}
+                  <td className="px-4 py-3 text-xs font-medium text-slate-700 dark:text-slate-300 max-w-[200px] truncate" title={row.vendor_name}>
                     {row.vendor_name || '—'}
                   </td>
+                  {/* 6. Vendor Country */}
                   <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">
-                    {row.vendor_group || '—'}
+                    {row.vendor_country || '—'}
                   </td>
+                  {/* 7. PO Numbers */}
+                  <td className="px-4 py-3 text-xs font-mono text-slate-600 dark:text-slate-400">
+                    {row.po_numbers || '—'}
+                  </td>
+                  {/* 8. GRN No */}
+                  <td className="px-4 py-3 text-xs font-mono text-slate-600 dark:text-slate-400 max-w-[150px] truncate" title={row.grn_number}>
+                    {row.grn_number || '—'}
+                  </td>
+                  {/* 9. UOM */}
                   <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">
-                    {row.vendor_country}
+                    {row.uom || '—'}
                   </td>
+                  {/* 10. Ordered Quantity */}
                   <td className="px-4 py-3 text-xs font-mono text-right text-slate-900 dark:text-white">
-                    {formatCurrency(row.po_rate)}
+                    {row.ordered_qty !== undefined && row.ordered_qty !== null ? row.ordered_qty.toLocaleString() : '—'}
                   </td>
+                  {/* 11. Received Quantity */}
+                  <td className="px-4 py-3 text-xs font-mono text-right text-slate-900 dark:text-white">
+                    {row.received_qty !== undefined && row.received_qty !== null ? row.received_qty.toLocaleString() : '—'}
+                  </td>
+                  {/* 12. Rate(INR) */}
+                  <td className="px-4 py-3 text-xs font-mono text-right text-slate-900 dark:text-white">
+                    {formatCurrency(row.rate_inr)}
+                  </td>
+                  {/* 13. Item Min. Rate(INR) */}
                   <td className="px-4 py-3 text-xs font-mono text-right text-slate-600 dark:text-slate-400">
-                    {formatCurrency(row.grpo_rate)}
+                    {formatCurrency(row.item_min_rate)}
                   </td>
+                  {/* 14. Item Max. Rate(INR) */}
                   <td className="px-4 py-3 text-xs font-mono text-right text-slate-600 dark:text-slate-400">
-                    {formatCurrency(row.price_variance)}
+                    {formatCurrency(row.item_max_rate)}
                   </td>
-                  <td className="px-4 py-3 text-xs text-right">
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded font-mono font-bold text-[10px] ${
-                      row.variance_pct > 0 
-                        ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400' 
-                        : 'bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-600'
-                    }`}>
-                      {row.variance_pct > 0 ? `+${row.variance_pct.toFixed(2)}%` : '0.00%'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400 max-w-[150px] truncate font-mono">
-                    {row.grn_number}
-                  </td>
-                  <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400 font-mono">
-                    {row.gate_entry_date}
-                  </td>
+                  {/* 15. Vendor Position */}
                   <td className="px-4 py-3 text-xs text-center">
                     <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
-                      row.variance_flag === 1
+                      row.vendor_position === 'Highest'
                         ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400'
-                        : 'bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-600'
+                        : row.vendor_position === 'Lowest'
+                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400'
+                        : 'text-slate-400 dark:text-slate-500'
                     }`}>
-                      {row.variance_flag}
+                      {row.vendor_position}
                     </span>
+                  </td>
+                  {/* 16. %age above lowest */}
+                  <td className="px-4 py-3 text-xs text-right font-mono font-bold text-slate-700 dark:text-slate-300">
+                    {row.pct_above_lowest !== undefined && row.pct_above_lowest !== null ? `${parseFloat(row.pct_above_lowest).toFixed(2)}%` : '—'}
+                  </td>
+                  {/* 17. Higher>5% */}
+                  <td className={`px-4 py-3 text-xs text-center font-mono font-bold transition-colors ${
+                    row.higher_gt_5 === 1
+                      ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300 font-extrabold border-l border-r border-yellow-200 dark:border-yellow-900/40'
+                      : 'bg-white dark:bg-slate-900'
+                  }`}>
+                    {row.higher_gt_5}
+                  </td>
+                  {/* 18. UOM consistency */}
+                  <td className={`px-4 py-3 text-xs text-center font-mono font-bold transition-colors ${
+                    row.uom_consistency === 1
+                      ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 font-extrabold border-l border-r border-green-200 dark:border-green-900/40'
+                      : 'bg-white dark:bg-slate-900'
+                  }`}>
+                    {row.uom_consistency}
                   </td>
                 </tr>
               ))}

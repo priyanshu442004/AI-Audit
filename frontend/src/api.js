@@ -87,3 +87,36 @@ export async function fetchPriceVarianceCross() {
   if (!res.ok) throw new Error('Failed to load cross-vendor price variance')
   return res.json()
 }
+
+/**
+ * Fetch payment aging (domestic).
+ * @returns {Promise<{rows: Array, kpis: object}>}
+ */
+export async function fetchPaymentAgingDomestic() {
+  const res = await fetch(`${BASE}/analysis/payment-aging-domestic`)
+  if (!res.ok) throw new Error('Failed to load payment aging (domestic) analysis')
+  return res.json()
+}
+
+/**
+ * Fetch payment aging (foreign).
+ * @returns {Promise<{rows: Array, kpis: object}>}
+ */
+export async function fetchPaymentAgingForeign() {
+  const res = await fetch(`${BASE}/analysis/payment-aging-foreign`)
+  if (!res.ok) throw new Error('Failed to load payment aging (foreign) analysis')
+  return res.json()
+}
+
+/**
+ * Fetch payment aging (related).
+ * @returns {Promise<{rows: Array, kpis: object}>}
+ */
+export async function fetchPaymentAgingRelated() {
+  const res = await fetch(`${BASE}/analysis/payment-aging-related`)
+  if (!res.ok) throw new Error('Failed to load payment aging (related) analysis')
+  return res.json()
+}
+
+
+

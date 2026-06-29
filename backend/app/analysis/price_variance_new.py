@@ -230,6 +230,7 @@ def run_variance_analysis(dfs: dict[str, pd.DataFrame], mode: str) -> dict:
             "item_group": ig,
             "uom": uom,
             "po_num": po_num_norm,
+            "po_num_raw": po_num,
             "po_rate_inr": po_rate_inr,
             "po_qty": po_qty,
             "rec_qty": rec_qty,
@@ -272,6 +273,41 @@ def run_variance_analysis(dfs: dict[str, pd.DataFrame], mode: str) -> dict:
             "spread_gt_5": spread_gt_5,
             "ordered_qty": val["ordered_qty"],
             "received_qty": val["received_qty"]
+        }
+
+    # Group by item_description for Cross Vendor aggregates
+    agg_by_desc = {}
+    for item in line_data:
+        desc_key = item["item_description"].strip().upper()
+        if not desc_key or desc_key == "—":
+            desc_key = item["item_code"].strip().upper()
+        if not desc_key:
+            continue
+        if desc_key not in agg_by_desc:
+            agg_by_desc[desc_key] = {
+                "rates": [],
+                "uoms": set()
+            }
+        agg_by_desc[desc_key]["rates"].append(item["po_rate_inr"])
+        agg_by_desc[desc_key]["uoms"].add(item["uom"])
+
+    desc_stats = {}
+    for desc_key, val in agg_by_desc.items():
+        rates = [r for r in val["rates"] if r > 0]
+        if not rates:
+            rates = val["rates"] if val["rates"] else [0.0]
+        min_r = min(rates)
+        max_r = max(rates)
+        avg_r = sum(rates) / len(rates) if rates else 0.0
+        
+        # UOM consistency: 1 if all rows have the same UOM, else 0
+        uom_const = 1 if len(val["uoms"]) == 1 else 0
+        
+        desc_stats[desc_key] = {
+            "min_rate": min_r,
+            "max_rate": max_r,
+            "avg_rate": avg_r,
+            "uom_consistency": uom_const
         }
 
     out_rows = []
@@ -327,50 +363,72 @@ def run_variance_analysis(dfs: dict[str, pd.DataFrame], mode: str) -> dict:
                 "gate_entry_date": item["ge_date_str"]
             })
         else:
-            # Cross-vendor mode: original columns preserved
-            po_rate = item["po_rate_inr"]
-            po_num = item["po_num"]
-            grpo_rate = grpo_rate_lookup.get((po_num, ic.upper()), po_rate)
-            price_variance = abs(po_rate - grpo_rate)
-            variance_pct = (price_variance / po_rate * 100.0) if po_rate > 0 else 0.0
-            variance_flag = 1 if variance_pct > 5.0 else 0
+            # Cross-vendor mode:
+            desc_key = item["item_description"].strip().upper()
+            if not desc_key or desc_key == "—":
+                desc_key = item["item_code"].strip().upper()
+                
+            stats = desc_stats.get(desc_key, {
+                "min_rate": item["po_rate_inr"],
+                "max_rate": item["po_rate_inr"],
+                "avg_rate": item["po_rate_inr"],
+                "uom_consistency": 1
+            })
             
-            # In cross mode: vendor uom consistency flag (from original logic)
-            uom_consistent = 1
-            if col_uom and col_vendor_code and col_item_code:
-                # get PO rows for this vendor
-                vendor_po_rows = df_po[df_po[col_vendor_code].apply(normalize_id) == vc]
-                # get unique uoms for this item
-                item_uoms = vendor_po_rows[vendor_po_rows[col_item_code].apply(normalize_id).str.upper() == ic.upper()][col_uom].dropna().astype(str).str.strip().unique()
-                if len(item_uoms) > 1:
-                    uom_consistent = 0
-
+            min_rate = stats["min_rate"]
+            max_rate = stats["max_rate"]
+            avg_rate = stats["avg_rate"]
+            uom_consistency = stats["uom_consistency"]
+            
+            rate = item["po_rate_inr"]
+            
+            # Vendor position
+            vendor_position = "—"
+            if max_rate > min_rate:
+                if rate == max_rate:
+                    vendor_position = "Lowest"
+                elif rate == min_rate:
+                    vendor_position = "Highest"
+                
+            # %age above lowest
+            pct_above_lowest = 0.0
+            if min_rate > 0:
+                pct_above_lowest = ((rate - min_rate) / min_rate) * 100.0
+                
+            # Higher>5%
+            higher_gt_5 = 1 if pct_above_lowest > 5.0 else 0
+            
             out_rows.append({
-                "vendor_code": vc if vc else "—",
-                "vendor_name": item["vendor_name"],
-                "vendor_country": item["vendor_country"],
-                "vendor_group": item["vendor_group"],
-                "document_date": item["document_date"],
-                "posting_date": item["posting_date"],
                 "item_code": ic if ic else "—",
                 "item_description": item["item_description"],
                 "item_group": item["item_group"],
-                "uom": item["uom"],
-                "uom_consistent": uom_consistent,
+                "vendor_code": vc if vc else "—",
+                "vendor_name": item["vendor_name"],
+                "vendor_country": item["vendor_country"],
+                "po_numbers": item["po_num_raw"],
                 "grn_number": item["grn_str"],
-                "gate_entry_date": item["ge_date_str"],
-                "po_rate": po_rate,
-                "grpo_rate": grpo_rate,
-                "price_variance": round(price_variance, 2),
-                "variance_pct": round(variance_pct, 2),
-                "variance_flag": variance_flag
+                "uom": item["uom"],
+                "ordered_qty": item["po_qty"],
+                "received_qty": item["rec_qty"],
+                "rate_inr": rate,
+                "item_min_rate": min_rate,
+                "item_max_rate": max_rate,
+                "vendor_position": vendor_position,
+                "pct_above_lowest": round(pct_above_lowest, 2),
+                "higher_gt_5": higher_gt_5,
+                "uom_consistency": uom_consistency,
+                "uom_consistent": uom_consistency, # KPI/frontend compatibility
+                "variance_flag": higher_gt_5,
+                "posting_date": item["posting_date"],
+                "document_date": item["document_date"]
             })
 
     # Group/Sort rows
     if mode == "same":
         out_rows.sort(key=lambda x: x["vendor_code"])
     else:
-        out_rows.sort(key=lambda x: x["item_code"])
+        # Group the rows for same item description
+        out_rows.sort(key=lambda x: (x["item_description"].strip().upper(), x["item_code"].strip().upper()))
 
     # Calculate KPIs
     vendor_items = len(out_rows)
