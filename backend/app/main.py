@@ -31,6 +31,9 @@ from app.s3 import upload_file_to_s3, download_file_from_s3
 init_db()
 
 cached_dfs: dict[str, pd.DataFrame] | None = None
+cached_aging_domestic: dict | None = None
+cached_aging_foreign: dict | None = None
+cached_aging_related: dict | None = None
 
 def get_cached_dfs_or_load() -> dict[str, pd.DataFrame]:
     global cached_dfs
@@ -217,8 +220,11 @@ async def upload_files(
     if combined_sess:
         combined_sess.result = None
 
-    global cached_dfs
+    global cached_dfs, cached_aging_domestic, cached_aging_foreign, cached_aging_related
     cached_dfs = None
+    cached_aging_domestic = None
+    cached_aging_foreign = None
+    cached_aging_related = None
 
     loop = asyncio.get_running_loop()
 
@@ -295,8 +301,11 @@ def delete_history_file(file_id: int):
         if sess:
             sess.result = None
 
-        global cached_dfs
+        global cached_dfs, cached_aging_domestic, cached_aging_foreign, cached_aging_related
         cached_dfs = None
+        cached_aging_domestic = None
+        cached_aging_foreign = None
+        cached_aging_related = None
             
         return {"status": "success", "message": f"File '{file_info['filename']}' deleted successfully."}
     except HTTPException as he:
@@ -339,8 +348,11 @@ async def replace_history_file(file_id: int, file: UploadFile = File(...)):
         if sess:
             sess.result = None
 
-        global cached_dfs
+        global cached_dfs, cached_aging_domestic, cached_aging_foreign, cached_aging_related
         cached_dfs = None
+        cached_aging_domestic = None
+        cached_aging_foreign = None
+        cached_aging_related = None
             
         return {
             "status": "success",
@@ -519,4 +531,53 @@ async def get_price_variance_cross():
         return sanitize_for_json(res)
     except Exception as e:
         raise HTTPException(500, f"Error computing cross-vendor price variance: {str(e)}")
+
+@app.get("/api/analysis/payment-aging-domestic")
+async def get_payment_aging_domestic():
+    global cached_aging_domestic
+    if cached_aging_domestic is not None:
+        return cached_aging_domestic
+    try:
+        loop = asyncio.get_running_loop()
+        dfs = await loop.run_in_executor(None, get_cached_dfs_or_load)
+        from app.analysis.payment_aging_domestic import run_payment_aging_domestic
+        res = await loop.run_in_executor(None, lambda: run_payment_aging_domestic(dfs))
+        sanitized = sanitize_for_json(res)
+        cached_aging_domestic = sanitized
+        return sanitized
+    except Exception as e:
+        raise HTTPException(500, f"Error computing payment aging (domestic): {str(e)}")
+
+@app.get("/api/analysis/payment-aging-foreign")
+async def get_payment_aging_foreign():
+    global cached_aging_foreign
+    if cached_aging_foreign is not None:
+        return cached_aging_foreign
+    try:
+        loop = asyncio.get_running_loop()
+        dfs = await loop.run_in_executor(None, get_cached_dfs_or_load)
+        from app.analysis.payment_aging_foreign import run_payment_aging_foreign
+        res = await loop.run_in_executor(None, lambda: run_payment_aging_foreign(dfs))
+        sanitized = sanitize_for_json(res)
+        cached_aging_foreign = sanitized
+        return sanitized
+    except Exception as e:
+        raise HTTPException(500, f"Error computing payment aging (foreign): {str(e)}")
+
+@app.get("/api/analysis/payment-aging-related")
+async def get_payment_aging_related():
+    global cached_aging_related
+    if cached_aging_related is not None:
+        return cached_aging_related
+    try:
+        loop = asyncio.get_running_loop()
+        dfs = await loop.run_in_executor(None, get_cached_dfs_or_load)
+        from app.analysis.payment_aging_related import run_payment_aging_related
+        res = await loop.run_in_executor(None, lambda: run_payment_aging_related(dfs))
+        sanitized = sanitize_for_json(res)
+        cached_aging_related = sanitized
+        return sanitized
+    except Exception as e:
+        raise HTTPException(500, f"Error computing payment aging (related): {str(e)}")
+
 

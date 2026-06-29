@@ -26,6 +26,9 @@ export const useStore = create((set, get) => ({
   showUploadModal: false,
   priceVarianceSame: null,
   priceVarianceCross: null,
+  paymentAgingDomestic: null,
+  paymentAgingForeign: null,
+  paymentAgingRelated: null,
 
   // Loading progress
   progress: { pct: 0, message: 'Preparing data…', stage: '' },
@@ -39,12 +42,15 @@ export const useStore = create((set, get) => ({
   // Actions
   setPage: (page) => set({ page }),
   setSessionId: (id) => set({ sessionId: id }),
-  setResults: (r) => set({ results: r, priceVarianceSame: null, priceVarianceCross: null }),
+  setResults: (r) => set({ results: r, priceVarianceSame: null, priceVarianceCross: null, paymentAgingDomestic: null, paymentAgingForeign: null, paymentAgingRelated: null }),
   setProgress: (p) => set({ progress: p }),
   setActiveSection: (s) => set({ activeSection: s }),
   setShowUploadModal: (show) => set({ showUploadModal: show }),
   setPriceVarianceSame: (data) => set({ priceVarianceSame: data }),
   setPriceVarianceCross: (data) => set({ priceVarianceCross: data }),
+  setPaymentAgingDomestic: (data) => set({ paymentAgingDomestic: data }),
+  setPaymentAgingForeign: (data) => set({ paymentAgingForeign: data }),
+  setPaymentAgingRelated: (data) => set({ paymentAgingRelated: data }),
 
   setTheme: (theme) => {
     const next = THEMES.has(theme) ? theme : 'light'

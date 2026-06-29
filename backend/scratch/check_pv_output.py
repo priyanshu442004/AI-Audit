@@ -23,24 +23,32 @@ for role, match_str in FILE_ROLES.items():
     else:
         dfs[role] = pd.DataFrame()
 
-res = run_variance_analysis(dfs, "same")
-rows = res.get("rows", [])
-print(f"Total same-vendor rows: {len(rows)}")
-if rows:
+print("--- Same Vendor Analysis ---")
+res_same = run_variance_analysis(dfs, "same")
+rows_same = res_same.get("rows", [])
+print(f"Total rows: {len(rows_same)}")
+if rows_same:
     print("Sample row:")
-    for k, v in rows[0].items():
+    for k, v in rows_same[0].items():
         print(f"  {k}: {repr(v)}")
-    
-    ge_date = rows[0].get("gate_entry_date")
-    if ge_date:
-        print(f"gate_entry_date ords: {[ord(c) for c in ge_date]}")
-    
-    # Check for empty/blank values
+
+print("\n--- Cross Vendor Analysis ---")
+res_cross = run_variance_analysis(dfs, "cross")
+rows_cross = res_cross.get("rows", [])
+print(f"Total rows: {len(rows_cross)}")
+if rows_cross:
+    print("Sample row:")
+    for k, v in rows_cross[0].items():
+        print(f"  {k}: {repr(v)}")
+
+    # Check for empty/blank values in cross vendor rows
     empty_counts = {}
-    for r in rows:
+    for r in rows_cross:
         for k, v in r.items():
-            if v is None or str(v).strip() in ("", "nan", "None", "—"):
-                empty_counts[k] = empty_counts.get(k, 0) + 1
-    print("\nEmpty/Blank counts per column:")
+            if v is None or str(v).strip() in ("", "nan", "None"):
+                # Note: vendor_position is allowed to be empty or "—" as per "others left blank"
+                if k != "vendor_position":
+                    empty_counts[k] = empty_counts.get(k, 0) + 1
+    print("\nEmpty/Blank counts per column (excluding vendor_position):")
     for k, v in empty_counts.items():
-        print(f"  {k}: {v} / {len(rows)}")
+        print(f"  {k}: {v} / {len(rows_cross)}")
