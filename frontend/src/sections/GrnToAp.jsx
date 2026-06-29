@@ -1,7 +1,5 @@
 import React, { useState, useMemo } from 'react'
-import DonutChart from '../components/DonutChart'
 import AiInsightBox from '../components/AiInsightBox'
-import { CHART_COLORS } from '../theme'
 
 const formatCurrency = (val) => {
   if (val === null || val === undefined) return '—'
@@ -27,7 +25,7 @@ const COL_GROUPS = [
 
 const ALL_COLS = COL_GROUPS.flatMap(g => g.cols)
 
-const CURRENCY_COLS = ['Invoice Value (INR)']
+const CURRENCY_COLS = []
 const INT_COLS      = ['Items']
 
 function SortIcon({ dir }) {
@@ -113,9 +111,6 @@ export default function GrnToAp({ data }) {
   const kpis   = data?.kpis   || {}
   const charts = data?.charts || {}
   const tables = data?.tables || []
-
-  const matchChart = charts.match_vs_unmatched || { total: 0, segments: [] }
-  const checkBars  = charts.match_breakdown     || []
 
   const mainTable = tables.find(t => t.title === 'GRN to AP Invoice Full Reconciliation List')
   const rows = mainTable?.rows?.length > 0 ? mainTable.rows : MOCK_ROWS
@@ -270,76 +265,6 @@ export default function GrnToAp({ data }) {
             </div>
           )
         })}
-      </div>
-
-      {/* Charts section */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm flex flex-col justify-between">
-          <div>
-            <h3 className="text-sm font-bold text-slate-800 dark:text-white">GRN–AP Invoice Match vs Unmatched Ratio</h3>
-            <p className="text-xs text-slate-400 mt-0.5">Proportion of GRNs successfully reconciled to an AP invoice</p>
-          </div>
-          <div className="flex items-center justify-center my-6">
-            <DonutChart
-              segments={(matchChart.segments || []).map(s => ({
-                ...s,
-                color: s.label === 'Matched' ? CHART_COLORS.success : CHART_COLORS.risk,
-              }))}
-              centerText={`${kpis.match_rate_pct ?? 0}%`}
-              centerSub="Match Rate"
-            />
-          </div>
-          <div className="space-y-2 text-xs border-t border-slate-100 dark:border-slate-850 pt-3">
-            {(matchChart.segments || []).map(s => (
-              <div key={s.label} className="flex justify-between items-center">
-                <span className="flex items-center gap-2 text-slate-600 dark:text-slate-300 font-medium">
-                  <span className={`w-2.5 h-2.5 rounded-full ${s.label === 'Matched' ? 'bg-green-600' : 'bg-rose-600'}`} />
-                  {s.label === 'Matched' ? 'Reconciled GRN–AP Invoice Pairs' : 'Unmatched / Orphaned Lines'}
-                </span>
-                <span className="font-semibold text-slate-950 dark:text-white">{(s.value || 0).toLocaleString()}</span>
-              </div>
-            ))}
-            {(matchChart.segments || []).length === 0 && (
-              <p className="text-slate-400 dark:text-slate-500 text-center py-2">No data — upload files to populate.</p>
-            )}
-          </div>
-        </div>
-
-        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm flex flex-col justify-between">
-          <div>
-            <h3 className="text-sm font-bold text-slate-800 dark:text-white">Reconciliation Breakdown</h3>
-            <p className="text-xs text-slate-400 mt-0.5">Invoice match category counts across GRN and AP records</p>
-          </div>
-          <div className="space-y-4 my-6 flex-1 flex flex-col justify-center">
-            {checkBars.length > 0 ? checkBars.map(c => {
-              const colorMap = {
-                'Matched':                  'bg-emerald-600',
-                'Unmatched GRN':            'bg-rose-600',
-                'Unmatched AP Invoice':     'bg-rose-500',
-                'Invoice Before GRN':       'bg-amber-600',
-                'Late Invoice (>30 days)':  'bg-amber-500',
-                'Value Mismatch':           'bg-slate-500',
-              }
-              const barColor = colorMap[c.label] || 'bg-slate-400'
-              return (
-                <div key={c.label} className="space-y-1">
-                  <div className="flex justify-between text-xs font-semibold text-slate-600 dark:text-slate-300">
-                    <span>{c.label}</span>
-                    <span className="font-bold text-slate-950 dark:text-white">{(c.value || 0).toLocaleString()}</span>
-                  </div>
-                  <div className="bg-slate-100 dark:bg-slate-800/80 rounded-full h-3 overflow-hidden">
-                    <div
-                      className={`h-full rounded-full ${barColor} transition-all duration-500`}
-                      style={{ width: `${Math.max(c.pct ?? 0, 1)}%` }}
-                    />
-                  </div>
-                </div>
-              )
-            }) : (
-              <p className="text-slate-400 dark:text-slate-500 text-center py-4 text-xs">No data — upload files to populate.</p>
-            )}
-          </div>
-        </div>
       </div>
 
       {/* Details Table */}
@@ -504,10 +429,12 @@ export default function GrnToAp({ data }) {
                   {visibleCols.map(c => {
                     const val = r[c]
 
-                    // ── Currency columns ────────────────────────────────────
-                    if (CURRENCY_COLS.includes(c)) return (
-                      <td key={c} className="px-4 py-2 whitespace-nowrap font-mono text-slate-700 dark:text-slate-300">
-                        {typeof val === 'number' ? formatCurrency(val) : String(val ?? '—')}
+                    // ── Invoice Value: raw numeric, no symbol, no abbreviation ──
+                    if (c === 'Invoice Value (INR)') return (
+                      <td key={c} className="px-4 py-2 whitespace-nowrap font-mono text-slate-700 dark:text-slate-300 text-right">
+                        {val === null || val === undefined || val === ''
+                          ? '—'
+                          : Number(val).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </td>
                     )
 
@@ -540,53 +467,26 @@ export default function GrnToAp({ data }) {
                       )
                     }
 
-                    // ── Within 7-day SLA: Yes / No badge ───────────────────
-                    if (c === 'Within 7-day SLA') {
-                      const ok = val === true || val === 'Yes' || val === 1 || val === '1'
-                      return (
-                        <td key={c} className="px-4 py-2 whitespace-nowrap text-center">
-                          <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold ${
-                            ok
-                              ? 'bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-400'
-                              : 'bg-rose-100  text-rose-700  dark:bg-rose-950/40  dark:text-rose-400'
-                          }`}>
-                            {ok ? 'Yes' : 'No'}
-                          </span>
-                        </td>
-                      )
-                    }
+                    // ── Within 7-day SLA: raw value (1 = met, 0 = not met) ──
+                    if (c === 'Within 7-day SLA') return (
+                      <td key={c} className="px-4 py-2 whitespace-nowrap font-mono text-slate-700 dark:text-slate-300 text-center">
+                        {val === null || val === undefined || val === '' ? '—' : String(val)}
+                      </td>
+                    )
 
-                    // ── Invoice > 7 days (Breach): amber badge ──────────────
-                    if (c === 'Invoice > 7 days (Breach)') {
-                      const breach = val === true || val === 'Yes' || val === 1 || val === '1'
-                      return (
-                        <td key={c} className={`px-4 py-2 whitespace-nowrap text-center ${breach ? 'bg-amber-50/30 dark:bg-amber-950/10' : ''}`}>
-                          <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold ${
-                            breach
-                              ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400'
-                              : 'bg-slate-100 text-slate-400 dark:bg-slate-800   dark:text-slate-500'
-                          }`}>
-                            {breach ? 'Yes' : 'No'}
-                          </span>
-                        </td>
-                      )
-                    }
+                    // ── Invoice > 7 days (Breach): raw value (1 = breach, 0 = no breach) ──
+                    if (c === 'Invoice > 7 days (Breach)') return (
+                      <td key={c} className={`px-4 py-2 whitespace-nowrap font-mono text-center ${val === 1 || val === '1' ? 'bg-amber-50/30 dark:bg-amber-950/10 text-amber-700 dark:text-amber-400' : 'text-slate-700 dark:text-slate-300'}`}>
+                        {val === null || val === undefined || val === '' ? '—' : String(val)}
+                      </td>
+                    )
 
-                    // ── Seq Exception (Inv<GRN): rose badge ────────────────
-                    if (c === 'Seq Exception (Inv<GRN)') {
-                      const flag = val === true || val === 'Yes' || val === 1 || val === '1'
-                      return (
-                        <td key={c} className={`px-4 py-2 whitespace-nowrap text-center ${flag ? 'bg-rose-50/30 dark:bg-rose-950/10' : ''}`}>
-                          <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold ${
-                            flag
-                              ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400'
-                              : 'bg-slate-100 text-slate-400 dark:bg-slate-800  dark:text-slate-500'
-                          }`}>
-                            {flag ? 'Yes' : 'No'}
-                          </span>
-                        </td>
-                      )
-                    }
+                    // ── Seq Exception (Inv<GRN): raw value (1 = exception, 0 = correct) ──
+                    if (c === 'Seq Exception (Inv<GRN)') return (
+                      <td key={c} className={`px-4 py-2 whitespace-nowrap font-mono text-center ${val === 1 || val === '1' ? 'bg-rose-50/30 dark:bg-rose-950/10 text-rose-700 dark:text-rose-400' : 'text-slate-700 dark:text-slate-300'}`}>
+                        {val === null || val === undefined || val === '' ? '—' : String(val)}
+                      </td>
+                    )
 
                     // ── Default: plain text (IDs, names, dates, countries) ──
                     return (

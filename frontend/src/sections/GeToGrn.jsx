@@ -1,7 +1,5 @@
 import React, { useState, useMemo } from 'react'
-import DonutChart from '../components/DonutChart'
 import AiInsightBox from '../components/AiInsightBox'
-import { CHART_COLORS } from '../theme'
 
 const formatCurrency = (val) => {
   if (val === null || val === undefined) return '—'
@@ -22,13 +20,12 @@ const COL_GROUPS = [
   { label: 'GRN Information', cols: ['PO Number', 'AP Invoice No.', 'Vendor Code', 'Vendor Name', 'Vendor Country'] },
   { label: 'Quantities',      cols: ['#Items'] },
   { label: 'Values',          cols: ['GRN Value'] },
-  { label: 'Analysis',        cols: ['Days GE→GRN', 'Within 2-day SLA', 'GRN > 2 days (Breach)'] },
+  { label: 'Analysis',        cols: ['Days GE→GRN', 'Within 2-day SLA', 'GRN > 2 days (Breach)', 'Seq Exception (GRN < GE)'] },
 ]
 
 const ALL_COLS = COL_GROUPS.flatMap(g => g.cols)
 
-// Currency columns rendered with formatCurrency
-const CURRENCY_COLS = ['GRN Value']
+const CURRENCY_COLS = []
 // Integer columns rendered with toLocaleString (no decimals)
 const INT_COLS      = ['#Items']
 
@@ -129,9 +126,6 @@ export default function GeToGrn({ data }) {
   const kpis   = data?.kpis   || {}
   const charts = data?.charts || {}
   const tables = data?.tables || []
-
-  const matchChart  = charts.match_vs_unmatched || { total: 0, segments: [] }
-  const checkBars   = charts.match_breakdown     || []
 
   const mainTable = tables.find(t => t.title === 'GE to GRN Full Reconciliation List')
   // Fall back to MOCK_ROWS until the backend populates the table
@@ -289,76 +283,6 @@ export default function GeToGrn({ data }) {
             </div>
           )
         })}
-      </div>
-
-      {/* Charts section */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm flex flex-col justify-between">
-          <div>
-            <h3 className="text-sm font-bold text-slate-800 dark:text-white">GE–GRN Match vs Unmatched Ratio</h3>
-            <p className="text-xs text-slate-400 mt-0.5">Proportion of Gate Entries successfully reconciled to a GRN</p>
-          </div>
-          <div className="flex items-center justify-center my-6">
-            <DonutChart
-              segments={(matchChart.segments || []).map(s => ({
-                ...s,
-                color: s.label === 'Matched' ? CHART_COLORS.success : CHART_COLORS.risk,
-              }))}
-              centerText={`${kpis.match_rate_pct ?? 0}%`}
-              centerSub="Match Rate"
-            />
-          </div>
-          <div className="space-y-2 text-xs border-t border-slate-100 dark:border-slate-850 pt-3">
-            {(matchChart.segments || []).map(s => (
-              <div key={s.label} className="flex justify-between items-center">
-                <span className="flex items-center gap-2 text-slate-600 dark:text-slate-300 font-medium">
-                  <span className={`w-2.5 h-2.5 rounded-full ${s.label === 'Matched' ? 'bg-green-600' : 'bg-rose-600'}`} />
-                  {s.label === 'Matched' ? 'Reconciled GE–GRN Pairs' : 'Unmatched / Orphaned Lines'}
-                </span>
-                <span className="font-semibold text-slate-950 dark:text-white">{(s.value || 0).toLocaleString()}</span>
-              </div>
-            ))}
-            {(matchChart.segments || []).length === 0 && (
-              <p className="text-slate-400 dark:text-slate-500 text-center py-2">No data — upload files to populate.</p>
-            )}
-          </div>
-        </div>
-
-        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm flex flex-col justify-between">
-          <div>
-            <h3 className="text-sm font-bold text-slate-800 dark:text-white">Reconciliation Breakdown</h3>
-            <p className="text-xs text-slate-400 mt-0.5">Match category counts across GE and GRN records</p>
-          </div>
-          <div className="space-y-4 my-6 flex-1 flex flex-col justify-center">
-            {checkBars.length > 0 ? checkBars.map(c => {
-              const colorMap = {
-                'Matched':           'bg-emerald-600',
-                'Unmatched GE':      'bg-rose-600',
-                'Unmatched GRN':     'bg-rose-500',
-                'Qty Mismatch':      'bg-amber-600',
-                'Value Mismatch':    'bg-amber-500',
-                'Late GRN (>3 days)':'bg-slate-500',
-              }
-              const barColor = colorMap[c.label] || 'bg-slate-400'
-              return (
-                <div key={c.label} className="space-y-1">
-                  <div className="flex justify-between text-xs font-semibold text-slate-600 dark:text-slate-300">
-                    <span>{c.label}</span>
-                    <span className="font-bold text-slate-950 dark:text-white">{(c.value || 0).toLocaleString()}</span>
-                  </div>
-                  <div className="bg-slate-100 dark:bg-slate-800/80 rounded-full h-3 overflow-hidden">
-                    <div
-                      className={`h-full rounded-full ${barColor} transition-all duration-500`}
-                      style={{ width: `${Math.max(c.pct ?? 0, 1)}%` }}
-                    />
-                  </div>
-                </div>
-              )
-            }) : (
-              <p className="text-slate-400 dark:text-slate-500 text-center py-4 text-xs">No data — upload files to populate.</p>
-            )}
-          </div>
-        </div>
       </div>
 
       {/* Details Table */}
@@ -523,10 +447,12 @@ export default function GeToGrn({ data }) {
                   {visibleCols.map(c => {
                     const val = r[c]
 
-                    // ── Currency columns ────────────────────────────────────
-                    if (CURRENCY_COLS.includes(c)) return (
-                      <td key={c} className="px-4 py-2 whitespace-nowrap font-mono text-slate-700 dark:text-slate-300">
-                        {typeof val === 'number' ? formatCurrency(val) : String(val ?? '—')}
+                    // ── GRN Value: raw numeric, no symbol, no abbreviation ──
+                    if (c === 'GRN Value') return (
+                      <td key={c} className="px-4 py-2 whitespace-nowrap font-mono text-slate-700 dark:text-slate-300 text-right">
+                        {val === null || val === undefined || val === ''
+                          ? '—'
+                          : Number(val).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </td>
                     )
 
@@ -569,6 +495,13 @@ export default function GeToGrn({ data }) {
                     // ── GRN > 2 days (Breach): raw value (1 = breach, 0 = no breach) ──
                     if (c === 'GRN > 2 days (Breach)') return (
                       <td key={c} className={`px-4 py-2 whitespace-nowrap font-mono text-center ${val === 1 || val === '1' ? 'bg-amber-50/30 dark:bg-amber-950/10 text-amber-700 dark:text-amber-400' : 'text-slate-700 dark:text-slate-300'}`}>
+                        {val === null || val === undefined || val === '' ? '—' : String(val)}
+                      </td>
+                    )
+
+                    // ── Seq Exception (GRN < GE): raw value (1 = exception, 0 = correct) ──
+                    if (c === 'Seq Exception (GRN < GE)') return (
+                      <td key={c} className={`px-4 py-2 whitespace-nowrap font-mono text-center ${val === 1 || val === '1' ? 'bg-rose-50/30 dark:bg-rose-950/10 text-rose-700 dark:text-rose-400' : 'text-slate-700 dark:text-slate-300'}`}>
                         {val === null || val === undefined || val === '' ? '—' : String(val)}
                       </td>
                     )
