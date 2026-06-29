@@ -29,12 +29,12 @@ _TABLE_COLUMNS = [
     "GRN Date",
     "AP Invoice No.",
     "Invoice Date",
-    "AP Credit Note No.",
     "PO Number",
     "Vendor Code",
     "Vendor Name",
     "Vendor Country",
-    "Items",
+    "PO Qty",
+    "PO Price",
     "Invoice Value (INR)",
     "Days GRN→Inv",
     "Within 7-day SLA",
@@ -165,6 +165,10 @@ def run(dfs: dict) -> dict:
     col_ven_code  = grpo_map.get("vendor_code")
     col_ven_name  = grpo_map.get("vendor_name")
     col_po_qty    = grpo_map.get("po_qty")
+    col_po_price  = next(
+        (c for c in df_grpo.columns if c.strip().lower() == "po price"),
+        None,
+    )
     col_doc_currency = next(
         (c for c in df_grpo.columns if c.strip().lower() == "document currency"),
         None,
@@ -206,27 +210,6 @@ def run(dfs: dict) -> dict:
                         "invoice_value":    _safe_num(ap_row[col_ap_lt]) if col_ap_lt else None,
                     }
 
-    # ── Build AP Credit Note lookup: AP Invoice No. → AP Credit Note No. ────────
-    # Source: AP Credit Note Report (role: ap_credit_note).
-    # Join key: AP Invoice No. (from AP Invoice Report) ↔ AP Invoice Number (Credit Note Report).
-    # cn_lookup: { normalized_ap_invoice_no: credit_note_no_str | None }
-    cn_lookup: dict[str, str | None] = {}
-    df_cn = dfs.get("ap_credit_note")
-    if df_cn is not None and not df_cn.empty:
-        col_cn_inv_key = next(
-            (c for c in df_cn.columns if c.strip().lower() in ("ap invoice number", "ap invoice no", "ap invoice no.")),
-            None,
-        )
-        col_cn_no = next(
-            (c for c in df_cn.columns if c.strip().lower() in ("ap credit note no", "ap credit note no.", "credit note no")),
-            None,
-        )
-        if col_cn_inv_key and col_cn_no:
-            for _, cn_row in df_cn.iterrows():
-                inv_key = _normalize_id(cn_row[col_cn_inv_key])
-                if inv_key and inv_key not in cn_lookup:  # blank AP Invoice Number rows are skipped; first match wins
-                    cn_lookup[inv_key] = _safe_str(cn_row[col_cn_no])
-
     # ── Build one output row per GRPO Report row ──────────────────────────────
     rows = []
     for _, grpo_row in df_grpo.iterrows():
@@ -242,12 +225,12 @@ def run(dfs: dict) -> dict:
             "GRN Date":                   _fmt_date(grpo_row[col_grn_date])      if col_grn_date else None,
             "AP Invoice No.":             inv_info.get("invoice_no"),
             "Invoice Date":               inv_info.get("invoice_date"),
-            "AP Credit Note No.":         cn_lookup.get(_normalize_id(inv_info.get("invoice_no"))),
             "PO Number":                  _safe_str(grpo_row[col_po])       if col_po       else None,
             "Vendor Code":                _safe_str(grpo_row[col_ven_code]) if col_ven_code else None,
             "Vendor Name":                _safe_str(grpo_row[col_ven_name]) if col_ven_name else None,
             "Vendor Country":             "India" if col_doc_currency and str(grpo_row[col_doc_currency]).strip().upper() == "INR" else ("USA" if col_doc_currency else None),
-            "Items":                      _safe_int(grpo_row[col_po_qty]) if col_po_qty else None,
+            "PO Qty":                     _safe_int(grpo_row[col_po_qty])   if col_po_qty   else None,
+            "PO Price":                   _safe_num(grpo_row[col_po_price]) if col_po_price else None,
             "Invoice Value (INR)":        inv_info.get("invoice_value"),
             "Days GRN→Inv":               days_grn_inv,
             "Within 7-day SLA":           (1 if days_grn_inv <= 7 else 0) if days_grn_inv is not None else None,
@@ -282,7 +265,6 @@ def run(dfs: dict) -> dict:
         "unique_po_numbers":      len({r["PO Number"]      for r in rows if r.get("PO Number")      not in (None, "")}),
         "unique_grn_nos":         len({r["GRN No."]        for r in rows if r.get("GRN No.")        not in (None, "")}),
         "unique_ap_invoices":     len({r["AP Invoice No."] for r in rows if r.get("AP Invoice No.") not in (None, "")}),
-        "unique_ap_credit_notes": len({r["AP Credit Note No."] for r in rows if r.get("AP Credit Note No.") not in (None, "")}),
         "unique_pos_flagged":     len({r["PO Number"] for r in flagged if r.get("PO Number") not in (None, "")}),
         "unique_grns_flagged":    len({r["GRN No."]   for r in flagged if r.get("GRN No.")   not in (None, "")}),
     }
