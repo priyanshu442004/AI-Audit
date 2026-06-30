@@ -11,8 +11,6 @@ import PriceVarianceSame    from '../sections/PriceVarianceSame'
 import PriceVarianceCross   from '../sections/PriceVarianceCross'
 import GeToGrn              from '../sections/GeToGrn'
 import GrnToAp              from '../sections/GrnToAp'
-import QtyVariance          from '../sections/QtyVariance'
-import PriceVariance        from '../sections/PriceVariance'
 import GlBalances           from '../sections/GlBalances'
 import PaymentAging         from '../sections/PaymentAging'
 import PaymentAgingDomestic from '../sections/PaymentAgingDomestic'
@@ -20,8 +18,6 @@ import PaymentAgingForeign  from '../sections/PaymentAgingForeign'
 import PaymentAgingRelated  from '../sections/PaymentAgingRelated'
 import Msme                 from '../sections/Msme'
 import VendorMaster         from '../sections/VendorMaster'
-import GrpoExcept           from '../sections/GrpoExcept'
-import ThreeWay             from '../sections/ThreeWay'
 import DataMap              from '../sections/DataMap'
 import Appendix             from '../sections/Appendix'
 import History              from '../sections/History'
@@ -36,8 +32,6 @@ const SECTIONS = {
   pricevariancecross:   PriceVarianceCross,
   getogrn:              GeToGrn,
   grntoap:              GrnToAp,
-  qtyvariance:          QtyVariance,
-  pricevariance:        PriceVariance,
   glbalances:           GlBalances,
   paymentaging:         PaymentAging,
   paymentagingdomestic: PaymentAgingDomestic,
@@ -45,8 +39,6 @@ const SECTIONS = {
   paymentagingrelated:  PaymentAgingRelated,
   msme:                 Msme,
   vendormaster:         VendorMaster,
-  grpoexcept:           GrpoExcept,
-  threeway:             ThreeWay,
   datamap:              DataMap,
   appendix:             Appendix,
   history:              History,
