@@ -109,6 +109,16 @@ export async function fetchPaymentAgingForeign() {
 }
 
 /**
+ * Fetch payment aging (msme).
+ * @returns {Promise<{rows: Array, kpis: object}>}
+ */
+export async function fetchPaymentAgingMsme() {
+  const res = await fetch(`${BASE}/analysis/payment-aging-msme`)
+  if (!res.ok) throw new Error('Failed to load payment aging (msme) analysis')
+  return res.json()
+}
+
+/**
  * Fetch payment aging (related).
  * @returns {Promise<{rows: Array, kpis: object}>}
  */

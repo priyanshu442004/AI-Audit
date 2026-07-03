@@ -34,6 +34,7 @@ cached_dfs: dict[str, pd.DataFrame] | None = None
 cached_aging_domestic: dict | None = None
 cached_aging_foreign: dict | None = None
 cached_aging_related: dict | None = None
+cached_aging_msme: dict | None = None
 
 def get_cached_dfs_or_load() -> dict[str, pd.DataFrame]:
     global cached_dfs
@@ -220,11 +221,12 @@ async def upload_files(
     if combined_sess:
         combined_sess.result = None
 
-    global cached_dfs, cached_aging_domestic, cached_aging_foreign, cached_aging_related
+    global cached_dfs, cached_aging_domestic, cached_aging_foreign, cached_aging_related, cached_aging_msme
     cached_dfs = None
     cached_aging_domestic = None
     cached_aging_foreign = None
     cached_aging_related = None
+    cached_aging_msme = None
 
     loop = asyncio.get_running_loop()
 
@@ -254,6 +256,69 @@ async def upload_files(
     file_info = await asyncio.gather(*tasks)
 
     return {"session_id": "combined", "files": file_info}
+
+
+# ── Upload Holidays ───────────────────────────────────────────────────────────
+@app.post("/api/upload-holidays")
+async def upload_holidays(file: UploadFile = File(...)):
+    """
+    Upload a holidays Excel/CSV file, clear existing files in backend/holidays/,
+    and save the new file.
+    """
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in (".xlsx", ".xls", ".csv"):
+        raise HTTPException(400, "Unsupported file format. Please upload .xlsx, .xls, or .csv.")
+
+    try:
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        holidays_dir = os.path.abspath(os.path.join(current_dir, "..", "holidays"))
+        os.makedirs(holidays_dir, exist_ok=True)
+
+        # Remove all existing files in the directory
+        for old_file in os.listdir(holidays_dir):
+            old_file_path = os.path.join(holidays_dir, old_file)
+            if os.path.isfile(old_file_path):
+                os.remove(old_file_path)
+
+        new_file_path = os.path.join(holidays_dir, file.filename)
+        data = await file.read()
+        with open(new_file_path, "wb") as f:
+            f.write(data)
+
+        # Invalidate cache
+        global cached_dfs, cached_aging_domestic, cached_aging_foreign, cached_aging_related, cached_aging_msme
+        cached_dfs = None
+        cached_aging_domestic = None
+        cached_aging_foreign = None
+        cached_aging_related = None
+        cached_aging_msme = None
+
+        combined_sess = session_store.get_session("combined")
+        if combined_sess:
+            combined_sess.result = None
+
+        return {"status": "success", "filename": file.filename, "message": "Holidays file uploaded and replaced successfully."}
+
+    except Exception as e:
+        raise HTTPException(500, f"Error uploading holidays file: {str(e)}")
+
+
+@app.get("/api/holidays-info")
+def get_holidays_info():
+    """
+    Get the name of the currently uploaded holidays file.
+    """
+    try:
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        holidays_dir = os.path.abspath(os.path.join(current_dir, "..", "holidays"))
+        if os.path.exists(holidays_dir):
+            files = os.listdir(holidays_dir)
+            valid_files = [f for f in files if os.path.isfile(os.path.join(holidays_dir, f)) and f.lower().endswith(('.xlsx', '.xls', '.csv'))]
+            if valid_files:
+                return {"has_file": True, "filename": valid_files[0]}
+        return {"has_file": False, "filename": None}
+    except Exception as e:
+        raise HTTPException(500, f"Error getting holidays info: {str(e)}")
 
 
 # ── Audit History Management ──────────────────────────────────────────────────
@@ -301,11 +366,12 @@ def delete_history_file(file_id: int):
         if sess:
             sess.result = None
 
-        global cached_dfs, cached_aging_domestic, cached_aging_foreign, cached_aging_related
+        global cached_dfs, cached_aging_domestic, cached_aging_foreign, cached_aging_related, cached_aging_msme
         cached_dfs = None
         cached_aging_domestic = None
         cached_aging_foreign = None
         cached_aging_related = None
+        cached_aging_msme = None
             
         return {"status": "success", "message": f"File '{file_info['filename']}' deleted successfully."}
     except HTTPException as he:
@@ -348,11 +414,12 @@ async def replace_history_file(file_id: int, file: UploadFile = File(...)):
         if sess:
             sess.result = None
 
-        global cached_dfs, cached_aging_domestic, cached_aging_foreign, cached_aging_related
+        global cached_dfs, cached_aging_domestic, cached_aging_foreign, cached_aging_related, cached_aging_msme
         cached_dfs = None
         cached_aging_domestic = None
         cached_aging_foreign = None
         cached_aging_related = None
+        cached_aging_msme = None
             
         return {
             "status": "success",
@@ -579,5 +646,21 @@ async def get_payment_aging_related():
         return sanitized
     except Exception as e:
         raise HTTPException(500, f"Error computing payment aging (related): {str(e)}")
+
+@app.get("/api/analysis/payment-aging-msme")
+async def get_payment_aging_msme():
+    global cached_aging_msme
+    if cached_aging_msme is not None:
+        return cached_aging_msme
+    try:
+        loop = asyncio.get_running_loop()
+        dfs = await loop.run_in_executor(None, get_cached_dfs_or_load)
+        from app.analysis.payment_aging_msme import run_payment_aging_msme
+        res = await loop.run_in_executor(None, lambda: run_payment_aging_msme(dfs))
+        sanitized = sanitize_for_json(res)
+        cached_aging_msme = sanitized
+        return sanitized
+    except Exception as e:
+        raise HTTPException(500, f"Error computing payment aging (msme): {str(e)}")
 
 

@@ -6,6 +6,9 @@ from __future__ import annotations
 import pandas as pd
 import numpy as np
 from datetime import datetime
+import os
+import glob
+import re
 
 # Helper to find column using case-insensitive aliases
 def find_col(df: pd.DataFrame, aliases: list[str]) -> str | None:
@@ -46,9 +49,17 @@ def clean_str_val(val, default="—") -> str:
 def parse_single_date(val) -> pd.Timestamp | None:
     if pd.isna(val) or val is None or str(val).strip().lower() in ("nan", "none", ""):
         return None
+    val_str = str(val).strip()
+    if re.match(r'^\d{4}[-/]\d{2}[-/]\d{2}', val_str):
+        try:
+            dt = pd.to_datetime(val_str, errors='coerce', dayfirst=False)
+            if pd.notna(dt):
+                return dt
+        except:
+            pass
     try:
         from app.cleaning import parse_dates
-        s = pd.Series([str(val).strip()])
+        s = pd.Series([val_str])
         parsed = parse_dates(s)
         if not parsed.isna().all():
             return parsed[0]
@@ -70,6 +81,60 @@ STATIC_HOLIDAYS = {
     "2026-04-14", "2026-05-01", "2026-08-15", "2026-10-02", "2026-10-18",
     "2026-10-22", "2026-11-09", "2026-12-25"
 }
+
+def parse_holiday_date(val):
+    if pd.isna(val) or val is None:
+        return None
+    if hasattr(val, "strftime"):
+        return val
+    val_str = str(val).strip()
+    if re.match(r'^\s*\d+(\.\d+)?\s*$', val_str):
+        return None
+    clean = re.sub(r'[\.\,]+', ' ', val_str)
+    clean = re.sub(r'\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b', '', clean, flags=re.IGNORECASE)
+    clean = ' '.join(clean.split())
+    if len(clean) < 5:
+        return None
+    try:
+        dt = pd.to_datetime(clean, errors='coerce')
+        if pd.notna(dt):
+            return dt
+    except:
+        pass
+    return None
+
+def load_holiday_dates(dfs) -> set[str]:
+    holiday_dates = set()
+    if isinstance(dfs, dict) and "holiday" in dfs:
+        df_holiday = dfs["holiday"]
+        if df_holiday is not None and not df_holiday.empty:
+            for col in df_holiday.columns:
+                for val in df_holiday[col].dropna():
+                    dt = parse_holiday_date(val)
+                    if dt is not None:
+                        holiday_dates.add(dt.strftime("%Y-%m-%d"))
+            return holiday_dates
+
+    try:
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        holidays_dir = os.path.abspath(os.path.join(current_dir, "..", "..", "holidays"))
+        if os.path.exists(holidays_dir):
+            files = glob.glob(os.path.join(holidays_dir, "*"))
+            if files:
+                filepath = files[0]
+                if filepath.lower().endswith(('.xlsx', '.xls', '.csv')):
+                    if filepath.lower().endswith('.csv'):
+                        df_holiday = pd.read_csv(filepath)
+                    else:
+                        df_holiday = pd.read_excel(filepath)
+                    for col in df_holiday.columns:
+                        for val in df_holiday[col].dropna():
+                            dt = parse_holiday_date(val)
+                            if dt is not None:
+                                holiday_dates.add(dt.strftime("%Y-%m-%d"))
+    except Exception as e:
+        print(f"Error loading holidays from folder: {e}")
+    return holiday_dates
 
 def run(dfs_or_df: dict[str, pd.DataFrame] | pd.DataFrame) -> dict:
     # Support both DataFrame (for tests) and dict of DataFrames (for production)
@@ -328,17 +393,9 @@ def run(dfs_or_df: dict[str, pd.DataFrame] | pd.DataFrame) -> dict:
                     po_to_ge_dates[po].append(dt_clean)
 
     # Holiday dates parsing
-    holiday_dates = set()
-    if df_holiday is not None and not df_holiday.empty:
-        col_hol_date = find_col(df_holiday, ["date", "holiday date", "holiday", "posting date"])
-        if col_hol_date is None:
-            col_hol_date = df_holiday.columns[0]
-        for val in df_holiday[col_hol_date].dropna():
-            try:
-                dt = pd.to_datetime(val)
-                holiday_dates.add(dt.strftime("%Y-%m-%d"))
-            except:
-                pass
+    holiday_dates = load_holiday_dates(dfs)
+    if not holiday_dates:
+        holiday_dates = STATIC_HOLIDAYS
 
     # ── 7. Process PO Lines ──────────────────────────────────────────────────
     po_records = df_po.to_dict(orient="records")
@@ -507,15 +564,12 @@ def run(dfs_or_df: dict[str, pd.DataFrame] | pd.DataFrame) -> dict:
 
         # Holiday flag
         holiday_flag = 0
-        for dt_val in [post_date, doc_date]:
-            if not dt_val or dt_val == "—":
-                continue
-            dt_parsed = parse_single_date(dt_val)
+        if post_date and post_date != "—":
+            dt_parsed = parse_single_date(post_date)
             if dt_parsed is not None:
                 dt_str = dt_parsed.strftime("%Y-%m-%d")
-                if dt_str in holiday_dates or dt_str in STATIC_HOLIDAYS or dt_parsed.dayofweek in [5, 6]:
+                if dt_str in holiday_dates or dt_parsed.dayofweek == 6:
                     holiday_flag = 1
-                    break
 
         # Compute variance>5% and Financial difference
         if received_qty_row > (1.05 * ordered_qty):

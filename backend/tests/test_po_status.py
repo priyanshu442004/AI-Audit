@@ -192,3 +192,44 @@ def test_comma_separated_po_and_variance():
     assert row["variance>5%"] == 5.0
     assert row["Financial difference"] == 50.0
 
+
+def test_dynamic_holidays_and_sunday():
+    # March 1, 2026 is Sunday
+    # March 2, 2026 is Monday (not holiday, not Sunday)
+    # March 3, 2026 is Tuesday (we will put it in holiday list)
+    po_data = pd.DataFrame({
+        "PO No": ["PO_HOL_1", "PO_HOL_2", "PO_HOL_3"],
+        "Vendor Code": ["V_VAR_1", "V_VAR_1", "V_VAR_1"],
+        "Vendor Name": ["Var Vendor", "Var Vendor", "Var Vendor"],
+        "Item No.": ["ITEM_VAR", "ITEM_VAR", "ITEM_VAR"],
+        "Item Description": ["Var Widget", "Var Widget", "Var Widget"],
+        "Quantity": ["100", "100", "100"],
+        "Price": ["10.0", "10.0", "10.0"],
+        "Open Qty": ["0", "0", "0"],
+        "Document currency": ["INR", "INR", "INR"],
+        "Document Date": ["2026-03-01", "2026-03-02", "2026-03-03"],
+        "Posting Date": ["2026-03-01", "2026-03-02", "2026-03-03"],
+        "Document Status": ["Closed", "Closed", "Closed"],
+        "PO Qty": ["100", "100", "100"],
+        "PO Price": ["10.0", "10.0", "10.0"],
+        "Document Rate": ["1.0", "1.0", "1.0"],
+        "Line Total": ["1000.0", "1000.0", "1000.0"],
+    })
+
+    dfs = {
+        "purchase_order": po_data,
+        "holiday": pd.DataFrame({"Date": ["2026-03-03"]}) # March 3 is holiday
+    }
+
+    result = run(dfs)
+    rows = result["tables"][3]["rows"]
+
+    assert len(rows) == 3
+    # Row 0: March 1, 2026 (Sunday) -> Holiday flag = 1
+    assert rows[0]["Holiday flag"] == 1
+    # Row 1: March 2, 2026 (Monday, not holiday) -> Holiday flag = 0
+    assert rows[1]["Holiday flag"] == 0
+    # Row 2: March 3, 2026 (Tuesday, holiday) -> Holiday flag = 1
+    assert rows[2]["Holiday flag"] == 1
+
+

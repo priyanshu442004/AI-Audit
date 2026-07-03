@@ -16,11 +16,13 @@ import PaymentAging         from '../sections/PaymentAging'
 import PaymentAgingDomestic from '../sections/PaymentAgingDomestic'
 import PaymentAgingForeign  from '../sections/PaymentAgingForeign'
 import PaymentAgingRelated  from '../sections/PaymentAgingRelated'
+import PaymentAgingMsme     from '../sections/PaymentAgingMsme'
 import Msme                 from '../sections/Msme'
 import VendorMaster         from '../sections/VendorMaster'
 import DataMap              from '../sections/DataMap'
 import Appendix             from '../sections/Appendix'
 import History              from '../sections/History'
+import Settings             from '../sections/Settings'
 import UploadModal          from '../components/UploadModal'
 
 const SECTIONS = {
@@ -37,11 +39,13 @@ const SECTIONS = {
   paymentagingdomestic: PaymentAgingDomestic,
   paymentagingforeign:  PaymentAgingForeign,
   paymentagingrelated:  PaymentAgingRelated,
+  paymentagingmsme:     PaymentAgingMsme,
   msme:                 Msme,
   vendormaster:         VendorMaster,
   datamap:              DataMap,
   appendix:             Appendix,
   history:              History,
+  settings:             Settings,
 }
 
 export default function Dashboard() {

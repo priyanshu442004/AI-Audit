@@ -1,7 +1,13 @@
+import os
 import requests
+from dotenv import load_dotenv
+
+# Load env variables
+load_dotenv(os.path.join(os.path.dirname(__file__), '../../.env'))
+backend_url = os.environ.get("BACKEND_URL", "http://localhost:8000")
 
 try:
-    res = requests.get("http://localhost:8000/api/analysis/price-variance-same")
+    res = requests.get(f"{backend_url}/api/analysis/price-variance-same")
     print(f"Status: {res.status_code}")
     data = res.json()
     if isinstance(data, dict):
