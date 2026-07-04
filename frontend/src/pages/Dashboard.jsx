@@ -11,13 +11,12 @@ import PriceVarianceSame    from '../sections/PriceVarianceSame'
 import PriceVarianceCross   from '../sections/PriceVarianceCross'
 import GeToGrn              from '../sections/GeToGrn'
 import GrnToAp              from '../sections/GrnToAp'
-import QtyVariance          from '../sections/QtyVariance'
-import PriceVariance        from '../sections/PriceVariance'
 import GlBalances           from '../sections/GlBalances'
 import PaymentAging         from '../sections/PaymentAging'
 import PaymentAgingDomestic from '../sections/PaymentAgingDomestic'
 import PaymentAgingForeign  from '../sections/PaymentAgingForeign'
 import PaymentAgingRelated  from '../sections/PaymentAgingRelated'
+import PaymentAgingMsme     from '../sections/PaymentAgingMsme'
 import Msme                 from '../sections/Msme'
 import VendorMaster         from '../sections/VendorMaster'
 import ItemMaster           from '../sections/ItemMaster'
@@ -26,6 +25,7 @@ import ThreeWay             from '../sections/ThreeWay'
 import DataMap              from '../sections/DataMap'
 import Appendix             from '../sections/Appendix'
 import History              from '../sections/History'
+import Settings             from '../sections/Settings'
 import UploadModal          from '../components/UploadModal'
 
 const SECTIONS = {
@@ -37,13 +37,12 @@ const SECTIONS = {
   pricevariancecross:   PriceVarianceCross,
   getogrn:              GeToGrn,
   grntoap:              GrnToAp,
-  qtyvariance:          QtyVariance,
-  pricevariance:        PriceVariance,
   glbalances:           GlBalances,
   paymentaging:         PaymentAging,
   paymentagingdomestic: PaymentAgingDomestic,
   paymentagingforeign:  PaymentAgingForeign,
   paymentagingrelated:  PaymentAgingRelated,
+  paymentagingmsme:     PaymentAgingMsme,
   msme:                 Msme,
   vendormaster:         VendorMaster,
   itemmaster:           ItemMaster,
@@ -52,6 +51,7 @@ const SECTIONS = {
   datamap:              DataMap,
   appendix:             Appendix,
   history:              History,
+  settings:             Settings,
 }
 
 export default function Dashboard() {
