@@ -8,11 +8,13 @@ from __future__ import annotations
 import io
 from typing import AsyncGenerator, Callable, Any
 
+import pandas as pd
+
 from app.loaders import load_file
 from app.session import Session
 from app.analysis import (
     po_status, gate_entry, ge_to_grn, grn_to_ap, qty_variance, price_variance,
-    gl_balances, payment_aging, msme, vendor_master,
+    gl_balances, payment_aging, msme, vendor_master, item_master,
     grpo_exceptions, three_way, executive,
 )
 
@@ -153,6 +155,14 @@ async def run_pipeline(
             results["vendormaster"] = vendor_master.run(dfs["vendor_master"])
         except Exception as e:
             results["vendormaster"] = {"error": str(e), "kpis": {}, "charts": {}, "tables": []}
+
+    # ── Item Master ──────────────────────────────────────────────────────────
+    await emit("item_master", 81, "Analysing item master data…")
+    if "item_master" in dfs:
+        try:
+            results["itemmaster"] = item_master.run(dfs)
+        except Exception as e:
+            results["itemmaster"] = {"error": str(e), "kpis": {}, "charts": {}, "tables": []}
 
     # ── GRPO Exceptions ──────────────────────────────────────────────────────
     await emit("grpo_exceptions", 84, "Checking GRPO/GE/Invoice linkages…")

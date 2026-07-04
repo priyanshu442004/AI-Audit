@@ -20,6 +20,7 @@ import PaymentAgingForeign  from '../sections/PaymentAgingForeign'
 import PaymentAgingRelated  from '../sections/PaymentAgingRelated'
 import Msme                 from '../sections/Msme'
 import VendorMaster         from '../sections/VendorMaster'
+import ItemMaster           from '../sections/ItemMaster'
 import GrpoExcept           from '../sections/GrpoExcept'
 import ThreeWay             from '../sections/ThreeWay'
 import DataMap              from '../sections/DataMap'
@@ -45,6 +46,7 @@ const SECTIONS = {
   paymentagingrelated:  PaymentAgingRelated,
   msme:                 Msme,
   vendormaster:         VendorMaster,
+  itemmaster:           ItemMaster,
   grpoexcept:           GrpoExcept,
   threeway:             ThreeWay,
   datamap:              DataMap,
