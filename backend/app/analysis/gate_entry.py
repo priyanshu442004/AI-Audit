@@ -603,6 +603,8 @@ def run(dfs_or_ge: dict[str, pd.DataFrame] | pd.DataFrame, df_grpo_raw: pd.DataF
     pass_dash = round(pass_count / total_lines * CIRC, 0) if total_lines else 0
     exc_dash  = round(seq_exceptions / total_lines * CIRC, 0) if total_lines else 0
 
+    from app.analysis.calculated_fields import field, same_row
+
     return {
         "kpis": {
             "gate_entries": total_ge,
@@ -640,6 +642,32 @@ def run(dfs_or_ge: dict[str, pd.DataFrame] | pd.DataFrame, df_grpo_raw: pd.DataF
         },
         "tables": [
             {"title": "GE > GRPO Date Exceptions",   "rows": exceptions_rows},
-            {"title": "Gate Entry Full Transaction List", "rows": records},
+            {
+                "title": "Gate Entry Full Transaction List",
+                "rows": records,
+                "calculated_fields": {
+                    "Days(GRPO-GE)": field(
+                        "GRPO Date − Gate Entry Date",
+                        "ABS(GRPO_Date − GE_Date)",
+                        inputs=[
+                            {"field": "Gate Entry Date", "source_file": "Gate Entry Report", "source_record": "Gate Entry number"},
+                            {"field": "GRPO Date", "source_file": "GRPO Report", "source_record": "GRN Number"},
+                        ],
+                    ),
+                    "Seq Exception(GE>GRPO)": field(
+                        "Gate Entry Date > GRPO Date",
+                        "IF(GE_Date > GRPO_Date, 1, 0)",
+                        inputs=[
+                            {"field": "Gate Entry Date", "source_file": "Gate Entry Report", "source_record": "Gate Entry number"},
+                            {"field": "GRPO Date", "source_file": "GRPO Report", "source_record": "GRN Number"},
+                        ],
+                    ),
+                    "Exceeds 3 days": field(
+                        "Days(GRPO-GE) > 3 days",
+                        "IF(Days_GRPO_GE > 3, 1, 0)",
+                        inputs=[{"field": "Days(GRPO-GE)", "source_file": "GRPO Report (calculated)", "source_record": "GRN Number"}],
+                    ),
+                },
+            },
         ],
     }

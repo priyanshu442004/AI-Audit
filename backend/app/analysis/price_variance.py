@@ -12,6 +12,7 @@ import numpy as np
 
 from app.cleaning import require_columns, rename_canonical, detect_columns, parse_numeric
 from app.config import VARIANCE_TOLERANCE_PCT
+from app.analysis.calculated_fields import field, same_row
 
 
 REQUIRED_GRPO = ["item_code", "grpo_qty", "grpo_rate"]
@@ -118,7 +119,51 @@ def run(df_grpo_raw: pd.DataFrame) -> dict:
             "top10_savings": _rows(top10),
         },
         "tables": [
-            {"title": "Price Variance Summary (Items >5%)",        "rows": _rows(pv_table)},
-            {"title": "Potential Savings – Summary Table",          "rows": _rows(savings_summary)},
+            {
+                "title": "Price Variance Summary (Items >5%)",
+                "rows": _rows(pv_table),
+                "calculated_fields": {
+                    "Price Diff": field(
+                        "Highest Price − Lowest Price",
+                        "Max_Price − Min_Price",
+                        inputs=[
+                            {"field": "Lowest Price", "source_file": "GRPO Report", "source_record": "Item No."},
+                            {"field": "Highest Price", "source_file": "GRPO Report", "source_record": "Item No."},
+                        ],
+                    ),
+                    "Variance %": field(
+                        "Price Diff ÷ Highest Price × 100",
+                        "Price_Diff / Max_Price * 100",
+                        inputs=[
+                            {"field": "Price Diff", "source_file": "GRPO Report (calculated)", "source_record": "Item No."},
+                            {"field": "Highest Price", "source_file": "GRPO Report", "source_record": "Item No."},
+                        ],
+                    ),
+                    "Potential Saving (₹)": field(
+                        "(Avg Price − Min Price) × Total Qty",
+                        "(Avg_Price − Min_Price) * Total_Qty",
+                        inputs=[
+                            {"field": "Avg Price", "source_file": "GRPO Report", "source_record": "Item No."},
+                            {"field": "Min Price", "source_file": "GRPO Report", "source_record": "Item No."},
+                            {"field": "Total Qty", "source_file": "GRPO Report", "source_record": "Item No."},
+                        ],
+                    ),
+                },
+            },
+            {
+                "title": "Potential Savings – Summary Table",
+                "rows": _rows(savings_summary),
+                "calculated_fields": {
+                    "Potential Saving (₹)": field(
+                        "(Avg Price − Min Price) × Total Qty",
+                        "(Avg_Price − Min_Price) * Total_Qty",
+                        inputs=[
+                            {"field": "Avg Price", "source_file": "GRPO Report", "source_record": "Item No."},
+                            {"field": "Min Price", "source_file": "GRPO Report", "source_record": "Item No."},
+                            {"field": "Total Qty", "source_file": "GRPO Report", "source_record": "Item No."},
+                        ],
+                    ),
+                },
+            },
         ],
     }

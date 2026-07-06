@@ -13,6 +13,7 @@ import pandas as pd
 import numpy as np
 
 from app.cleaning import require_columns, rename_canonical, detect_columns, parse_numeric
+from app.analysis.calculated_fields import field, same_row
 
 
 REQUIRED = ["vendor_code", "debit", "credit"]
@@ -108,7 +109,33 @@ def run(df_raw: pd.DataFrame) -> dict:
             ],
         },
         "tables": [
-            {"title": "Top 20 Outstanding Vendors",   "rows": _rows(top_os)},
-            {"title": "Vendor GL Balance Summary",     "rows": _rows(full_table.head(500))},
+            {
+                "title": "Top 20 Outstanding Vendors",
+                "rows": _rows(top_os),
+                "calculated_fields": {
+                    "Net Balance (₹)": field(
+                        "Total Credit − Total Debit",
+                        "Total_Credit − Total_Debit",
+                        inputs=[
+                            {"field": "Total Debit", "source_file": "General Ledger", "source_record": "Vendor Code"},
+                            {"field": "Total Credit", "source_file": "General Ledger", "source_record": "Vendor Code"},
+                        ],
+                    ),
+                },
+            },
+            {
+                "title": "Vendor GL Balance Summary",
+                "rows": _rows(full_table.head(500)),
+                "calculated_fields": {
+                    "Net Balance (₹)": field(
+                        "Total Credit − Total Debit",
+                        "Total_Credit − Total_Debit",
+                        inputs=[
+                            {"field": "Total Debit", "source_file": "General Ledger", "source_record": "Vendor Code"},
+                            {"field": "Total Credit", "source_file": "General Ledger", "source_record": "Vendor Code"},
+                        ],
+                    ),
+                },
+            },
         ],
     }

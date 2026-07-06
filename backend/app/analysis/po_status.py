@@ -136,6 +136,8 @@ def load_holiday_dates(dfs) -> set[str]:
         print(f"Error loading holidays from folder: {e}")
     return holiday_dates
 
+from app.analysis.calculated_fields import field, same_row
+
 def run(dfs_or_df: dict[str, pd.DataFrame] | pd.DataFrame) -> dict:
     # Support both DataFrame (for tests) and dict of DataFrames (for production)
     if isinstance(dfs_or_df, pd.DataFrame):
@@ -737,6 +739,115 @@ def run(dfs_or_df: dict[str, pd.DataFrame] | pd.DataFrame) -> dict:
             res.append({k: str(v) for k, v in r.items()})
         return res
 
+    # Calculated fields metadata for the main PO Status table
+    po_calculated_fields = {
+        "%age Received": field(
+            "Received Qty ÷ Ordered Qty × 100",
+            "Received_Qty / Ordered_Qty * 100",
+            inputs=[
+                {"field": "Ordered Qty.", "source_file": "Purchase Order", "source_record": "PO Number"},
+                {"field": "Received Qty.", "source_file": "GRPO Report", "source_record": "GRN No."},
+            ],
+        ),
+        "Pending Qty.": field(
+            "Ordered Qty − Received Qty",
+            "Ordered_Qty − Received_Qty",
+            inputs=[
+                {"field": "Ordered Qty.", "source_file": "Purchase Order", "source_record": "PO Number"},
+                {"field": "Received Qty.", "source_file": "GRPO Report", "source_record": "GRN No."},
+            ],
+        ),
+        "Rate(INR)": field(
+            "PO Price × Document Rate",
+            "PO_Price * Document_Rate",
+            inputs=[
+                {"field": "PO Price", "source_file": "Purchase Order", "source_record": "PO Number"},
+                {"field": "Document Rate", "source_file": "Purchase Order", "source_record": "PO Number"},
+            ],
+        ),
+        "Line Value(INR)": field(
+            "Ordered Qty × Rate(INR)",
+            "Ordered_Qty * Rate_INR",
+            inputs=[
+                {"field": "Ordered Qty.", "source_file": "Purchase Order", "source_record": "PO Number"},
+                {"field": "Rate(INR)", "source_file": "Purchase Order", "source_record": "PO Number"},
+            ],
+        ),
+        "Open Value(INR)": field(
+            "Pending Qty × Rate(INR) (if OPEN)",
+            "IF(Status='OPEN', Pending_Qty * Rate_INR, 'PO is closed')",
+            inputs=[
+                {"field": "Pending Qty.", "source_file": "Purchase Order (calculated)", "source_record": "PO Number"},
+                {"field": "Rate(INR)", "source_file": "Purchase Order", "source_record": "PO Number"},
+                {"field": "Doc Status", "source_file": "Purchase Order", "source_record": "PO Number"},
+            ],
+        ),
+        "%age Variance": field(
+            "(Received Qty − Ordered Qty) ÷ Ordered Qty × 100",
+            "(Received_Qty − Ordered_Qty) / Ordered_Qty * 100",
+            inputs=[
+                {"field": "Received Qty.", "source_file": "GRPO Report", "source_record": "GRN No."},
+                {"field": "Ordered Qty.", "source_file": "Purchase Order", "source_record": "PO Number"},
+            ],
+        ),
+        "Days Open": field(
+            "Target Date − Posting Date (if OPEN)",
+            "IF(Status='OPEN', Target_Date − Posting_Date, 'PO is closed')",
+            inputs=[
+                {"field": "Posting Date", "source_file": "Purchase Order", "source_record": "PO Number"},
+                {"field": "Doc Status", "source_file": "Purchase Order", "source_record": "PO Number"},
+            ],
+        ),
+        "Pending Flag": field(
+            "1 if Received Qty > Ordered Qty",
+            "IF(Received_Qty > Ordered_Qty, 1, 0)",
+            inputs=[
+                {"field": "Received Qty.", "source_file": "GRPO Report", "source_record": "GRN No."},
+                {"field": "Ordered Qty.", "source_file": "Purchase Order", "source_record": "PO Number"},
+            ],
+        ),
+        "Open>90d & No receipt": field(
+            "1 if OPEN & Days Open > 90 & Received Qty = 0",
+            "IF(Status='OPEN' AND Days_Open>90 AND Received_Qty=0, 1, 0)",
+            inputs=[
+                {"field": "Doc Status", "source_file": "Purchase Order", "source_record": "PO Number"},
+                {"field": "Days Open", "source_file": "Purchase Order (calculated)", "source_record": "PO Number"},
+                {"field": "Received Qty.", "source_file": "GRPO Report", "source_record": "GRN No."},
+            ],
+        ),
+        "Recv<50%": field(
+            "1 if Received Qty < Ordered Qty × 0.5",
+            "IF(Received_Qty < Ordered_Qty * 0.5, 1, 0)",
+            inputs=[
+                {"field": "Received Qty.", "source_file": "GRPO Report", "source_record": "GRN No."},
+                {"field": "Ordered Qty.", "source_file": "Purchase Order", "source_record": "PO Number"},
+            ],
+        ),
+        "Holiday flag": field(
+            "1 if Posting Date is a holiday or Sunday",
+            "IF(Posting_Date IN Holidays OR DayOfWeek=Sunday, 1, 0)",
+            inputs=[
+                {"field": "Posting Date", "source_file": "Purchase Order", "source_record": "PO Number"},
+            ],
+        ),
+        "variance>5%": field(
+            "Received Qty − (1.05 × Ordered Qty)",
+            "Received_Qty − (1.05 * Ordered_Qty)",
+            inputs=[
+                {"field": "Received Qty.", "source_file": "GRPO Report", "source_record": "GRN No."},
+                {"field": "Ordered Qty.", "source_file": "Purchase Order", "source_record": "PO Number"},
+            ],
+        ),
+        "Financial difference": field(
+            "Rate(INR) × variance>5%",
+            "Rate_INR * variance_gt_5",
+            inputs=[
+                {"field": "Rate(INR)", "source_file": "Purchase Order", "source_record": "PO Number"},
+                {"field": "variance>5%", "source_file": "Purchase Order (calculated)", "source_record": "PO Number"},
+            ],
+        ),
+    }
+
     # Charts segments
     CIRC = 314.0
     open_pct = open_lines_pending / po_lines if po_lines else 0
@@ -789,6 +900,10 @@ def run(dfs_or_df: dict[str, pd.DataFrame] | pd.DataFrame) -> dict:
             {"title": "PO Status Summary", "rows": _to_rows(po_summary[:100])},
             {"title": "Top 25 Vendors – Highest Open PO Exposure", "rows": _to_rows(vendor_open)},
             {"title": "Open PO Transaction Data List", "rows": _to_rows(open_tx[:500])},
-            {"title": "Purchase Order Line Status Analysis", "rows": rows},
+            {
+                "title": "Purchase Order Line Status Analysis",
+                "rows": rows,
+                "calculated_fields": po_calculated_fields,
+            },
         ],
     }

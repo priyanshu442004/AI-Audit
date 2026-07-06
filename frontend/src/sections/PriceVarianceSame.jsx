@@ -181,11 +181,17 @@ export default function PriceVarianceSame() {
     // High price variance rows count (variance flag is 1)
     const varianceCount = filtered.filter(r => r.variance_flag === 1).length
 
+    // Count unique vendors where rate increased > 5% on same item (spread_gt_5 === 1)
+    const rateIncreasedGt5 = new Set(
+      filtered.filter(r => r.spread_gt_5 === 1).map(r => r.vendor_code)
+    ).size
+
     return {
       totalItems,
       uomInconsistent,
       uniqueGrns,
-      varianceCount
+      varianceCount,
+      rateIncreasedGt5
     }
   }, [filtered])
 
@@ -237,15 +243,17 @@ export default function PriceVarianceSame() {
         vendor_items: metrics.totalItems,
         uom_inconsistent: metrics.uomInconsistent,
         unique_grns: metrics.uniqueGrns,
-        variance_lines: metrics.varianceCount
+        variance_lines: metrics.varianceCount,
+        rate_increased_gt_5: metrics.rateIncreasedGt5
       }} />
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         {[
           { label: 'Vendor Items Evaluated', value: metrics.totalItems, accent: 'blue', desc: 'Total line items evaluated' },
           { label: 'Unique GRN(GRPO) Nos.', value: metrics.uniqueGrns, accent: 'blue', desc: 'Distinct goods receipt files matched' },
           { label: 'Total Variance Lines', value: metrics.varianceCount, accent: metrics.varianceCount > 0 ? 'rose' : 'blue', desc: 'Lines with pricing variance > 5%' },
+          { label: 'Rate Increased >5%', value: metrics.rateIncreasedGt5, accent: metrics.rateIncreasedGt5 > 0 ? 'rose' : 'blue', desc: 'Vendors with >5% rate increase' },
           { label: 'Vendors with Inconsistent UOM', value: metrics.uomInconsistent, accent: metrics.uomInconsistent > 0 ? 'amber' : 'blue', desc: 'Vendors with non-uniform UOMs' }
         ].map(card => {
           const isRose = card.accent === 'rose'

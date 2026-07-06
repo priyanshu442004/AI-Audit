@@ -30,6 +30,8 @@ export const useStore = create((set, get) => ({
   paymentAgingForeign: null,
   paymentAgingRelated: null,
   paymentAgingMsme: null,
+  vendorMasterNew: null,
+  threeWayMatching: null,
 
   // Loading progress
   progress: { pct: 0, message: 'Preparing data…', stage: '' },
@@ -43,7 +45,7 @@ export const useStore = create((set, get) => ({
   // Actions
   setPage: (page) => set({ page }),
   setSessionId: (id) => set({ sessionId: id }),
-  setResults: (r) => set({ results: r, priceVarianceSame: null, priceVarianceCross: null, paymentAgingDomestic: null, paymentAgingForeign: null, paymentAgingRelated: null, paymentAgingMsme: null }),
+  setResults: (r) => set({ results: r, priceVarianceSame: null, priceVarianceCross: null, paymentAgingDomestic: null, paymentAgingForeign: null, paymentAgingRelated: null, paymentAgingMsme: null, vendorMasterNew: null, threeWayMatching: null }),
   setProgress: (p) => set({ progress: p }),
   setActiveSection: (s) => set({ activeSection: s }),
   setShowUploadModal: (show) => set({ showUploadModal: show }),
@@ -53,6 +55,8 @@ export const useStore = create((set, get) => ({
   setPaymentAgingForeign: (data) => set({ paymentAgingForeign: data }),
   setPaymentAgingRelated: (data) => set({ paymentAgingRelated: data }),
   setPaymentAgingMsme: (data) => set({ paymentAgingMsme: data }),
+  setVendorMasterNew: (data) => set({ vendorMasterNew: data }),
+  setThreeWayMatching: (data) => set({ threeWayMatching: data }),
 
   setTheme: (theme) => {
     const next = THEMES.has(theme) ? theme : 'light'

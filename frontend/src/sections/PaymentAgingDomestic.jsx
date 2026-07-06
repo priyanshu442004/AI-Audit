@@ -165,30 +165,107 @@ export default function PaymentAgingDomestic() {
     let totalPaid = 0
     // Vendor unique balance aggregation (take last row's outstanding for each vendor)
     const vendorBalances = {}
-    let lateDaysSum = 0
-    let lateDaysCount = 0
+    
+    // Avg days late (paid): average of days_late considering payments made (actual_paid > 0)
+    let lateDaysSumPaid = 0
+    let lateDaysCountPaid = 0
+
+    // Early Payments: count of payments done before the due date
+    let earlyPayments = 0
+
+    // Late Payments: count of payments done after the due date
+    let latePayments = 0
+
+    // Find the max posting date in the dataset to act as "today" for overdue check
+    const dates = filtered.map(r => parseDate(r.posting_date)).filter(Boolean)
+    const maxDate = dates.length > 0 ? new Date(Math.max(...dates)) : new Date()
+
+    // Overdue Amount check per vendor
+    const vendorOverdue = {}
+
+    // Advance term invoices: total unique vendors who are in advance payment term column
+    const advanceVendorsSet = new Set()
+
+    // On-Time/Early %: total percent of payments that were paid on time or early (days_late === 0)
+    let totalPaidPaymentsCount = 0
+    let onTimeEarlyPaidPaymentsCount = 0
+
+    // Unique Vendor codes
+    const uniqueVendorsSet = new Set()
 
     filtered.forEach(r => {
       totalPaid += r.actual_paid || 0
       
       const vcode = r.vendor_code
+      if (vcode) {
+        uniqueVendorsSet.add(vcode)
+      }
+      
       const bal = Math.abs(r.outstanding || 0)
       vendorBalances[vcode] = bal // will store the latest one processed since rows are sorted
       
-      if (r.days_late > 0) {
-        lateDaysSum += r.days_late
-        lateDaysCount++
+      const isPayment = r.actual_paid > 0 || r.status === 'Fully paid' || r.status === 'Partially paid'
+      const payDt = parseDate(r.payment_date)
+      const dueDt = parseDate(r.due_date_doc_term)
+      
+      if (isPayment) {
+        totalPaidPaymentsCount++
+        
+        // Avg days late (paid)
+        lateDaysSumPaid += r.days_late || 0
+        lateDaysCountPaid++
+
+        // Early payments (payment date before due date)
+        if (payDt && dueDt && payDt < dueDt) {
+          earlyPayments++
+        }
+        
+        // Late payments (payment date after due date)
+        if (payDt && dueDt && payDt > dueDt) {
+          latePayments++
+        }
+
+        // On-Time/Early count (paid and days_late === 0)
+        if ((r.days_late || 0) === 0) {
+          onTimeEarlyPaidPaymentsCount++
+        }
+      }
+
+      // Overdue check
+      if (r.status === 'Open' || r.status === 'Partially paid') {
+        if (dueDt && dueDt < maxDate) {
+          vendorOverdue[vcode] = true
+        }
+      }
+
+      // Advance term check
+      if (r.payment_term_type === 'Advance' && vcode) {
+        advanceVendorsSet.add(vcode)
       }
     })
 
     const totalOutstanding = Object.values(vendorBalances).reduce((a, b) => a + b, 0)
-    const avgDaysLate = lateDaysCount > 0 ? Math.round(lateDaysSum / lateDaysCount) : 0
+    const avgDaysLatePaid = lateDaysCountPaid > 0 ? Math.round(lateDaysSumPaid / lateDaysCountPaid) : 0
+    const onTimeEarlyPct = totalPaidPaymentsCount > 0 ? Math.round((onTimeEarlyPaidPaymentsCount / totalPaidPaymentsCount) * 100) : 0
+
+    let overdueAmount = 0
+    Object.keys(vendorBalances).forEach(vcode => {
+      if (vendorOverdue[vcode]) {
+        overdueAmount += vendorBalances[vcode]
+      }
+    })
 
     return {
       totalLines,
       totalOutstanding,
       totalPaid,
-      avgDaysLate
+      avgDaysLatePaid,
+      earlyPayments,
+      latePayments,
+      overdueAmount,
+      advanceTermInvoices: advanceVendorsSet.size,
+      onTimeEarlyPct,
+      uniqueVendors: uniqueVendorsSet.size
     }
   }, [filtered])
 
@@ -263,18 +340,30 @@ export default function PaymentAgingDomestic() {
       {/* AI Insight Box */}
       <AiInsightBox section="paymentagingdomestic" kpis={{
         total_lines: metrics.totalLines,
+        unique_vendors: metrics.uniqueVendors,
         total_outstanding: metrics.totalOutstanding,
+        overdue_amount: metrics.overdueAmount,
         total_paid: metrics.totalPaid,
-        avg_days_late: metrics.avgDaysLate
+        avg_days_late: metrics.avgDaysLatePaid,
+        on_time_early_pct: metrics.onTimeEarlyPct,
+        early_payments: metrics.earlyPayments,
+        late_payments: metrics.latePayments,
+        advance_term_invoices: metrics.advanceTermInvoices
       }} />
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         {[
           { label: 'Audited Transactions', value: metrics.totalLines, accent: 'blue', desc: 'Total ledger entries processed' },
+          { label: 'Unique Vendor Codes', value: metrics.uniqueVendors, accent: 'blue', desc: 'Count of unique vendor codes' },
           { label: 'Total Outstanding Balance', value: formatCurrency(metrics.totalOutstanding), accent: 'rose', desc: 'Net trade payables liability' },
+          { label: 'Overdue Amount', value: formatCurrency(metrics.overdueAmount), accent: 'rose', desc: 'Total overdue balance' },
           { label: 'Total Paid (Actual)', value: formatCurrency(metrics.totalPaid), accent: 'green', desc: 'Total payments cleared' },
-          { label: 'Average Days Late', value: `${metrics.avgDaysLate} Days`, accent: metrics.avgDaysLate > 15 ? 'amber' : 'blue', desc: 'Mean payment delay beyond terms' }
+          { label: 'Avg Days Late (Paid)', value: `${metrics.avgDaysLatePaid} Days`, accent: metrics.avgDaysLatePaid > 15 ? 'amber' : 'blue', desc: 'Mean payment delay of paid invoices' },
+          { label: 'On-Time/Early %', value: `${metrics.onTimeEarlyPct}%`, accent: metrics.onTimeEarlyPct > 80 ? 'green' : 'amber', desc: 'Percent of payments on-time or early' },
+          { label: 'Early Payments', value: metrics.earlyPayments, accent: 'green', desc: 'Payments done before the due date' },
+          { label: 'Late Payments', value: metrics.latePayments, accent: metrics.latePayments > 0 ? 'rose' : 'blue', desc: 'Payments done after the due date' },
+          { label: 'Advance Term Invoices', value: metrics.advanceTermInvoices, accent: 'blue', desc: 'Unique vendors with advance terms' }
         ].map(card => {
           const isRose = card.accent === 'rose'
           const isAmber = card.accent === 'amber'

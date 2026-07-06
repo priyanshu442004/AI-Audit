@@ -3,8 +3,13 @@ import sys
 import time
 import httpx
 import concurrent.futures
+from dotenv import load_dotenv
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+# Load env variables
+load_dotenv(os.path.join(os.path.dirname(__file__), '../../.env'))
+backend_url = os.environ.get("BACKEND_URL", "http://127.0.0.1:8000")
 
 EXCEL_DIR = r"C:\Users\hp\Desktop\excel files"
 FILE_MAPPING = {
@@ -54,7 +59,7 @@ def run_test():
     start_upload = time.time()
     try:
         response = client.post(
-            "http://127.0.0.1:8000/api/upload",
+            f"{backend_url}/api/upload",
             files=files_payload,
             data=data_payload
         )
@@ -75,7 +80,7 @@ def run_test():
     start_delete = time.time()
     
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(file_ids)) as executor:
-        futures = [executor.submit(client.delete, f"http://127.0.0.1:8000/api/history/{fid}") for fid in file_ids]
+        futures = [executor.submit(client.delete, f"{backend_url}/api/history/{fid}") for fid in file_ids]
         concurrent.futures.wait(futures)
         
     delete_time = time.time() - start_delete

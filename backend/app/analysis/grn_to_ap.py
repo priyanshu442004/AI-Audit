@@ -22,6 +22,7 @@ from __future__ import annotations
 import pandas as pd
 
 from app.cleaning import detect_columns
+from app.analysis.calculated_fields import field, same_row
 
 
 _TABLE_COLUMNS = [
@@ -273,6 +274,37 @@ def run(dfs: dict) -> dict:
         "kpis":   kpis,
         "charts": {},
         "tables": [
-            {"title": "GRN to AP Invoice Full Reconciliation List", "rows": rows},
+            {
+                "title": "GRN to AP Invoice Full Reconciliation List",
+                "rows": rows,
+                "calculated_fields": {
+                    "Days GRN→Inv": field(
+                        "Invoice Date − GRN Date",
+                        "ABS(Invoice_Date − GRN_Date)",
+                        inputs=[
+                            {"field": "GRN Date", "source_file": "GRPO Report", "source_record": "GRN No."},
+                            {"field": "Invoice Date", "source_file": "AP Invoice Report", "source_record": "AP Invoice No."},
+                        ],
+                    ),
+                    "Within 7-day SLA": field(
+                        "Days GRN→Inv ≤ 7 days",
+                        "IF(Days_GRN_Inv ≤ 7, 1, 0)",
+                        inputs=[{"field": "Days GRN→Inv", "source_file": "GRPO Report (calculated)", "source_record": "GRN No."}],
+                    ),
+                    "Invoice > 7 days (Breach)": field(
+                        "Days GRN→Inv > 7 days",
+                        "IF(Days_GRN_Inv > 7, 1, 0)",
+                        inputs=[{"field": "Days GRN→Inv", "source_file": "GRPO Report (calculated)", "source_record": "GRN No."}],
+                    ),
+                    "Seq Exception (Inv<GRN)": field(
+                        "Invoice Date < GRN Date",
+                        "IF(Invoice_Date < GRN_Date, 1, 0)",
+                        inputs=[
+                            {"field": "GRN Date", "source_file": "GRPO Report", "source_record": "GRN No."},
+                            {"field": "Invoice Date", "source_file": "AP Invoice Report", "source_record": "AP Invoice No."},
+                        ],
+                    ),
+                },
+            },
         ],
     }

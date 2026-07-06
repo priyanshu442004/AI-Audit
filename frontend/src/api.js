@@ -128,5 +128,26 @@ export async function fetchPaymentAgingRelated() {
   return res.json()
 }
 
+/**
+ * Fetch vendor master new.
+ * @returns {Promise<{rows: Array, kpis: object}>}
+ */
+export async function fetchVendorMasterNew() {
+  const res = await fetch(`${BASE}/analysis/vendor-master-new`)
+  if (!res.ok) throw new Error('Failed to load vendor master new analysis')
+  return res.json()
+}
+
+/**
+ * Fetch three-way matching analysis.
+ * @returns {Promise<{rows: Array, kpis: object}>}
+ */
+export async function fetchThreeWayMatching() {
+  const res = await fetch(`${BASE}/analysis/three-way-matching`)
+  if (!res.ok) throw new Error('Failed to load three-way matching analysis')
+  return res.json()
+}
+
+
 
 

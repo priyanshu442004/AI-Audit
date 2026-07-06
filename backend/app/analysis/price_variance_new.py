@@ -446,12 +446,23 @@ def run_variance_analysis(dfs: dict[str, pd.DataFrame], mode: str) -> dict:
     unique_grn_nos = len(all_grns)
     variance_lines = sum(1 for r in out_rows if r["variance_flag"] == 1)
 
+    # Count of those vendor codes whose min rate of that vendor and max rate of that vendor (for a same item),
+    # the max rate got increased more than 5% than min rate.
+    rate_increased_gt_5 = 0
+    if mode == "same":
+        vendors_with_variance = set()
+        for r in out_rows:
+            if r.get("spread_gt_5") == 1:
+                vendors_with_variance.add(r["vendor_code"])
+        rate_increased_gt_5 = len(vendors_with_variance)
+
     return {
         "rows": out_rows,
         "kpis": {
             "vendor_items": vendor_items,
             "uom_inconsistent": uom_inconsistent_count,
             "unique_grn_nos": unique_grn_nos,
-            "variance_lines": variance_lines
+            "variance_lines": variance_lines,
+            "rate_increased_gt_5": rate_increased_gt_5
         }
     }

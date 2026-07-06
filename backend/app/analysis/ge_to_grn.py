@@ -18,6 +18,7 @@ from __future__ import annotations
 import pandas as pd
 
 from app.cleaning import detect_columns
+from app.analysis.calculated_fields import field, same_row
 
 
 # All 14 display column keys used by the frontend table.
@@ -282,6 +283,37 @@ def run(dfs: dict) -> dict:
         "kpis":   kpis,
         "charts": {},
         "tables": [
-            {"title": "GE to GRN Full Reconciliation List", "rows": rows},
+            {
+                "title": "GE to GRN Full Reconciliation List",
+                "rows": rows,
+                "calculated_fields": {
+                    "Days GE→GRN": field(
+                        "GRN Date − Gate Entry Date",
+                        "ABS(GRN_Date − Gate_Entry_Date)",
+                        inputs=[
+                            {"field": "Gate Entry Date", "source_file": "Gate Entry Report", "source_record": "Gate Entry No."},
+                            {"field": "GRN Date", "source_file": "GRPO Report", "source_record": "GRN No."},
+                        ],
+                    ),
+                    "Within 2-day SLA": field(
+                        "Days GE→GRN ≤ 2 days",
+                        "IF(Days_GE_GRN ≤ 2, 1, 0)",
+                        inputs=[{"field": "Days GE→GRN", "source_file": "GRPO Report (calculated)", "source_record": "GRN No."}],
+                    ),
+                    "GRN > 2 days (Breach)": field(
+                        "Days GE→GRN > 2 days",
+                        "IF(Days_GE_GRN > 2, 1, 0)",
+                        inputs=[{"field": "Days GE→GRN", "source_file": "GRPO Report (calculated)", "source_record": "GRN No."}],
+                    ),
+                    "Seq Exception (GRN < GE)": field(
+                        "Gate Entry Date > GRN Date",
+                        "IF(Gate_Entry_Date > GRN_Date, 1, 0)",
+                        inputs=[
+                            {"field": "Gate Entry Date", "source_file": "Gate Entry Report", "source_record": "Gate Entry No."},
+                            {"field": "GRN Date", "source_file": "GRPO Report", "source_record": "GRN No."},
+                        ],
+                    ),
+                },
+            },
         ],
     }

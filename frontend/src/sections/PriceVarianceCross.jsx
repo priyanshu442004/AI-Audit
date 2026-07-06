@@ -181,11 +181,21 @@ export default function PriceVarianceCross() {
     // High price variance rows count (variance flag is 1)
     const varianceCount = filtered.filter(r => r.variance_flag === 1).length
 
+    // Count of rows in column "higher>5%" where value is 1
+    const higherGt5Count = filtered.filter(r => r.higher_gt_5 === 1).length
+
+    // Count of unique item descriptions
+    const uniqueDescriptions = new Set(
+      filtered.map(r => String(r.item_description || '').trim().toUpperCase()).filter(d => d && d !== '—')
+    ).size
+
     return {
       totalItems,
       uomInconsistent,
       uniqueGrns,
-      varianceCount
+      varianceCount,
+      higherGt5Count,
+      uniqueDescriptions
     }
   }, [filtered])
 
@@ -237,15 +247,19 @@ export default function PriceVarianceCross() {
         vendor_items: metrics.totalItems,
         uom_inconsistent: metrics.uomInconsistent,
         unique_grns: metrics.uniqueGrns,
-        variance_lines: metrics.varianceCount
+        variance_lines: metrics.varianceCount,
+        higher_gt_5: metrics.higherGt5Count,
+        unique_descriptions: metrics.uniqueDescriptions
       }} />
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         {[
           { label: 'Vendor Items Evaluated', value: metrics.totalItems, accent: 'blue', desc: 'Total line items evaluated' },
           { label: 'Unique GRN(GRPO) Nos.', value: metrics.uniqueGrns, accent: 'blue', desc: 'Distinct goods receipt files matched' },
           { label: 'Total Variance Lines', value: metrics.varianceCount, accent: metrics.varianceCount > 0 ? 'rose' : 'blue', desc: 'Lines with pricing variance > 5%' },
+          { label: 'Vendor Rows Above Lowest >5%', value: metrics.higherGt5Count, accent: metrics.higherGt5Count > 0 ? 'rose' : 'blue', desc: 'Rows in column higher>5% equal to 1' },
+          { label: 'Rows (Intercompany Excluded)', value: metrics.uniqueDescriptions, accent: 'blue', desc: 'Count of unique item descriptions' },
           { label: 'Vendors with Inconsistent UOM', value: metrics.uomInconsistent, accent: metrics.uomInconsistent > 0 ? 'amber' : 'blue', desc: 'Vendors with non-uniform UOMs' }
         ].map(card => {
           const isRose = card.accent === 'rose'

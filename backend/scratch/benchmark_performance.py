@@ -3,9 +3,14 @@ import sys
 import time
 import httpx
 import concurrent.futures
+from dotenv import load_dotenv
 
 # Ensure backend root is in import path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+# Load env variables
+load_dotenv(os.path.join(os.path.dirname(__file__), '../../.env'))
+backend_url = os.environ.get("BACKEND_URL", "http://127.0.0.1:8000")
 
 EXCEL_DIR = r"C:\Users\hp\Desktop\excel files"
 FILE_MAPPING = {
@@ -65,7 +70,7 @@ def benchmark():
     start_time = time.time()
     try:
         response = client.post(
-            "http://127.0.0.1:8000/api/upload",
+            f"{backend_url}/api/upload",
             files=files_payload,
             data=data_payload
         )
@@ -88,7 +93,7 @@ def benchmark():
     start_time = time.time()
     try:
         # Trigger SSE stream
-        with client.stream("GET", "http://127.0.0.1:8000/api/analyze/combined") as r:
+        with client.stream("GET", f"{backend_url}/api/analyze/combined") as r:
             for line in r.iter_lines():
                 if line:
                     print(f"  Stream event: {line}")
@@ -106,7 +111,7 @@ def benchmark():
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(file_ids)) as executor:
         futures = []
         for fid in file_ids:
-            futures.append(executor.submit(client.delete, f"http://127.0.0.1:8000/api/history/{fid}"))
+            futures.append(executor.submit(client.delete, f"{backend_url}/api/history/{fid}"))
         
         # Wait for all deletions to finish
         concurrent.futures.wait(futures)

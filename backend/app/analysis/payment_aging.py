@@ -19,6 +19,7 @@ import numpy as np
 from datetime import date
 
 from app.cleaning import require_columns, rename_canonical, detect_columns, parse_dates, parse_numeric
+from app.analysis.calculated_fields import field, same_row
 
 
 REQUIRED = ["invoice_no", "invoice_date", "due_date", "invoice_amount"]
@@ -151,7 +152,49 @@ def run(df_raw: pd.DataFrame, reference_date: pd.Timestamp | None = None) -> dic
             "overdue_amt_bars": overdue_amt_bars,
         },
         "tables": [
-            {"title": "Payment Aging – Overdue Invoices",    "rows": _rows(overdue_detail.head(500))},
-            {"title": "Payment Aging – Full Invoice List",   "rows": _rows(detail.head(500))},
+            {
+                "title": "Payment Aging – Overdue Invoices",
+                "rows": _rows(overdue_detail.head(500)),
+                "calculated_fields": {
+                    "Days Late": field(
+                        "Payment Date − Due Date",
+                        "Payment_Date − Due_Date",
+                        inputs=[
+                            {"field": "Due Date", "source_file": "Purchase Register", "source_record": "Invoice No"},
+                            {"field": "Payment Date", "source_file": "Purchase Register", "source_record": "Invoice No"},
+                        ],
+                    ),
+                    "Aging Bucket": field(
+                        "Categorise by Days Late and Payment Status",
+                        "IF(Paid, IF(Days<0,'Early',IF(Days=0,'On-Time','Late')), IF(Days<0,'Not-Due','Overdue…'))",
+                        inputs=[
+                            {"field": "Days Late", "source_file": "Purchase Register (calculated)", "source_record": "Invoice No"},
+                            {"field": "Payment Date", "source_file": "Purchase Register", "source_record": "Invoice No"},
+                        ],
+                    ),
+                },
+            },
+            {
+                "title": "Payment Aging – Full Invoice List",
+                "rows": _rows(detail.head(500)),
+                "calculated_fields": {
+                    "Days Late": field(
+                        "Payment Date − Due Date",
+                        "Payment_Date − Due_Date",
+                        inputs=[
+                            {"field": "Due Date", "source_file": "Purchase Register", "source_record": "Invoice No"},
+                            {"field": "Payment Date", "source_file": "Purchase Register", "source_record": "Invoice No"},
+                        ],
+                    ),
+                    "Aging Bucket": field(
+                        "Categorise by Days Late and Payment Status",
+                        "IF(Paid, IF(Days<0,'Early',IF(Days=0,'On-Time','Late')), IF(Days<0,'Not-Due','Overdue…'))",
+                        inputs=[
+                            {"field": "Days Late", "source_file": "Purchase Register (calculated)", "source_record": "Invoice No"},
+                            {"field": "Payment Date", "source_file": "Purchase Register", "source_record": "Invoice No"},
+                        ],
+                    ),
+                },
+            },
         ],
     }

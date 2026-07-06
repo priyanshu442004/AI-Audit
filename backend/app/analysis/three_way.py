@@ -17,6 +17,7 @@ import numpy as np
 
 from app.cleaning import require_columns, rename_canonical, detect_columns, parse_numeric
 from app.config import VARIANCE_TOLERANCE_PCT
+from app.analysis.calculated_fields import field, same_row
 
 
 REQUIRED_PO   = ["po_no", "item_code", "po_qty"]  # unit_price detected with fallback
@@ -255,6 +256,37 @@ def run(
         "tables": [
             {"title": "Three-Way Match Summary Table",          "rows": _rows(summary_df)},
             {"title": "Top Matching Exceptions by Vendor",      "rows": _rows(vendor_mm)},
-            {"title": "3-Way Match – Full Transaction Detail",  "rows": _rows(detail.head(500))},
+            {
+                "title": "3-Way Match – Full Transaction Detail",
+                "rows": _rows(detail.head(500)),
+                "calculated_fields": {
+                    "Qty Var %": field(
+                        "|GRPO Qty − PO Qty| ÷ MAX(GRPO Qty, PO Qty) × 100",
+                        "ABS(GRPO_Qty − PO_Qty) / MAX(GRPO_Qty, PO_Qty) * 100",
+                        inputs=[
+                            {"field": "GRPO Qty", "source_file": "GRPO Report", "source_record": "GRPO No"},
+                            {"field": "PO Qty", "source_file": "Purchase Order", "source_record": "PO No"},
+                        ],
+                    ),
+                    "Price Var %": field(
+                        "|GRPO Rate − PO Rate| ÷ MAX(GRPO Rate, PO Rate) × 100",
+                        "ABS(GRPO_Rate − PO_Rate) / MAX(GRPO_Rate, PO_Rate) * 100",
+                        inputs=[
+                            {"field": "GRPO Rate", "source_file": "GRPO Report", "source_record": "GRPO No"},
+                            {"field": "PO Rate", "source_file": "Purchase Order", "source_record": "PO No"},
+                        ],
+                    ),
+                    "Match Status": field(
+                        "Categorise by Qty Var %, Price Var %, PO/Invoice links",
+                        "IF(No_PO,'Missing PO Link',IF(No_Inv,'Missing Invoice Link',IF(Qty≤5% AND Price≤5%,'Perfect','Match with Variance')))",
+                        inputs=[
+                            {"field": "Qty Var %", "source_file": "GRPO Report (calculated)", "source_record": "GRPO No"},
+                            {"field": "Price Var %", "source_file": "GRPO Report (calculated)", "source_record": "GRPO No"},
+                            {"field": "PO No", "source_file": "Purchase Order", "source_record": "PO No"},
+                            {"field": "AP Invoice", "source_file": "Purchase Register", "source_record": "Invoice No"},
+                        ],
+                    ),
+                },
+            },
         ],
     }

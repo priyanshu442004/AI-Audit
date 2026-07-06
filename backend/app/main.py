@@ -35,6 +35,8 @@ cached_aging_domestic: dict | None = None
 cached_aging_foreign: dict | None = None
 cached_aging_related: dict | None = None
 cached_aging_msme: dict | None = None
+cached_vendor_master_new: dict | None = None
+cached_three_way_matching: dict | None = None
 
 def get_cached_dfs_or_load() -> dict[str, pd.DataFrame]:
     global cached_dfs
@@ -221,12 +223,14 @@ async def upload_files(
     if combined_sess:
         combined_sess.result = None
 
-    global cached_dfs, cached_aging_domestic, cached_aging_foreign, cached_aging_related, cached_aging_msme
+    global cached_dfs, cached_aging_domestic, cached_aging_foreign, cached_aging_related, cached_aging_msme, cached_vendor_master_new, cached_three_way_matching
     cached_dfs = None
     cached_aging_domestic = None
     cached_aging_foreign = None
     cached_aging_related = None
     cached_aging_msme = None
+    cached_vendor_master_new = None
+    cached_three_way_matching = None
 
     loop = asyncio.get_running_loop()
 
@@ -286,12 +290,13 @@ async def upload_holidays(file: UploadFile = File(...)):
             f.write(data)
 
         # Invalidate cache
-        global cached_dfs, cached_aging_domestic, cached_aging_foreign, cached_aging_related, cached_aging_msme
+        global cached_dfs, cached_aging_domestic, cached_aging_foreign, cached_aging_related, cached_aging_msme, cached_vendor_master_new
         cached_dfs = None
         cached_aging_domestic = None
         cached_aging_foreign = None
         cached_aging_related = None
         cached_aging_msme = None
+        cached_vendor_master_new = None
 
         combined_sess = session_store.get_session("combined")
         if combined_sess:
@@ -366,12 +371,14 @@ def delete_history_file(file_id: int):
         if sess:
             sess.result = None
 
-        global cached_dfs, cached_aging_domestic, cached_aging_foreign, cached_aging_related, cached_aging_msme
+        global cached_dfs, cached_aging_domestic, cached_aging_foreign, cached_aging_related, cached_aging_msme, cached_vendor_master_new, cached_three_way_matching
         cached_dfs = None
         cached_aging_domestic = None
         cached_aging_foreign = None
         cached_aging_related = None
         cached_aging_msme = None
+        cached_vendor_master_new = None
+        cached_three_way_matching = None
             
         return {"status": "success", "message": f"File '{file_info['filename']}' deleted successfully."}
     except HTTPException as he:
@@ -414,12 +421,14 @@ async def replace_history_file(file_id: int, file: UploadFile = File(...)):
         if sess:
             sess.result = None
 
-        global cached_dfs, cached_aging_domestic, cached_aging_foreign, cached_aging_related, cached_aging_msme
+        global cached_dfs, cached_aging_domestic, cached_aging_foreign, cached_aging_related, cached_aging_msme, cached_vendor_master_new, cached_three_way_matching
         cached_dfs = None
         cached_aging_domestic = None
         cached_aging_foreign = None
         cached_aging_related = None
         cached_aging_msme = None
+        cached_vendor_master_new = None
+        cached_three_way_matching = None
             
         return {
             "status": "success",
@@ -662,5 +671,38 @@ async def get_payment_aging_msme():
         return sanitized
     except Exception as e:
         raise HTTPException(500, f"Error computing payment aging (msme): {str(e)}")
+
+@app.get("/api/analysis/vendor-master-new")
+async def get_vendor_master_new():
+    global cached_vendor_master_new
+    if cached_vendor_master_new is not None:
+        return cached_vendor_master_new
+    try:
+        loop = asyncio.get_running_loop()
+        dfs = await loop.run_in_executor(None, get_cached_dfs_or_load)
+        from app.analysis.vendor_master_new import run_vendor_master_new
+        res = await loop.run_in_executor(None, lambda: run_vendor_master_new(dfs))
+        sanitized = sanitize_for_json(res)
+        cached_vendor_master_new = sanitized
+        return sanitized
+    except Exception as e:
+        raise HTTPException(500, f"Error computing vendor master new: {str(e)}")
+
+
+@app.get("/api/analysis/three-way-matching")
+async def get_three_way_matching():
+    global cached_three_way_matching
+    if cached_three_way_matching is not None:
+        return cached_three_way_matching
+    try:
+        loop = asyncio.get_running_loop()
+        dfs = await loop.run_in_executor(None, get_cached_dfs_or_load)
+        from app.analysis.three_way_matching import run_three_way_matching
+        res = await loop.run_in_executor(None, lambda: run_three_way_matching(dfs))
+        sanitized = sanitize_for_json(res)
+        cached_three_way_matching = sanitized
+        return sanitized
+    except Exception as e:
+        raise HTTPException(500, f"Error computing 3-way matching: {str(e)}")
 
 

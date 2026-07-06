@@ -8,8 +8,6 @@ from __future__ import annotations
 import io
 from typing import AsyncGenerator, Callable, Any
 
-import pandas as pd
-
 from app.loaders import load_file
 from app.session import Session
 from app.analysis import (

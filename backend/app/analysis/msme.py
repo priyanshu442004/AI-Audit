@@ -156,6 +156,8 @@ def run(df_pr_raw: pd.DataFrame, df_vm_raw: pd.DataFrame,
         "avg_delay": "Avg Delay (Days)", "breach_count": "Breach Count",
     })
 
+    from app.analysis.calculated_fields import field, same_row
+
     def _rows(f):
         return f.fillna("").astype(str).to_dict(orient="records")
 
@@ -178,7 +180,28 @@ def run(df_pr_raw: pd.DataFrame, df_vm_raw: pd.DataFrame,
             "avg_delay_bars": _rows(avg_delay_bars),
         },
         "tables": [
-            {"title": "MSME 45-Day Breach Detail",            "rows": _rows(breach_detail)},
+            {
+                "title": "MSME 45-Day Breach Detail",
+                "rows": _rows(breach_detail),
+                "calculated_fields": {
+                    "Delay Days": field(
+                        "Payment Date − Due Date",
+                        "Payment_Date − Due_Date",
+                        inputs=[
+                            {"field": "Due Date", "source_file": "Purchase Register", "source_record": "Invoice No"},
+                            {"field": "Payment Date", "source_file": "Purchase Register", "source_record": "Invoice No"},
+                        ],
+                    ),
+                    "Indicative Penalty (₹)": field(
+                        "Invoice Amount × 27% × Delay Days ÷ 365",
+                        "Invoice_Amount * 0.27 * Delay_Days / 365",
+                        inputs=[
+                            {"field": "Invoice Amount (₹)", "source_file": "Purchase Register", "source_record": "Invoice No"},
+                            {"field": "Delay Days", "source_file": "Same row", "source_record": "Same row"},
+                        ],
+                    ),
+                },
+            },
             {"title": "MSME Summary by Registration Category","rows": _rows(cat_summary)},
         ],
     }

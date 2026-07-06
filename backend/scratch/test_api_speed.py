@@ -1,8 +1,14 @@
 import time
 import urllib.request
 import json
+import os
+from dotenv import load_dotenv
 
-url = "http://127.0.0.1:8000/api/analysis/payment-aging-domestic"
+# Load env variables
+load_dotenv(os.path.join(os.path.dirname(__file__), '../../.env'))
+backend_url = os.environ.get("BACKEND_URL", "http://127.0.0.1:8000")
+
+url = f"{backend_url}/api/analysis/payment-aging-domestic"
 
 print(f"Sending GET request to {url}...")
 t0 = time.time()
