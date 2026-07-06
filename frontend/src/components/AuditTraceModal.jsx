@@ -103,26 +103,26 @@ export default function AuditTraceModal({ isOpen, onClose, initialData }) {
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl w-[95vw] max-w-6xl h-[85vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
         
         {/* Modal Header */}
-        <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-900/50">
+        <div className="px-6 py-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-gradient-to-r from-slate-50 to-blue-50/30 dark:from-slate-900/50 dark:to-blue-950/20">
           <div className="flex items-center space-x-3 min-w-0">
-            <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-950/60 flex items-center justify-center text-blue-600 dark:text-blue-400">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-100 to-blue-50 dark:from-blue-950/80 dark:to-blue-900/40 flex items-center justify-center text-blue-600 dark:text-blue-400 flex-shrink-0">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
             </div>
             <div className="min-w-0">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white">Audit Trace & KPI Explorer</h3>
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">Audit Trace & KPI Explorer</h3>
               {/* Breadcrumb Trail */}
-              <div className="flex items-center space-x-1.5 mt-0.5 overflow-x-auto no-scrollbar py-0.5">
+              <div className="flex items-center space-x-1.5 mt-1.5 overflow-x-auto no-scrollbar py-0.5">
                 {history.map((h, idx) => (
                   <React.Fragment key={idx}>
-                    {idx > 0 && <span className="text-slate-400 text-[10px]">&gt;</span>}
+                    {idx > 0 && <span className="text-slate-300 dark:text-slate-600 text-xs">/</span>}
                     <button
                       onClick={() => handleHistoryNavigate(idx)}
-                      className={`text-[10px] font-semibold whitespace-nowrap px-2 py-0.5 rounded transition ${
+                      className={`text-xs font-semibold whitespace-nowrap px-2.5 py-1 rounded-md transition-all ${
                         idx === currentIndex
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                          ? 'bg-blue-600 text-white shadow-md'
+                          : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700'
                       }`}
                     >
                       {h.value}
@@ -134,9 +134,9 @@ export default function AuditTraceModal({ isOpen, onClose, initialData }) {
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition"
+            className="p-2 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition flex-shrink-0"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
@@ -180,20 +180,27 @@ export default function AuditTraceModal({ isOpen, onClose, initialData }) {
                     <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-100">{MODAL_LABELS.recordDetails}</h4>
                   </div>
                   {currentMatchedRow ? (
-                    <div className="flex-1 overflow-y-auto border border-slate-200 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-950/30 divide-y divide-slate-100 dark:divide-slate-850 p-1">
+                    <div className="flex-1 overflow-y-auto border border-slate-200 dark:border-slate-800 rounded-lg bg-white dark:bg-slate-950/30 divide-y divide-slate-100 dark:divide-slate-800">
                       {Object.entries(currentMatchedRow).map(([key, val]) => {
                         const isClickable = val && val !== '—' && val !== 'None' && val !== 'NaN'
                         return (
-                          <div key={key} className="p-2 flex flex-col hover:bg-slate-50 dark:hover:bg-slate-900/30 transition-colors">
-                            <span className="text-[10px] font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                              {key}
-                            </span>
+                          <div key={key} className="px-4 py-3 hover:bg-blue-50/40 dark:hover:bg-blue-950/20 transition-colors">
+                            <div className="flex items-start justify-between gap-2">
+                              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex-shrink-0">
+                                {key}
+                              </span>
+                              {isClickable && (
+                                <svg className="w-3.5 h-3.5 text-blue-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M13 9l3 3m0 0l-3 3m3-3H8" />
+                                </svg>
+                              )}
+                            </div>
                             <span
                               onClick={() => isClickable && handlePivot(val, key)}
-                              className={`text-xs font-semibold mt-0.5 break-all ${
+                              className={`text-sm font-semibold mt-1.5 block break-all leading-relaxed ${
                                 isClickable
                                   ? 'text-slate-800 dark:text-slate-200 hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer hover:underline'
-                                  : 'text-slate-400 dark:text-slate-600'
+                                  : 'text-slate-500 dark:text-slate-600'
                               }`}
                             >
                               {val === null || val === undefined || val === '' ? '—' : String(val)}
@@ -203,8 +210,8 @@ export default function AuditTraceModal({ isOpen, onClose, initialData }) {
                       })}
                     </div>
                   ) : (
-                    <div className="flex-1 flex items-center justify-center border border-dashed border-slate-350 dark:border-slate-750 rounded-xl p-6 text-center">
-                      <p className="text-xs text-slate-400">Row matching current filters was not loaded.</p>
+                    <div className="flex-1 flex items-center justify-center border border-dashed border-slate-300 dark:border-slate-700 rounded-lg p-6 text-center bg-slate-50/50 dark:bg-slate-900/20">
+                      <p className="text-sm text-slate-500 dark:text-slate-400">Row matching current filters was not loaded.</p>
                     </div>
                   )}
                 </div>
