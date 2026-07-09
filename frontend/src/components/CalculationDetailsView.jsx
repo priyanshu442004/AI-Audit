@@ -119,7 +119,9 @@ export default function CalculationDetailsView({
             <div className="flex-1 min-h-0 overflow-y-auto space-y-3 pr-2">
               {resolvedInputs.map((input, idx) => {
                 const isClickable =
-                  input.currentValue &&
+                  input.currentValue !== null &&
+                  input.currentValue !== undefined &&
+                  input.currentValue !== '' &&
                   input.currentValue !== '—' &&
                   input.currentValue !== 'None' &&
                   input.currentValue !== 'NaN'
@@ -132,13 +134,13 @@ export default function CalculationDetailsView({
                     {/* Field Name */}
                     <div className="flex items-start justify-between mb-2.5">
                       <span
-                        onClick={() =>
-                          isClickable &&
-                          onPivot(input.currentValue, input.field, section)
-                        }
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (isClickable) onPivot(input.currentValue, input.field, section)
+                        }}
                         className={`text-xs font-bold ${
                           isClickable
-                            ? 'text-blue-600 dark:text-blue-400 cursor-pointer hover:underline'
+                            ? 'text-blue-600 dark:text-blue-400 cursor-pointer hover:underline decoration-dotted underline-offset-2'
                             : 'text-slate-700 dark:text-slate-300'
                         }`}
                       >
@@ -157,14 +159,14 @@ export default function CalculationDetailsView({
                         💾 Value
                       </span>
                       <div
-                        onClick={() =>
-                          isClickable &&
-                          onPivot(input.currentValue, input.field, section)
-                        }
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (isClickable) onPivot(input.currentValue, input.field, section)
+                        }}
                         className={`text-sm font-black break-all leading-tight ${
                           isClickable
-                            ? 'text-slate-900 dark:text-slate-100 cursor-pointer hover:text-blue-600 dark:hover:text-blue-400'
-                            : 'text-slate-600 dark:text-slate-400'
+                            ? 'text-blue-600 dark:text-blue-400 cursor-pointer hover:text-blue-700 dark:hover:text-blue-300 hover:underline decoration-dotted underline-offset-2'
+                            : 'text-slate-650 dark:text-slate-400'
                         }`}
                       >
                         {input.currentValue}

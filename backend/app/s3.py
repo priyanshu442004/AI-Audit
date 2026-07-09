@@ -88,3 +88,23 @@ def download_file_from_s3(s3_key: str) -> bytes:
         return response['Body'].read()
     except Exception as e:
         raise RuntimeError(f"S3 download failed for key '{s3_key}': {e}")
+
+
+def upload_profile_pic_to_s3(file_data: bytes, filename: str) -> str:
+    s3_client = get_s3_client()
+    timestamp = int(time.time() * 1000)
+    safe_filename = filename.replace(" ", "_")
+    s3_key = f"profile-pics/{timestamp}_{safe_filename}"
+    
+    try:
+        s3_client.upload_fileobj(
+            io.BytesIO(file_data),
+            AWS_BUCKET_NAME,
+            s3_key
+        )
+    except Exception as e:
+        raise RuntimeError(f"S3 profile picture upload failed: {e}")
+        
+    s3_url = f"https://{AWS_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{s3_key}"
+    return s3_url
+

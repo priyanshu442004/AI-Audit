@@ -23,6 +23,33 @@ export default function UploadPage() {
   const [hasHistory, setHasHistory] = useState(false)
   const inputRefs = useRef({})
 
+  const [holidayFile, setHolidayFile] = useState(null)
+  const [currentHolidayFile, setCurrentHolidayFile] = useState(null)
+  const [loadingHolidays, setLoadingHolidays] = useState(true)
+  const [uploadingHolidays, setUploadingHolidays] = useState(false)
+  const [holidayError, setHolidayError] = useState('')
+  const [holidaySuccess, setHolidaySuccess] = useState('')
+  const [holidayDragActive, setHolidayDragActive] = useState(false)
+  const holidayFileInputRef = useRef(null)
+
+  const fetchHolidaysInfo = async () => {
+    try {
+      const res = await fetch('/api/holidays-info')
+      if (res.ok) {
+        const data = await res.json()
+        if (data.has_file) {
+          setCurrentHolidayFile(data.filename)
+        } else {
+          setCurrentHolidayFile('Default Calendar (STATIC)')
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching holidays info:', err)
+    } finally {
+      setLoadingHolidays(false)
+    }
+  }
+
   useEffect(() => {
     fetch('/api/history')
       .then(res => res.json())
@@ -32,7 +59,55 @@ export default function UploadPage() {
         }
       })
       .catch(console.error)
+
+    fetchHolidaysInfo()
   }, [])
+
+  const handleHolidayFileChange = (file) => {
+    if (!file) return
+    const ext = file.name.split('.').pop().toLowerCase()
+    if (!['csv', 'xlsx', 'xls'].includes(ext)) {
+      setHolidayError(`Invalid file format for ${file.name}. Only .csv, .xlsx, and .xls are supported.`)
+      setHolidaySuccess('')
+      return
+    }
+    setHolidayError('')
+    setHolidaySuccess('')
+    setHolidayFile(file)
+  }
+
+  const handleHolidayUpload = async (e) => {
+    if (e) e.stopPropagation()
+    if (!holidayFile) return
+    setUploadingHolidays(true)
+    setHolidayError('')
+    setHolidaySuccess('')
+
+    const formData = new FormData()
+    formData.append('file', holidayFile)
+
+    try {
+      const res = await fetch('/api/upload-holidays', {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.detail || 'Failed to upload holidays file')
+      }
+
+      const data = await res.json()
+      setHolidaySuccess('Calendar uploaded successfully!')
+      setCurrentHolidayFile(data.filename)
+      setHolidayFile(null)
+    } catch (err) {
+      setHolidayError(err.message || 'An error occurred.')
+    } finally {
+      setUploadingHolidays(false)
+    }
+  }
+
 
   const handleFile = (role, file) => {
     if (!file) return
@@ -73,6 +148,40 @@ export default function UploadPage() {
 
   const fileCount = Object.keys(uploaded).length
   const isComplete = fileCount === FILE_SLOTS.length
+
+  const handleGoToDashboard = () => {
+    setError('')
+    // Check if combined results are already computed
+    fetch('/api/result/combined')
+      .then(async res => {
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}))
+          throw { status: res.status, detail: body.detail || 'Not found' }
+        }
+        return res.json()
+      })
+      .then(data => {
+        setResults(data)
+        setPage('dashboard')
+      })
+      .catch(err => {
+        // If not computed, show loading page and run full analysis stream
+        setSessionId('combined')
+        setPage('loading')
+        setProgress({ pct: 0, message: 'Initializing analytical pipeline...' })
+        analyzeStream('combined', {
+          onProgress: ({ pct, message }) => setProgress({ pct, message }),
+          onResult: (result) => {
+            setResults(result)
+            setPage('dashboard')
+          },
+          onError: (msg) => {
+            setError(msg)
+            setPage('upload')
+          },
+        })
+      })
+  }
 
   const handleSubmit = async () => {
     if (!isComplete) return
@@ -141,27 +250,136 @@ export default function UploadPage() {
           </div>
         )}
 
-        {/* Status Bar */}
-        <div className="max-w-5xl mx-auto mb-8 bg-white/60 dark:bg-slate-900/40 backdrop-blur border border-slate-200/80 dark:border-slate-800/80 rounded-2xl p-6 shadow-sm">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-3">
+        {/* Status Bar & Holiday Calendar */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 max-w-5xl mx-auto mb-8">
+          {/* Upload Status Card */}
+          <div className="lg:col-span-2 bg-white/60 dark:bg-slate-900/40 backdrop-blur border border-slate-200/80 dark:border-slate-800/80 rounded-2xl p-6 shadow-sm flex flex-col justify-between">
             <div>
-              <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Upload Status</h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Ensure all files correspond to the designated audit roles.
-              </p>
-            </div>
-            <div className="text-right">
-              <span className="text-2xl font-bold text-slate-900 dark:text-white">{fileCount}</span>
-              <span className="text-slate-400 dark:text-slate-500 font-medium"> / {FILE_SLOTS.length} files</span>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-3">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Upload Status</h2>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Ensure all files correspond to the designated audit roles.
+                  </p>
+                </div>
+                <div className="text-right">
+                  <span className="text-2xl font-bold text-slate-900 dark:text-white">{fileCount}</span>
+                  <span className="text-slate-400 dark:text-slate-500 font-medium"> / {FILE_SLOTS.length} files</span>
+                </div>
+              </div>
+              <div className="w-full bg-slate-200/60 dark:bg-slate-800 rounded-full h-2.5 overflow-hidden mt-4">
+                <div
+                  className="bg-gradient-to-r from-blue-600 to-indigo-600 h-full rounded-full transition-all duration-500 ease-out"
+                  style={{ width: `${(fileCount / FILE_SLOTS.length) * 100}%` }}
+                />
+              </div>
             </div>
           </div>
-          <div className="w-full bg-slate-200/60 dark:bg-slate-800 rounded-full h-2.5 overflow-hidden">
-            <div
-              className="bg-gradient-to-r from-blue-600 to-indigo-600 h-full rounded-full transition-all duration-500 ease-out"
-              style={{ width: `${(fileCount / FILE_SLOTS.length) * 100}%` }}
-            />
+
+          {/* Holiday Calendar Card */}
+          <div className="lg:col-span-1 bg-white/60 dark:bg-slate-900/40 backdrop-blur border border-slate-200/80 dark:border-slate-800/80 rounded-2xl p-5 shadow-sm flex flex-col justify-between relative">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
+                  <svg className="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  Holiday Calendar
+                </h3>
+                <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${
+                  currentHolidayFile && currentHolidayFile.includes('Default')
+                    ? 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                    : 'bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400'
+                }`}>
+                  {currentHolidayFile && currentHolidayFile.includes('Default') ? 'System' : 'Custom'}
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate mb-3" title={currentHolidayFile || 'Loading...'}>
+                Active: <span className="font-semibold text-slate-700 dark:text-slate-300">{loadingHolidays ? 'Loading...' : (currentHolidayFile || 'Default Calendar')}</span>
+              </p>
+
+              {holidayFile ? (
+                <div className="border border-blue-200 dark:border-blue-900 bg-blue-50/20 dark:bg-blue-950/10 rounded-xl p-2.5 flex items-center justify-between gap-2">
+                  <div className="truncate text-xs font-mono text-blue-600 dark:text-blue-400" title={holidayFile.name}>
+                    {holidayFile.name}
+                  </div>
+                  <button
+                    onClick={() => setHolidayFile(null)}
+                    className="p-1 hover:bg-blue-100 dark:hover:bg-blue-900/40 rounded text-blue-500"
+                    title="Remove selected file"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              ) : (
+                <div
+                  onDragOver={(e) => { e.preventDefault(); setHolidayDragActive(true); }}
+                  onDragLeave={(e) => { e.preventDefault(); setHolidayDragActive(false); }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setHolidayDragActive(false);
+                    const file = e.dataTransfer.files[0];
+                    if (file) handleHolidayFileChange(file);
+                  }}
+                  onClick={() => holidayFileInputRef.current?.click()}
+                  className={`border border-dashed rounded-xl p-3 text-center cursor-pointer transition ${
+                    holidayDragActive
+                      ? 'border-blue-500 bg-blue-50/10'
+                      : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 hover:bg-slate-50/30'
+                  }`}
+                >
+                  <input
+                    type="file"
+                    ref={holidayFileInputRef}
+                    onChange={(e) => handleHolidayFileChange(e.target.files[0])}
+                    className="hidden"
+                    accept=".csv,.xlsx,.xls"
+                  />
+                  <p className="text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                    Drag calendar here or <span className="text-blue-500 hover:underline">browse</span>
+                  </p>
+                  <p className="text-[9px] text-slate-400 mt-1">.xlsx, .xls, .csv</p>
+                </div>
+              )}
+            </div>
+
+            {holidayFile && (
+              <button
+                onClick={handleHolidayUpload}
+                disabled={uploadingHolidays}
+                className="mt-3 w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-blue-600 hover:bg-blue-500 disabled:opacity-40 transition-all duration-200"
+              >
+                {uploadingHolidays ? (
+                  <>
+                    <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Uploading...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                    </svg>
+                    Apply Override
+                  </>
+                )}
+              </button>
+            )}
+
+            {holidayError && (
+              <p className="text-[10px] text-rose-500 font-semibold mt-1.5 text-center leading-tight">
+                {holidayError}
+              </p>
+            )}
+            {holidaySuccess && (
+              <p className="text-[10px] text-emerald-500 font-semibold mt-1.5 text-center leading-tight">
+                {holidaySuccess}
+              </p>
+            )}
           </div>
         </div>
+
 
         {/* Upload Slots Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-7xl mx-auto mb-12">
@@ -255,21 +473,7 @@ export default function UploadPage() {
             </button>
 
             <button
-              onClick={() => {
-                setSessionId('combined')
-                setPage('loading')
-                analyzeStream('combined', {
-                  onProgress: ({ pct, message }) => setProgress({ pct, message }),
-                  onResult: (result) => {
-                    setResults(result)
-                    setPage('dashboard')
-                  },
-                  onError: (msg) => {
-                    setError(msg)
-                    setPage('upload')
-                  },
-                })
-              }}
+              onClick={handleGoToDashboard}
               className="w-full sm:w-auto px-10 py-4 rounded-xl text-base font-bold text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/50 shadow-md transition-all duration-300 bg-white/40 dark:bg-slate-900/30 backdrop-blur-sm"
             >
               Go directly to Dashboard

@@ -154,18 +154,15 @@
 .progress-bar { transition: width .3s ease; }
 thead { position: sticky; top: 0; z-index: 10; }
 
-/* Table Cell Interactivity Styles for Audit Tracing */
 tbody tr td {
   cursor: pointer;
   transition: background-color 0.15s, color 0.15s;
 }
 tbody tr td:hover {
-  background-color: rgba(37, 99, 235, 0.06) !important;
-  color: #2563eb;
+  background-color: rgba(99, 102, 241, 0.04) !important;
 }
 .dark tbody tr td:hover {
-  background-color: rgba(96, 165, 250, 0.08) !important;
-  color: #60a5fa;
+  background-color: rgba(99, 102, 241, 0.07) !important;
 }
 tbody tr td button,
 tbody tr td input,
@@ -173,4 +170,54 @@ tbody tr td select,
 tbody tr td a {
   cursor: default;
 }
+
+/* ── Global Enterprise UI Refinements (Removing AI Template Trope Telltales) ── */
+
+/* Remove generic colorful top-edge accent bars from cards */
+.rounded-xl > .absolute.top-0.left-0.right-0.h-0\.5,
+.rounded-xl > .absolute.top-0.left-0.right-0.h-1,
+.rounded-lg > .absolute.top-0.left-0.right-0.h-0\.5,
+.rounded-lg > .absolute.top-0.left-0.right-0.h-1,
+.rounded-2xl > .absolute.top-0.left-0.right-0.h-0\.5,
+.rounded-2xl > .absolute.top-0.left-0.right-0.h-1 {
+  display: none !important;
+}
+
+/* Tame excessive bubble-like rounding in templates */
+.rounded-2xl {
+  border-radius: 0.75rem !important; /* 12px instead of 16px */
+}
+.rounded-3xl {
+  border-radius: 1rem !important; /* 16px instead of 24px */
+}
+
+/* Turn filter pills / rounded-full tab buttons into sleek enterprise rectangular tabs */
+button.rounded-full:not(.w-12):not(.h-12):not(.w-10):not(.h-10) {
+  border-radius: 6px !important;
+}
+.rounded-full:has(button) {
+  border-radius: 6px !important;
+}
+
+/* Apply premium high-contrast subtle shadows (Stripe/Linear style) */
+.shadow-sm {
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.03) !important;
+}
+.shadow-md {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.04), 0 2px 4px -2px rgba(0, 0, 0, 0.04) !important;
+}
+.shadow-lg {
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.04), 0 4px 6px -4px rgba(0, 0, 0, 0.04) !important;
+}
+.shadow-2xl {
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.04), 0 8px 10px -6px rgba(0, 0, 0, 0.04) !important;
+}
+
+/* Clean, modern styling for input elements and select dropdowns */
+input[type="text"], input[type="date"], select {
+  border-radius: 6px !important;
+  font-size: 0.75rem !important;
+  line-height: 1rem !important;
+}
+
 

@@ -3,55 +3,43 @@ import { useStore } from '../store'
 import Sidebar from '../components/Sidebar'
 import Header from '../components/Header'
 
-import Cover                from '../sections/Cover'
-import Executive            from '../sections/Executive'
+import DashboardSection     from '../sections/DashboardSection'
 import PoStatus             from '../sections/PoStatus'
 import GateEntry            from '../sections/GateEntry'
 import PriceVarianceSame    from '../sections/PriceVarianceSame'
 import PriceVarianceCross   from '../sections/PriceVarianceCross'
 import GeToGrn              from '../sections/GeToGrn'
 import GrnToAp              from '../sections/GrnToAp'
-import GlBalances           from '../sections/GlBalances'
-import PaymentAging         from '../sections/PaymentAging'
 import PaymentAgingDomestic from '../sections/PaymentAgingDomestic'
 import PaymentAgingForeign  from '../sections/PaymentAgingForeign'
 import PaymentAgingRelated  from '../sections/PaymentAgingRelated'
 import PaymentAgingMsme     from '../sections/PaymentAgingMsme'
-import Msme                 from '../sections/Msme'
-import VendorMaster         from '../sections/VendorMaster'
 import VendorMasterNew      from '../sections/VendorMasterNew'
 import ThreeWayMatching     from '../sections/ThreeWayMatching'
 import ItemMaster           from '../sections/ItemMaster'
 import DataMap              from '../sections/DataMap'
 import Appendix             from '../sections/Appendix'
-import History              from '../sections/History'
 import Settings             from '../sections/Settings'
 import UploadModal          from '../components/UploadModal'
 import AuditTraceModal      from '../components/AuditTraceModal'
 
 const SECTIONS = {
-  cover:                Cover,
-  executive:            Executive,
+  dashboard:            DashboardSection,
   postatus:             PoStatus,
   gateentry:            GateEntry,
   pricevariancesame:    PriceVarianceSame,
   pricevariancecross:   PriceVarianceCross,
   getogrn:              GeToGrn,
   grntoap:              GrnToAp,
-  glbalances:           GlBalances,
-  paymentaging:         PaymentAging,
   paymentagingdomestic: PaymentAgingDomestic,
   paymentagingforeign:  PaymentAgingForeign,
   paymentagingrelated:  PaymentAgingRelated,
   paymentagingmsme:     PaymentAgingMsme,
   vendormasternew:      VendorMasterNew,
   threewaymatching:     ThreeWayMatching,
-  msme:                 Msme,
-  vendormaster:         VendorMaster,
   itemmaster:           ItemMaster,
   datamap:              DataMap,
   appendix:             Appendix,
-  history:              History,
   settings:             Settings,
 }
 
@@ -62,12 +50,15 @@ export default function Dashboard() {
   // Audit Trace State
   const [traceData, setTraceData] = useState(null)
 
-  const Section = SECTIONS[activeSection] || Cover
+  const Section = SECTIONS[activeSection] || DashboardSection
   const sectionData = results?.[activeSection] || {}
 
   // Intercept all table cell clicks globally for tracing
   useEffect(() => {
     const handleCellClick = (e) => {
+      // Don't intercept clicks inside the trace modal
+      if (e.target.closest('.z-50') || e.target.closest('[role="dialog"]')) return
+
       // Find closest table cell
       const td = e.target.closest('td')
       if (!td) return

@@ -24,7 +24,7 @@ from app.loaders import load_file
 from app.pipeline import run_pipeline
 from app.insights import generate_section_insight, generate_executive_summary
 from app.config import FILE_ROLES
-from app.db import init_db, add_uploaded_file, get_active_files, delete_file, replace_file, get_file_by_id
+from app.db import init_db, add_uploaded_file, get_active_files, delete_file, replace_file, get_file_by_id, add_audit_log, get_audit_logs
 from app.s3 import upload_file_to_s3, download_file_from_s3
 
 # Initialize the database on startup
@@ -37,12 +37,52 @@ cached_aging_related: dict | None = None
 cached_aging_msme: dict | None = None
 cached_vendor_master_new: dict | None = None
 cached_three_way_matching: dict | None = None
+cached_price_variance_same: dict | None = None
+cached_price_variance_cross: dict | None = None
+
+def clear_calculation_caches():
+    global cached_dfs, cached_aging_domestic, cached_aging_foreign, cached_aging_related, cached_aging_msme, cached_vendor_master_new, cached_three_way_matching, cached_price_variance_same, cached_price_variance_cross
+    cached_dfs = None
+    cached_aging_domestic = None
+    cached_aging_foreign = None
+    cached_aging_related = None
+    cached_aging_msme = None
+    cached_vendor_master_new = None
+    cached_three_way_matching = None
+    cached_price_variance_same = None
+    cached_price_variance_cross = None
+    
+    # Invalidate session result
+    combined_sess = session_store.get_session("combined")
+    if combined_sess:
+        combined_sess.result = None
+        
+    # Delete calculated cache files on disk
+    calc_files = [
+        "pipeline_result.pkl",
+        "aging_domestic.pkl",
+        "aging_foreign.pkl",
+        "aging_related.pkl",
+        "aging_msme.pkl",
+        "vendor_master_new.pkl",
+        "three_way_matching.pkl",
+        "price_variance_same.pkl",
+        "price_variance_cross.pkl"
+    ]
+    for fn in calc_files:
+        p = os.path.join(CACHE_DIR, fn)
+        if os.path.exists(p):
+            try:
+                os.remove(p)
+            except Exception as e:
+                print(f"Failed to remove cache file {fn}: {e}")
 
 def get_cached_dfs_or_load() -> dict[str, pd.DataFrame]:
     global cached_dfs
     if cached_dfs is None:
         cached_dfs = load_combined_dfs()
     return cached_dfs
+
 
 
 class SafeJSONEncoder(json.JSONEncoder):
@@ -219,18 +259,7 @@ async def upload_files(
             raise HTTPException(400, f"Unknown role '{r}'. Valid: {list(valid_roles)}")
 
     # Invalidate combined result cache
-    combined_sess = session_store.get_session("combined")
-    if combined_sess:
-        combined_sess.result = None
-
-    global cached_dfs, cached_aging_domestic, cached_aging_foreign, cached_aging_related, cached_aging_msme, cached_vendor_master_new, cached_three_way_matching
-    cached_dfs = None
-    cached_aging_domestic = None
-    cached_aging_foreign = None
-    cached_aging_related = None
-    cached_aging_msme = None
-    cached_vendor_master_new = None
-    cached_three_way_matching = None
+    clear_calculation_caches()
 
     loop = asyncio.get_running_loop()
 
@@ -244,6 +273,8 @@ async def upload_files(
                 None, 
                 lambda: add_uploaded_file(r, uf.filename, s3_res["s3_key"], s3_res["s3_url"], s3_res["row_count"])
             )
+            # Log the upload
+            await loop.run_in_executor(None, lambda: add_audit_log("File Uploaded", uf.filename, f"Uploaded under role {r}"))
             return {
                 "id": db_res["id"],
                 "role": db_res["role"],
@@ -290,17 +321,10 @@ async def upload_holidays(file: UploadFile = File(...)):
             f.write(data)
 
         # Invalidate cache
-        global cached_dfs, cached_aging_domestic, cached_aging_foreign, cached_aging_related, cached_aging_msme, cached_vendor_master_new
-        cached_dfs = None
-        cached_aging_domestic = None
-        cached_aging_foreign = None
-        cached_aging_related = None
-        cached_aging_msme = None
-        cached_vendor_master_new = None
-
-        combined_sess = session_store.get_session("combined")
-        if combined_sess:
-            combined_sess.result = None
+        clear_calculation_caches()
+        
+        # Log the holiday file upload
+        add_audit_log("Holidays Uploaded", file.filename, "Uploaded custom holidays list")
 
         return {"status": "success", "filename": file.filename, "message": "Holidays file uploaded and replaced successfully."}
 
@@ -367,18 +391,10 @@ def delete_history_file(file_id: int):
                 print(f"Failed to remove cache file: {e}")
         
         # Invalidate combined session cache
-        sess = session_store.get_session("combined")
-        if sess:
-            sess.result = None
-
-        global cached_dfs, cached_aging_domestic, cached_aging_foreign, cached_aging_related, cached_aging_msme, cached_vendor_master_new, cached_three_way_matching
-        cached_dfs = None
-        cached_aging_domestic = None
-        cached_aging_foreign = None
-        cached_aging_related = None
-        cached_aging_msme = None
-        cached_vendor_master_new = None
-        cached_three_way_matching = None
+        clear_calculation_caches()
+        
+        # Log deletion
+        add_audit_log("File Deleted", file_info['filename'], f"Soft deleted file with ID {file_id} under role {file_info['role']}")
             
         return {"status": "success", "message": f"File '{file_info['filename']}' deleted successfully."}
     except HTTPException as he:
@@ -417,18 +433,10 @@ async def replace_history_file(file_id: int, file: UploadFile = File(...)):
         )
         
         # Invalidate combined session cache
-        sess = session_store.get_session("combined")
-        if sess:
-            sess.result = None
-
-        global cached_dfs, cached_aging_domestic, cached_aging_foreign, cached_aging_related, cached_aging_msme, cached_vendor_master_new, cached_three_way_matching
-        cached_dfs = None
-        cached_aging_domestic = None
-        cached_aging_foreign = None
-        cached_aging_related = None
-        cached_aging_msme = None
-        cached_vendor_master_new = None
-        cached_three_way_matching = None
+        clear_calculation_caches()
+        
+        # Log the file replacement
+        await loop.run_in_executor(None, lambda: add_audit_log("File Replaced", file.filename, f"Replaced file with ID {file_id} under role {role}"))
             
         return {
             "status": "success",
@@ -460,11 +468,29 @@ async def analyze(session_id: str):
         if not active_files:
             raise HTTPException(400, "No files uploaded yet.")
             
+        cache_file = os.path.join(CACHE_DIR, "pipeline_result.pkl")
+        if os.path.exists(cache_file):
+            try:
+                with open(cache_file, "rb") as f:
+                    result = pickle.load(f)
+                sess = session_store.get_or_create_session("combined")
+                sess.result = result
+                
+                async def cached_event_generator():
+                    yield {"data": json.dumps({"stage": "loading", "pct": 100, "message": "Loading from cache..."})}
+                    yield {"data": json.dumps({"stage": "result", "pct": 100, "result": result}, cls=SafeJSONEncoder)}
+                
+                add_audit_log("Dashboard Fetched", "N/A", "Loaded dashboard values from disk cache")
+                return EventSourceResponse(cached_event_generator())
+            except Exception as e:
+                print(f"Failed to read pipeline_result cache: {e}")
+
         async def event_generator():
             queue: asyncio.Queue = asyncio.Queue()
             
             async def emit(stage: str, pct: int, message: str):
                 await queue.put({"stage": stage, "pct": pct, "message": message})
+                await asyncio.sleep(0.05)
                 
             async def run():
                 try:
@@ -487,6 +513,17 @@ async def analyze(session_id: str):
                     sess = session_store.get_or_create_session("combined")
                     result = await run_pipeline(sess, emit, dfs_override=dfs)
                     session_store.set_result("combined", result)
+                    
+                    # Save cache file to disk
+                    try:
+                        with open(cache_file, "wb") as f:
+                            pickle.dump(result, f)
+                    except Exception as ce:
+                        print(f"Failed to write cache: {ce}")
+                        
+                    # Log execution
+                    await loop.run_in_executor(None, lambda: add_audit_log("Pipeline Run", "All Active Files", "Ran consolidated P2P audit pipeline"))
+                    
                     await queue.put({"stage": "result", "pct": 100, "result": result})
                 except Exception as exc:
                     await queue.put({"stage": "error", "pct": 0, "message": str(exc)})
@@ -515,6 +552,7 @@ async def analyze(session_id: str):
 
         async def emit(stage: str, pct: int, message: str):
             await queue.put({"stage": stage, "pct": pct, "message": message})
+            await asyncio.sleep(0.05)
 
         async def run():
             try:
@@ -568,6 +606,18 @@ def health():
 @app.get("/api/result/{session_id}")
 def get_result(session_id: str):
     if session_id == "combined":
+        cache_file = os.path.join(CACHE_DIR, "pipeline_result.pkl")
+        if os.path.exists(cache_file):
+            try:
+                with open(cache_file, "rb") as f:
+                    result = pickle.load(f)
+                sess = session_store.get_or_create_session("combined")
+                sess.result = result
+                add_audit_log("Dashboard Fetched", "N/A", "Loaded dashboard values from disk cache")
+                return sanitize_for_json(result)
+            except Exception as e:
+                print(f"Failed to read pipeline_result cache: {e}")
+
         sess = session_store.get_session("combined")
         if sess is None or sess.result is None:
             active_files = get_active_files()
@@ -575,6 +625,7 @@ def get_result(session_id: str):
                 raise HTTPException(404, "Result not yet computed")
             else:
                 raise HTTPException(404, "No files uploaded")
+        add_audit_log("Dashboard Fetched", "N/A", "Loaded dashboard values from memory")
         return sanitize_for_json(sess.result)
         
     sess = session_store.get_session(session_id)
@@ -585,26 +636,54 @@ def get_result(session_id: str):
     return sanitize_for_json(sess.result)
 
 
+def get_cached_or_compute(cache_name: str, compute_fn):
+    cache_path = os.path.join(CACHE_DIR, f"{cache_name}.pkl")
+    if os.path.exists(cache_path):
+        try:
+            with open(cache_path, "rb") as f:
+                return pickle.load(f)
+        except Exception as e:
+            print(f"Failed to read disk cache for {cache_name}: {e}")
+            
+    res = compute_fn()
+    sanitized = sanitize_for_json(res)
+    
+    try:
+        with open(cache_path, "wb") as f:
+            pickle.dump(sanitized, f)
+    except Exception as ce:
+        print(f"Failed to write disk cache for {cache_name}: {ce}")
+        
+    return sanitized
+
 # ── Price Variance Endpoints ───────────────────────────────────────────────
 @app.get("/api/analysis/price-variance-same")
 async def get_price_variance_same():
+    global cached_price_variance_same
+    if cached_price_variance_same is not None:
+        return cached_price_variance_same
     try:
         loop = asyncio.get_running_loop()
         dfs = await loop.run_in_executor(None, get_cached_dfs_or_load)
         from app.analysis.price_variance_new import run_variance_analysis
-        res = await loop.run_in_executor(None, lambda: run_variance_analysis(dfs, "same"))
-        return sanitize_for_json(res)
+        res = await loop.run_in_executor(None, lambda: get_cached_or_compute("price_variance_same", lambda: run_variance_analysis(dfs, "same")))
+        cached_price_variance_same = res
+        return res
     except Exception as e:
         raise HTTPException(500, f"Error computing same-vendor price variance: {str(e)}")
 
 @app.get("/api/analysis/price-variance-cross")
 async def get_price_variance_cross():
+    global cached_price_variance_cross
+    if cached_price_variance_cross is not None:
+        return cached_price_variance_cross
     try:
         loop = asyncio.get_running_loop()
         dfs = await loop.run_in_executor(None, get_cached_dfs_or_load)
         from app.analysis.price_variance_new import run_variance_analysis
-        res = await loop.run_in_executor(None, lambda: run_variance_analysis(dfs, "cross"))
-        return sanitize_for_json(res)
+        res = await loop.run_in_executor(None, lambda: get_cached_or_compute("price_variance_cross", lambda: run_variance_analysis(dfs, "cross")))
+        cached_price_variance_cross = res
+        return res
     except Exception as e:
         raise HTTPException(500, f"Error computing cross-vendor price variance: {str(e)}")
 
@@ -617,10 +696,9 @@ async def get_payment_aging_domestic():
         loop = asyncio.get_running_loop()
         dfs = await loop.run_in_executor(None, get_cached_dfs_or_load)
         from app.analysis.payment_aging_domestic import run_payment_aging_domestic
-        res = await loop.run_in_executor(None, lambda: run_payment_aging_domestic(dfs))
-        sanitized = sanitize_for_json(res)
-        cached_aging_domestic = sanitized
-        return sanitized
+        res = await loop.run_in_executor(None, lambda: get_cached_or_compute("aging_domestic", lambda: run_payment_aging_domestic(dfs)))
+        cached_aging_domestic = res
+        return res
     except Exception as e:
         raise HTTPException(500, f"Error computing payment aging (domestic): {str(e)}")
 
@@ -633,10 +711,9 @@ async def get_payment_aging_foreign():
         loop = asyncio.get_running_loop()
         dfs = await loop.run_in_executor(None, get_cached_dfs_or_load)
         from app.analysis.payment_aging_foreign import run_payment_aging_foreign
-        res = await loop.run_in_executor(None, lambda: run_payment_aging_foreign(dfs))
-        sanitized = sanitize_for_json(res)
-        cached_aging_foreign = sanitized
-        return sanitized
+        res = await loop.run_in_executor(None, lambda: get_cached_or_compute("aging_foreign", lambda: run_payment_aging_foreign(dfs)))
+        cached_aging_foreign = res
+        return res
     except Exception as e:
         raise HTTPException(500, f"Error computing payment aging (foreign): {str(e)}")
 
@@ -649,10 +726,9 @@ async def get_payment_aging_related():
         loop = asyncio.get_running_loop()
         dfs = await loop.run_in_executor(None, get_cached_dfs_or_load)
         from app.analysis.payment_aging_related import run_payment_aging_related
-        res = await loop.run_in_executor(None, lambda: run_payment_aging_related(dfs))
-        sanitized = sanitize_for_json(res)
-        cached_aging_related = sanitized
-        return sanitized
+        res = await loop.run_in_executor(None, lambda: get_cached_or_compute("aging_related", lambda: run_payment_aging_related(dfs)))
+        cached_aging_related = res
+        return res
     except Exception as e:
         raise HTTPException(500, f"Error computing payment aging (related): {str(e)}")
 
@@ -665,10 +741,9 @@ async def get_payment_aging_msme():
         loop = asyncio.get_running_loop()
         dfs = await loop.run_in_executor(None, get_cached_dfs_or_load)
         from app.analysis.payment_aging_msme import run_payment_aging_msme
-        res = await loop.run_in_executor(None, lambda: run_payment_aging_msme(dfs))
-        sanitized = sanitize_for_json(res)
-        cached_aging_msme = sanitized
-        return sanitized
+        res = await loop.run_in_executor(None, lambda: get_cached_or_compute("aging_msme", lambda: run_payment_aging_msme(dfs)))
+        cached_aging_msme = res
+        return res
     except Exception as e:
         raise HTTPException(500, f"Error computing payment aging (msme): {str(e)}")
 
@@ -681,13 +756,11 @@ async def get_vendor_master_new():
         loop = asyncio.get_running_loop()
         dfs = await loop.run_in_executor(None, get_cached_dfs_or_load)
         from app.analysis.vendor_master_new import run_vendor_master_new
-        res = await loop.run_in_executor(None, lambda: run_vendor_master_new(dfs))
-        sanitized = sanitize_for_json(res)
-        cached_vendor_master_new = sanitized
-        return sanitized
+        res = await loop.run_in_executor(None, lambda: get_cached_or_compute("vendor_master_new", lambda: run_vendor_master_new(dfs)))
+        cached_vendor_master_new = res
+        return res
     except Exception as e:
         raise HTTPException(500, f"Error computing vendor master new: {str(e)}")
-
 
 @app.get("/api/analysis/three-way-matching")
 async def get_three_way_matching():
@@ -698,11 +771,128 @@ async def get_three_way_matching():
         loop = asyncio.get_running_loop()
         dfs = await loop.run_in_executor(None, get_cached_dfs_or_load)
         from app.analysis.three_way_matching import run_three_way_matching
-        res = await loop.run_in_executor(None, lambda: run_three_way_matching(dfs))
-        sanitized = sanitize_for_json(res)
-        cached_three_way_matching = sanitized
-        return sanitized
+        res = await loop.run_in_executor(None, lambda: get_cached_or_compute("three_way_matching", lambda: run_three_way_matching(dfs)))
+        cached_three_way_matching = res
+        return res
     except Exception as e:
         raise HTTPException(500, f"Error computing 3-way matching: {str(e)}")
+@app.get("/api/logs")
+def get_logs(limit: int = 100):
+    """
+    Fetch the list of system action and audit logs.
+    """
+    try:
+        logs = get_audit_logs()
+        return logs
+    except Exception as e:
+        raise HTTPException(500, f"Database error: {str(e)}")
 
+
+@app.get("/api/audit-trace/search")
+async def audit_trace_search(query: str):
+    """
+    Real-time cross-reference search across the 9 raw source DataFrames.
+    Returns matched rows grouped by file role.
+    """
+    if not query:
+        return {}
+        
+    try:
+        loop = asyncio.get_running_loop()
+        dfs = await loop.run_in_executor(None, get_cached_dfs_or_load)
+        
+        def do_search():
+            results = {}
+            query_str = str(query).strip()
+            if not query_str:
+                return {}
+                
+            # Try parsing the query as a float for numeric columns
+            query_float = None
+            try:
+                query_float = float(query_str)
+            except ValueError:
+                pass
+                
+            for role, df in dfs.items():
+                if df is None or df.empty:
+                    continue
+                    
+                # Initialize matching mask
+                mask = pd.Series(False, index=df.index)
+                
+                # Check each column using dtype-specific checks
+                for col in df.columns:
+                    col_series = df[col]
+                    
+                    # 1. Numeric column check
+                    if pd.api.types.is_numeric_dtype(col_series):
+                        if query_float is not None:
+                            try:
+                                num_mask = (col_series == query_float) | (col_series.round(2) == round(query_float, 2))
+                                mask = mask | num_mask
+                            except Exception:
+                                pass
+                        # If query is not numeric, it can never match a numeric column
+                        
+                    # 2. Object or String column check
+                    elif pd.api.types.is_object_dtype(col_series) or pd.api.types.is_string_dtype(col_series):
+                        try:
+                            str_mask = col_series.str.contains(query_str, case=False, na=False, regex=False)
+                            mask = mask | str_mask
+                        except Exception:
+                            pass
+                            
+                    # 3. Fallback check (bool, datetime, category, etc.)
+                    else:
+                        try:
+                            str_mask = col_series.astype(str).str.contains(query_str, case=False, na=False, regex=False)
+                            mask = mask | str_mask
+                        except Exception:
+                            pass
+                            
+                matched_df = df[mask]
+                if not matched_df.empty:
+                    # Limit to top 50 matches per sheet to prevent huge responses
+                    sample_df = matched_df.head(50)
+                    records = sample_df.replace({pd.NA: None, float('nan'): None}).to_dict(orient="records")
+                    results[role] = sanitize_for_json(records)
+                    
+            return results
+            
+        search_results = await loop.run_in_executor(None, do_search)
+        return search_results
+    except Exception as e:
+        raise HTTPException(500, f"Error searching raw source files: {str(e)}")
+
+
+@app.get("/api/user-profile")
+def get_profile():
+    try:
+        from app.db import get_user_profile
+        return get_user_profile()
+    except Exception as e:
+        raise HTTPException(500, f"Error fetching profile: {str(e)}")
+
+
+@app.post("/api/user-profile")
+async def update_profile(
+    name: str = Form(...),
+    mobile_number: str = Form(...),
+    email: str = Form(...),
+    profile_pic: Optional[UploadFile] = File(None)
+):
+    try:
+        from app.db import update_user_profile
+        from app.s3 import upload_profile_pic_to_s3
+        
+        pic_url = None
+        if profile_pic and profile_pic.filename:
+            data = await profile_pic.read()
+            pic_url = upload_profile_pic_to_s3(data, profile_pic.filename)
+            
+        profile = update_user_profile(name, pic_url, mobile_number, email)
+        return profile
+    except Exception as e:
+        raise HTTPException(500, f"Error updating profile: {str(e)}")
 

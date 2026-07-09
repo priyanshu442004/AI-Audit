@@ -3,13 +3,17 @@ import { useStore } from './store'
 import UploadPage  from './pages/UploadPage'
 import LoadingPage from './pages/LoadingPage'
 import Dashboard   from './pages/Dashboard'
+import LoginPage   from './pages/LoginPage'
 import { analyzeStream } from './api'
 
 export default function App() {
   const { page, sessionId, initTheme, setPage, setSessionId, setResults, setProgress } = useStore()
+  const user = useStore(state => state.user)
 
   useEffect(() => {
     initTheme()
+
+    if (!user) return
 
     const path = window.location.pathname
     const params = new URLSearchParams(window.location.search)
@@ -58,10 +62,11 @@ export default function App() {
       setPage('upload')
       window.history.replaceState(null, '', '/uploads')
     }
-  }, [])
+  }, [user])
 
   // Sync state changes back to URL
   useEffect(() => {
+    if (!user) return
     if (page === 'upload') {
       if (window.location.pathname !== '/uploads') {
         window.history.pushState(null, '', '/uploads')
@@ -72,10 +77,11 @@ export default function App() {
         window.history.pushState(null, '', target)
       }
     }
-  }, [page, sessionId])
+  }, [page, sessionId, user])
 
   // Handle browser back/forward buttons
   useEffect(() => {
+    if (!user) return
     const handlePopState = () => {
       const path = window.location.pathname
       const params = new URLSearchParams(window.location.search)
@@ -124,8 +130,9 @@ export default function App() {
 
     window.addEventListener('popstate', handlePopState)
     return () => window.removeEventListener('popstate', handlePopState)
-  }, [setPage, setSessionId, setResults, setProgress])
+  }, [setPage, setSessionId, setResults, setProgress, user])
 
+  if (!user) return <LoginPage />
   if (page === 'loading')   return <LoadingPage />
   if (page === 'dashboard') return <Dashboard />
   return <UploadPage />

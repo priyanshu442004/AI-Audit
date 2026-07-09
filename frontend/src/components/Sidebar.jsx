@@ -7,9 +7,7 @@ const LINK_GROUPS = [
   {
     label: 'Overview',
     links: [
-      { id: 'cover',        label: 'Report Cover',         icon: 'M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z' },
-      { id: 'executive',    label: 'Executive Summary',    icon: 'M13 10V3L4 14h7v7l9-11h-7z' },
-      { id: 'history',      label: 'Audit History',        icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0' },
+      { id: 'dashboard',    label: 'Dashboard',            icon: 'M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z' },
     ],
   },
   {
@@ -31,14 +29,6 @@ const LINK_GROUPS = [
     ],
   },
   {
-    label: 'Financial & Compliance',
-    links: [
-      { id: 'glbalances',   label: 'GL Vendor Balances',   icon: 'M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z' },
-      { id: 'paymentaging', label: 'Payment Aging',        icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' },
-      { id: 'msme',         label: 'MSME Compliance Audit', icon: 'M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16' },
-    ],
-  },
-  {
     label: 'Methodology',
     links: [
       { id: 'datamap',      label: 'Data Map & Logic',     icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' },
@@ -54,7 +44,7 @@ const LINK_GROUPS = [
 ]
 
 export default function Sidebar({ open, onClose }) {
-  const { activeSection, setActiveSection } = useStore()
+  const { activeSection, setActiveSection, logout } = useStore()
 
   const handleClick = (id) => {
     setActiveSection(id)
@@ -101,9 +91,20 @@ export default function Sidebar({ open, onClose }) {
           ))}
         </nav>
 
-        <div className="px-5 py-4 border-t border-white/10">
-          <ThemeToggle />
-          <div className="mt-3 flex items-center justify-between">
+        <div className="px-5 py-4 border-t border-white/10 space-y-4">
+          <div className="flex items-center justify-between">
+            <ThemeToggle />
+            <button
+              onClick={() => logout()}
+              className="text-xs font-semibold text-rose-400 hover:text-rose-300 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 transition duration-150"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+              <span>Sign Out</span>
+            </button>
+          </div>
+          <div className="flex items-center justify-between">
             <div>
               <div className="text-[10px] text-slate-500 uppercase tracking-wider">Audit Period</div>
               <div className="text-xs text-slate-300 font-medium">FY 2026-27</div>

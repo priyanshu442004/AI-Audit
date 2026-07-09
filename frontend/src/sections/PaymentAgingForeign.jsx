@@ -2,6 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { fetchPaymentAgingForeign } from '../api'
 import AiInsightBox from '../components/AiInsightBox'
 import { useStore } from '../store'
+import DonutChart from '../components/DonutChart'
+
 
 const formatCurrency = (val) => {
   if (val === null || val === undefined) return '—'
@@ -294,6 +296,40 @@ export default function PaymentAgingForeign() {
       .slice(0, 5)
   }, [filtered])
 
+  const statusSegments = useMemo(() => {
+    const statusCounts = {
+      'Fully paid': 0,
+      'Partially paid': 0,
+      'Open': 0
+    }
+    filtered.forEach(r => {
+      if (statusCounts[r.status] !== undefined) {
+        statusCounts[r.status]++
+      }
+    })
+    const total = filtered.length
+    const colors = {
+      'Fully paid': '#10b981', // emerald-500
+      'Partially paid': '#f59e0b', // amber-500
+      'Open': '#f43f5e' // rose-500
+    }
+    let currentOffset = 0
+    return Object.entries(statusCounts).map(([label, value]) => {
+      const pct = total > 0 ? value / total : 0
+      const dash = pct * 314
+      const offset = currentOffset
+      currentOffset -= dash
+      return {
+        label,
+        value,
+        dash,
+        offset,
+        color: colors[label]
+      }
+    })
+  }, [filtered])
+
+
   const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE))
   const paginated = filtered.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE)
   const startRec = filtered.length === 0 ? 0 : (currentPage - 1) * ITEMS_PER_PAGE + 1
@@ -427,30 +463,31 @@ export default function PaymentAgingForeign() {
             <h3 className="text-sm font-bold text-slate-900 dark:text-white">Foreign Status Distribution</h3>
             <p className="text-xs text-slate-400 mt-0.5">Summary of ledger line status flags</p>
           </div>
-          <div className="space-y-3.5 my-4">
-            {['Fully paid', 'Partially paid', 'Open'].map(st => {
-              const count = filtered.filter(r => r.status === st).length
-              const pct = filtered.length > 0 ? ((count / filtered.length) * 100).toFixed(1) : '0'
-              const color = st === 'Fully paid' ? 'bg-emerald-500' : (st === 'Partially paid' ? 'bg-amber-500' : 'bg-rose-500')
-              const textColor = st === 'Fully paid' ? 'text-emerald-600 dark:text-emerald-400' : (st === 'Partially paid' ? 'text-amber-600 dark:text-amber-400' : 'text-rose-600 dark:text-rose-400')
-              return (
-                <div key={st} className="space-y-1">
-                  <div className="flex justify-between text-xs font-semibold text-slate-600 dark:text-slate-300">
-                    <span className="flex items-center gap-1.5">
-                      <span className={`w-2 h-2 rounded-full ${color}`} />
-                      {st}
-                    </span>
-                    <span className="font-bold text-slate-950 dark:text-white">{count.toLocaleString()} ({pct}%)</span>
+          <div className="flex items-center gap-6 justify-center my-auto py-2">
+            <DonutChart
+              segments={statusSegments}
+              centerText={filtered.length.toLocaleString()}
+              centerSub="Total Invoices"
+            />
+            <div className="flex-1 space-y-2 text-xs">
+              {statusSegments.map(s => {
+                const pct = filtered.length > 0 ? ((s.value / filtered.length) * 100).toFixed(1) : 0
+                const labelColor = s.label === 'Fully paid' ? 'bg-emerald-500' : (s.label === 'Partially paid' ? 'bg-amber-500' : 'bg-rose-500')
+                return (
+                  <div key={s.label} className="space-y-1">
+                    <div className="flex items-center justify-between text-xs font-semibold text-slate-650 dark:text-slate-350">
+                      <span className="flex items-center gap-1.5">
+                        <span className={`w-2 h-2 rounded-full ${labelColor}`} />
+                        {s.label}
+                      </span>
+                      <span className="font-bold text-slate-950 dark:text-white">
+                        {s.value.toLocaleString()} <span className="font-normal text-slate-400">({pct}%)</span>
+                      </span>
+                    </div>
                   </div>
-                  <div className="bg-slate-100 dark:bg-slate-800 rounded-full h-2 overflow-hidden relative shadow-inner">
-                    <div 
-                      className={`h-full rounded-full ${color} transition-all duration-500`}
-                      style={{ width: `${pct}%` }} 
-                    />
-                  </div>
-                </div>
-              )
-            })}
+                )
+              })}
+            </div>
           </div>
         </div>
       </div>

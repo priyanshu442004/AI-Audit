@@ -40,6 +40,31 @@ def init_db():
                 is_deleted BOOLEAN DEFAULT FALSE
             );
         """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS audit_logs (
+                id SERIAL PRIMARY KEY,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                action VARCHAR(255) NOT NULL,
+                filename VARCHAR(500),
+                user_action VARCHAR(255) NOT NULL,
+                last_fetched TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS user_profile (
+                id INTEGER PRIMARY KEY,
+                name VARCHAR(255) DEFAULT 'Admin User',
+                profile_pic_url VARCHAR(1000) DEFAULT '',
+                mobile_number VARCHAR(50) DEFAULT '',
+                email VARCHAR(255) UNIQUE DEFAULT 'admin@ikio.com',
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        cur.execute("""
+            INSERT INTO user_profile (id, name, profile_pic_url, mobile_number, email)
+            VALUES (1, 'Admin User', '', '+91 99999 99999', 'admin@ikio.com')
+            ON CONFLICT (id) DO NOTHING;
+        """)
         conn.commit()
     except Exception as e:
         conn.rollback()
@@ -138,3 +163,101 @@ def replace_file(file_id: int, filename: str, s3_key: str, s3_url: str, row_coun
     finally:
         cur.close()
         put_connection(conn)
+
+
+def add_audit_log(action: str, filename: str | None, user_action: str):
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            INSERT INTO audit_logs (action, filename, user_action, last_fetched)
+            VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
+        """, (action, filename, user_action))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        print(f"Failed to add audit log: {e}")
+    finally:
+        cur.close()
+        put_connection(conn)
+
+
+def get_audit_logs():
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute("""
+            SELECT id, timestamp, action, filename, user_action, last_fetched
+            FROM audit_logs
+            ORDER BY timestamp DESC
+            LIMIT 100;
+        """)
+        rows = cur.fetchall()
+        return [dict(row) for row in rows]
+    except Exception as e:
+        print(f"Failed to get audit logs: {e}")
+        return []
+    finally:
+        cur.close()
+        put_connection(conn)
+
+
+def get_user_profile():
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cur.execute("""
+            SELECT id, name, profile_pic_url, mobile_number, email, updated_at
+            FROM user_profile
+            WHERE id = 1;
+        """)
+        row = cur.fetchone()
+        if not row:
+            cur.execute("""
+                INSERT INTO user_profile (id, name, profile_pic_url, mobile_number, email)
+                VALUES (1, 'Admin User', '', '+91 99999 99999', 'admin@ikio.com')
+                ON CONFLICT (id) DO NOTHING;
+            """)
+            conn.commit()
+            cur.execute("""
+                SELECT id, name, profile_pic_url, mobile_number, email, updated_at
+                FROM user_profile
+                WHERE id = 1;
+            """)
+            row = cur.fetchone()
+        return dict(row)
+    except Exception as e:
+        raise e
+    finally:
+        cur.close()
+        put_connection(conn)
+
+
+def update_user_profile(name: str, profile_pic_url: str | None, mobile_number: str, email: str):
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        if profile_pic_url is not None:
+            cur.execute("""
+                UPDATE user_profile
+                SET name = %s, profile_pic_url = %s, mobile_number = %s, email = %s, updated_at = CURRENT_TIMESTAMP
+                WHERE id = 1
+                RETURNING id, name, profile_pic_url, mobile_number, email, updated_at;
+            """, (name, profile_pic_url, mobile_number, email))
+        else:
+            cur.execute("""
+                UPDATE user_profile
+                SET name = %s, mobile_number = %s, email = %s, updated_at = CURRENT_TIMESTAMP
+                WHERE id = 1
+                RETURNING id, name, profile_pic_url, mobile_number, email, updated_at;
+            """, (name, mobile_number, email))
+        row = cur.fetchone()
+        conn.commit()
+        return dict(row) if row else None
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
+        cur.close()
+        put_connection(conn)
+

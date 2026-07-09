@@ -19,6 +19,20 @@ const applyTheme = (theme) => {
 }
 
 export const useStore = create((set, get) => ({
+  // Auth state
+  user: (() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('user')
+        return saved ? JSON.parse(saved) : null
+      } catch (e) {
+        return null
+      }
+    }
+    return null
+  })(),
+  loginError: null,
+
   // App state
   page: 'upload',      // 'upload' | 'loading' | 'dashboard'
   sessionId: null,
@@ -40,9 +54,29 @@ export const useStore = create((set, get) => ({
   theme: getInitialTheme(),
 
   // Active dashboard section
-  activeSection: 'cover',
+  activeSection: 'dashboard',
 
   // Actions
+  login: (email, password) => {
+    if (email === 'admin@ikio.com' && password === 'admin') {
+      const userData = { email, role: 'admin' }
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('user', JSON.stringify(userData))
+      }
+      set({ user: userData, loginError: null })
+      return true
+    } else {
+      set({ loginError: 'Invalid email or password.' })
+      return false
+    }
+  },
+  logout: () => {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('user')
+    }
+    set({ user: null, loginError: null, page: 'upload', results: null })
+  },
+
   setPage: (page) => set({ page }),
   setSessionId: (id) => set({ sessionId: id }),
   setResults: (r) => set({ results: r, priceVarianceSame: null, priceVarianceCross: null, paymentAgingDomestic: null, paymentAgingForeign: null, paymentAgingRelated: null, paymentAgingMsme: null, vendorMasterNew: null, threeWayMatching: null }),

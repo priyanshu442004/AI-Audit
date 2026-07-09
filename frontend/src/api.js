@@ -146,8 +146,25 @@ export async function fetchThreeWayMatching() {
   const res = await fetch(`${BASE}/analysis/three-way-matching`)
   if (!res.ok) throw new Error('Failed to load three-way matching analysis')
   return res.json()
+}/**
+ * Fetch the list of system action and audit logs.
+ * @param {number} limit
+ * @returns {Promise<Array>}
+ */
+export async function fetchLogs(limit = 100) {
+  const res = await fetch(`${BASE}/logs?limit=${limit}`)
+  if (!res.ok) throw new Error('Failed to load logs')
+  return res.json()
 }
 
-
-
+/**
+ * Perform a real-time search across raw source DataFrames.
+ * @param {string} query
+ * @returns {Promise<object>}
+ */
+export async function searchAuditTrace(query) {
+  const res = await fetch(`${BASE}/audit-trace/search?query=${encodeURIComponent(query)}`)
+  if (!res.ok) throw new Error('Failed to search audit trace raw files')
+  return res.json()
+}
 
