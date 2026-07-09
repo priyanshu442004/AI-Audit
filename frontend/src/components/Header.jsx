@@ -74,8 +74,8 @@ export default function Header({ onMenuClick }) {
   }
 
   return (
-    <header className="app-header sticky top-0 z-30 border-b">
-      <div className="flex items-center justify-between px-4 sm:px-6 lg:px-8 py-3">
+    <header className="app-header sticky top-0 z-30 border-b h-[72px] flex items-center">
+      <div className="flex-1 flex items-center justify-between px-4 sm:px-6 lg:px-8">
         <div className="flex items-center gap-4">
           <button onClick={onMenuClick} className="lg:hidden p-1.5 -ml-1.5 rounded-md app-row-hover app-muted">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">

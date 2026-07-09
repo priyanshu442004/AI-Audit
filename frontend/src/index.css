@@ -10,12 +10,12 @@
 
   html.dark {
     color-scheme: dark;
-    background: #080f1f;
+    background: #070d1a;
   }
 
   body {
     font-family: 'Inter', 'system-ui', sans-serif;
-    @apply bg-slate-100 text-slate-950 antialiased transition-colors duration-200 dark:bg-slate-950 dark:text-slate-100;
+    @apply bg-slate-100 text-slate-950 antialiased transition-colors duration-200 dark:bg-[#070d1a] dark:text-slate-100;
   }
 
   #root {
@@ -25,15 +25,15 @@
 
 @layer components {
   .app-bg {
-    @apply min-h-screen bg-slate-100 text-slate-950 transition-colors duration-200 dark:bg-slate-950 dark:text-slate-100;
+    @apply min-h-screen bg-slate-100 text-slate-950 transition-colors duration-200 dark:bg-[#070d1a] dark:text-slate-100;
   }
 
   .app-gradient-bg {
-    @apply min-h-screen bg-[radial-gradient(circle_at_top_left,_#dbeafe,_transparent_32%),linear-gradient(135deg,_#f8fafc,_#eef2f7)] text-slate-950 transition-colors duration-200 dark:bg-[radial-gradient(circle_at_top_left,_rgba(37,99,235,0.22),_transparent_34%),linear-gradient(135deg,_#080f1f,_#0f172a)] dark:text-slate-100;
+    @apply min-h-screen bg-[radial-gradient(circle_at_top_left,_#dbeafe,_transparent_32%),linear-gradient(135deg,_#f8fafc,_#eef2f7)] text-slate-950 transition-colors duration-200 dark:bg-[radial-gradient(circle_at_top_left,_rgba(37,99,235,0.22),_transparent_34%),linear-gradient(135deg,_#070d1a,_#0f172a)] dark:text-slate-100;
   }
 
   .app-header {
-    @apply bg-white/90 text-slate-950 border-slate-200/80 backdrop-blur-md shadow-sm shadow-slate-900/5 transition-colors duration-200 dark:bg-slate-950/90 dark:text-slate-100 dark:border-slate-800/80 dark:shadow-black/20;
+    @apply bg-white/90 text-slate-950 border-slate-200/80 backdrop-blur-md shadow-sm shadow-slate-900/5 transition-colors duration-200 dark:bg-[#070d1a]/90 dark:text-slate-100 dark:border-slate-800/80 dark:shadow-black/20;
   }
 
   .app-card {

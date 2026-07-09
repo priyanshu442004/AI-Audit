@@ -54,9 +54,9 @@ export default function Sidebar({ open, onClose }) {
   return (
     <>
       <aside className={`sidebar-shell fixed inset-y-0 left-0 z-50 w-72 transform transition-transform duration-300 flex flex-col ${open ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}>
-        <div className="px-6 py-5 border-b border-white/10">
+        <div className="px-6 border-b border-white/10 dark:border-slate-800/80 h-[72px] flex items-center shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-lg bg-white flex items-center justify-center overflow-hidden p-1">
+            <div className="w-10 h-10 rounded-lg bg-white flex items-center justify-center overflow-hidden p-1 shrink-0">
               <img src={logo} alt="IKIO" className="w-full h-full object-contain" />
             </div>
             <div>
