@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { useStore } from '../store'
 import { fetchThreeWayMatching } from '../api'
+import TruncatedCell from '../components/TruncatedCell'
 
 export default function ThreeWayMatching() {
   const { threeWayMatching, setThreeWayMatching } = useStore()
@@ -386,10 +387,14 @@ export default function ThreeWayMatching() {
                       <td className="px-4 py-3 text-slate-700 dark:text-slate-300">{row.ap_invoice_number || '—'}</td>
                       <td className="px-4 py-3 text-slate-700 dark:text-slate-300 font-medium">{row.ap_credit_note || '—'}</td>
                       <td className="px-4 py-3 text-slate-600 dark:text-slate-400 font-mono">{row.vendor_code || '—'}</td>
-                      <td className="px-4 py-3 text-slate-700 dark:text-slate-300 max-w-[200px] truncate" title={row.vendor_name}>{row.vendor_name || '—'}</td>
+                      <td className="px-4 py-3 text-slate-700 dark:text-slate-300 max-w-[200px]">
+                        <TruncatedCell value={row.vendor_name} />
+                      </td>
                       <td className="px-4 py-3 text-slate-600 dark:text-slate-400">{row.vendor_country || '—'}</td>
                       <td className="px-4 py-3 text-slate-700 dark:text-slate-300 font-mono">{row.item_code || '—'}</td>
-                      <td className="px-4 py-3 text-slate-500 dark:text-slate-400 max-w-[250px] truncate" title={row.item_description}>{row.item_description || '—'}</td>
+                      <td className="px-4 py-3 text-slate-500 dark:text-slate-400 max-w-[250px]">
+                        <TruncatedCell value={row.item_description} />
+                      </td>
                       <td className="px-4 py-3 text-slate-600 dark:text-slate-400">{row.item_group || '—'}</td>
                       <td className="px-4 py-3 text-right font-medium text-slate-700 dark:text-slate-300">{formatNumber(row.po_qty)}</td>
                       <td className="px-4 py-3 text-right font-medium text-slate-700 dark:text-slate-300">{formatNumber(row.grpo_qty)}</td>

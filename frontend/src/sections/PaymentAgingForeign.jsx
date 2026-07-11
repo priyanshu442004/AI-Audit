@@ -3,6 +3,7 @@ import { fetchPaymentAgingForeign } from '../api'
 import AiInsightBox from '../components/AiInsightBox'
 import { useStore } from '../store'
 import DonutChart from '../components/DonutChart'
+import TruncatedCell from '../components/TruncatedCell'
 
 
 const formatCurrency = (val) => {
@@ -180,7 +181,12 @@ export default function PaymentAgingForeign() {
 
     // Find the max posting date in the dataset to act as "today" for overdue check
     const dates = filtered.map(r => parseDate(r.posting_date)).filter(Boolean)
-    const maxDate = dates.length > 0 ? new Date(Math.max(...dates)) : new Date()
+    const maxDate = dates.length > 0 
+      ? new Date(dates.reduce((max, d) => {
+          const t = d.getTime()
+          return t > max ? t : max
+        }, dates[0].getTime()))
+      : new Date()
 
     // Overdue Amount check per vendor
     const vendorOverdue = {}
@@ -599,7 +605,7 @@ export default function PaymentAgingForeign() {
                       {row.vendor_code || '—'}
                     </td>
                     <td className="px-4 py-3 text-xs font-medium text-slate-700 dark:text-slate-300">
-                      {row.vendor_name || '—'}
+                      <TruncatedCell value={row.vendor_name} />
                     </td>
                     <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">
                       {row.vendor_country}
@@ -607,11 +613,11 @@ export default function PaymentAgingForeign() {
                     <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">
                       {row.vendor_group || '—'}
                     </td>
-                    <td className="px-4 py-3 text-xs text-slate-500 dark:text-slate-500 max-w-[150px] truncate">
-                      {row.vendor_address || '—'}
+                    <td className="px-4 py-3 text-xs text-slate-500 dark:text-slate-500 max-w-[150px]">
+                      <TruncatedCell value={row.vendor_address} />
                     </td>
                     <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">
-                      {row.payment_terms || '—'}
+                      <TruncatedCell value={row.payment_terms} />
                     </td>
                     <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400 font-semibold">
                       {row.payment_term_type || '—'}

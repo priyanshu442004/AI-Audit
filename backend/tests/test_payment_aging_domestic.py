@@ -46,7 +46,7 @@ def test_payment_aging_domestic_logic():
     rows = result["rows"]
 
     # Only V00002 (Domestic/INR) should be processed, V00005 (USD) should be filtered out
-    assert len(rows) == 2
+    assert len(rows) == 1
     assert all(r["vendor_code"] == "V00002" for r in rows)
 
     # Reconciled invoice row checks
@@ -58,16 +58,9 @@ def test_payment_aging_domestic_logic():
     assert inv_row["payment_term_type"] == "Credit(Net)"
     assert inv_row["term_days"] == 30
     assert inv_row["due_date_doc_term"] == "21/02/26" # 22/01/26 + 30 days
-    assert inv_row["payment_date"] == "—"
+    assert inv_row["payment_date"] == "17/02/26"
     assert inv_row["days_late"] == 0
-    assert inv_row["actual_paid"] == 0.0
-    assert inv_row["outstanding"] == -26322.0
-    assert inv_row["status"] == "Open"
+    assert inv_row["actual_paid"] == 26322.0
+    assert inv_row["outstanding"] == 0.0
+    assert inv_row["status"] == "Fully paid"
     assert inv_row["aging_category"] == "Overdue 0-15"
-
-    # Reconciled payment row checks
-    pay_row = next(r for r in rows if r["invoice_doc_number"] == "PS 252605459")
-    assert pay_row["payment_date"] == "17/02/26"
-    assert pay_row["actual_paid"] == 27212.0
-    assert pay_row["outstanding"] == 0.0
-    assert pay_row["status"] == "Fully paid"

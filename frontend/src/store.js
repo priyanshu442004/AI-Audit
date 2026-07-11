@@ -46,6 +46,7 @@ export const useStore = create((set, get) => ({
   paymentAgingMsme: null,
   vendorMasterNew: null,
   threeWayMatching: null,
+  backgroundStates: {},
 
   // Loading progress
   progress: { pct: 0, message: 'Preparing data…', stage: '' },
@@ -79,7 +80,8 @@ export const useStore = create((set, get) => ({
 
   setPage: (page) => set({ page }),
   setSessionId: (id) => set({ sessionId: id }),
-  setResults: (r) => set({ results: r, priceVarianceSame: null, priceVarianceCross: null, paymentAgingDomestic: null, paymentAgingForeign: null, paymentAgingRelated: null, paymentAgingMsme: null, vendorMasterNew: null, threeWayMatching: null }),
+  setResults: (r) => set({ results: r, priceVarianceSame: null, priceVarianceCross: null, paymentAgingDomestic: null, paymentAgingForeign: null, paymentAgingRelated: null, paymentAgingMsme: null, vendorMasterNew: null, threeWayMatching: null, backgroundStates: {} }),
+  setBackgroundState: (key, state) => set((s) => ({ backgroundStates: { ...s.backgroundStates, [key]: state } })),
   setProgress: (p) => set({ progress: p }),
   setActiveSection: (s) => set({ activeSection: s }),
   setShowUploadModal: (show) => set({ showUploadModal: show }),

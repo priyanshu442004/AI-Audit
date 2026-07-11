@@ -151,6 +151,9 @@ export default function UploadPage() {
 
   const handleGoToDashboard = () => {
     setError('')
+    setPage('loading')
+    setProgress({ pct: 15, message: 'Retrieving cached audit results...' })
+    
     // Check if combined results are already computed
     fetch('/api/result/combined')
       .then(async res => {
@@ -161,13 +164,13 @@ export default function UploadPage() {
         return res.json()
       })
       .then(data => {
+        setSessionId('combined')
         setResults(data)
         setPage('dashboard')
       })
       .catch(err => {
-        // If not computed, show loading page and run full analysis stream
+        // If not computed, run full analysis stream
         setSessionId('combined')
-        setPage('loading')
         setProgress({ pct: 0, message: 'Initializing analytical pipeline...' })
         analyzeStream('combined', {
           onProgress: ({ pct, message }) => setProgress({ pct, message }),

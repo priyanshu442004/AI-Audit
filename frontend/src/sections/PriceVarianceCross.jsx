@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { fetchPriceVarianceCross } from '../api'
 import AiInsightBox from '../components/AiInsightBox'
 import { useStore } from '../store'
+import TruncatedCell from '../components/TruncatedCell'
 
 const formatCurrency = (val) => {
   if (val === null || val === undefined) return '—'
@@ -381,8 +382,8 @@ export default function PriceVarianceCross() {
                     {row.item_code || '—'}
                   </td>
                   {/* 2. Item Description */}
-                  <td className="px-4 py-3 text-xs font-medium text-slate-700 dark:text-slate-300 max-w-[250px] truncate" title={row.item_description}>
-                    {row.item_description || '—'}
+                  <td className="px-4 py-3 text-xs font-medium text-slate-700 dark:text-slate-300 max-w-[250px]">
+                    <TruncatedCell value={row.item_description} />
                   </td>
                   {/* 3. Item Group */}
                   <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">
@@ -393,8 +394,8 @@ export default function PriceVarianceCross() {
                     {row.vendor_code || '—'}
                   </td>
                   {/* 5. Vendor Name */}
-                  <td className="px-4 py-3 text-xs font-medium text-slate-700 dark:text-slate-300 max-w-[200px] truncate" title={row.vendor_name}>
-                    {row.vendor_name || '—'}
+                  <td className="px-4 py-3 text-xs font-medium text-slate-700 dark:text-slate-300 max-w-[200px]">
+                    <TruncatedCell value={row.vendor_name} />
                   </td>
                   {/* 6. Vendor Country */}
                   <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">
@@ -402,11 +403,11 @@ export default function PriceVarianceCross() {
                   </td>
                   {/* 7. PO Numbers */}
                   <td className="px-4 py-3 text-xs font-mono text-slate-600 dark:text-slate-400">
-                    {row.po_numbers || '—'}
+                    <TruncatedCell value={row.po_numbers} />
                   </td>
                   {/* 8. GRN No */}
-                  <td className="px-4 py-3 text-xs font-mono text-slate-600 dark:text-slate-400 max-w-[150px] truncate" title={row.grn_number}>
-                    {row.grn_number || '—'}
+                  <td className="px-4 py-3 text-xs font-mono text-slate-600 dark:text-slate-400 max-w-[150px]">
+                    <TruncatedCell value={row.grn_number} />
                   </td>
                   {/* 9. UOM */}
                   <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">

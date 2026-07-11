@@ -44,7 +44,8 @@ const SECTIONS = {
 }
 
 export default function Dashboard() {
-  const { activeSection, results, showUploadModal } = useStore()
+  const { activeSection, results, showUploadModal, sessionId } = useStore()
+  const store = useStore()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   
   // Audit Trace State
@@ -52,6 +53,15 @@ export default function Dashboard() {
 
   const Section = SECTIONS[activeSection] || DashboardSection
   const sectionData = results?.[activeSection] || {}
+
+  // Background Prefetching Orchestration
+  useEffect(() => {
+    if (results && sessionId) {
+      import('../utils/backgroundPrefetcher').then(({ startPrefetching }) => {
+        startPrefetching(store)
+      })
+    }
+  }, [sessionId, !!results])
 
   // Intercept all table cell clicks globally for tracing
   useEffect(() => {

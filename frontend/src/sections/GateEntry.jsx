@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react'
 import DonutChart from '../components/DonutChart'
 import AiInsightBox from '../components/AiInsightBox'
 import { CHART_COLORS } from '../theme'
+import TruncatedCell from '../components/TruncatedCell'
 
 const formatCurrency = (val) => {
   if (val === null || val === undefined) return '—'
@@ -489,8 +490,8 @@ export default function GateEntry({ data }) {
 
                     const isNum = typeof val === 'number' || (!isNaN(parseFloat(val)) && isFinite(val) && !String(val).startsWith('0'))
                     return (
-                      <td key={c} className={`px-4 py-2 text-slate-700 dark:text-slate-350 whitespace-nowrap ${isNum ? 'font-mono' : ''}`}>
-                        {val === null || val === undefined || val === '' ? '—' : String(val)}
+                      <td key={c} className={`px-4 py-2 text-slate-700 dark:text-slate-350 ${isNum ? 'font-mono whitespace-nowrap' : ''}`}>
+                        {val === null || val === undefined || val === '' ? '—' : (isNum ? String(val) : <TruncatedCell value={val} />)}
                       </td>
                     )
                   })}

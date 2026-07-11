@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react'
 import AiInsightBox from '../components/AiInsightBox'
+import TruncatedCell from '../components/TruncatedCell'
 
 const ROWS_PER_PAGE = 100
 
@@ -139,14 +140,16 @@ export default function ItemMaster({ data }) {
                     return (
                       <td 
                         key={`${idx}-${col}`}
-                        className={`px-4 py-3 whitespace-nowrap ${
-                          isNumeric ? 'text-right font-mono' : 'text-slate-600 dark:text-slate-300'
+                        className={`px-4 py-3 ${
+                          isNumeric ? 'text-right font-mono whitespace-nowrap' : 'text-slate-600 dark:text-slate-300'
                         }`}
                         title={value}
                       >
-                        <span className="block max-w-xs truncate">
-                          {value}
-                        </span>
+                        {isNumeric ? (
+                          <span className="block max-w-xs truncate">{value}</span>
+                        ) : (
+                          <TruncatedCell value={value} />
+                        )}
                       </td>
                     )
                   })}

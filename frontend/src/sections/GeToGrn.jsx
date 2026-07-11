@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react'
 import AiInsightBox from '../components/AiInsightBox'
+import TruncatedCell from '../components/TruncatedCell'
 
 const formatCurrency = (val) => {
   if (val === null || val === undefined) return '—'
@@ -508,8 +509,8 @@ export default function GeToGrn({ data }) {
 
                     // ── Default: plain text (IDs, names, dates, countries) ──
                     return (
-                      <td key={c} className="px-4 py-2 text-slate-700 dark:text-slate-300 whitespace-nowrap">
-                        {val === null || val === undefined || val === '' ? '—' : String(val)}
+                      <td key={c} className="px-4 py-2 text-slate-700 dark:text-slate-300">
+                        {val === null || val === undefined || val === '' ? '—' : <TruncatedCell value={val} />}
                       </td>
                     )
                   })}

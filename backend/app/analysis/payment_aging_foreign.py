@@ -163,10 +163,29 @@ def run_payment_aging_foreign(dfs: dict[str, pd.DataFrame]) -> dict:
     # 3. Parse General Ledger
     out_rows = []
     if df_gl is not None and not df_gl.empty:
+        gl_rows = df_gl.values.tolist()
+        non_vendor_cats = {'Revenue', 'Asset', 'Equity', 'Expenditure', 'Liability', 'Customer'}
+        
+        # 1. Find max date in GL for reference
+        dates_in_gl = []
+        for row in gl_rows:
+            if not row:
+                continue
+            val0 = row[0]
+            col0_val = str(val0).strip() if not is_nan_or_none(val0) else ""
+            if col0_val == 'Vendor' or col0_val in non_vendor_cats:
+                continue
+            dt = parse_date(col0_val, date_cache)
+            if dt:
+                dates_in_gl.append(dt)
+        reference_date = max(dates_in_gl) if dates_in_gl else datetime.today()
+        
+        # 2. Collect transactions grouped by vendor
+        vendor_transactions = {}
+        vendor_names = {}
+        
         current_vendor_code = None
         current_vendor_name = None
-        
-        gl_rows = df_gl.values.tolist()
         
         for row in gl_rows:
             if not row:
@@ -178,51 +197,47 @@ def run_payment_aging_foreign(dfs: dict[str, pd.DataFrame]) -> dict:
                 current_vendor_code = normalize_id(row[1]) if len(row) > 1 else None
                 val9 = row[9] if len(row) > 9 else None
                 current_vendor_name = str(val9).strip() if not is_nan_or_none(val9) else ""
+                if current_vendor_code:
+                    vendor_names[current_vendor_code] = current_vendor_name
                 continue
-            
-            if not col0_val or col0_val.lower() in ("nan", "none"):
+            elif col0_val in non_vendor_cats:
+                current_vendor_code = None
+                current_vendor_name = None
                 continue
                 
             if current_vendor_code is None:
                 continue
-
+                
             post_dt = parse_date(col0_val, date_cache)
             if post_dt is None:
                 continue
                 
-            posting_date_str = col0_val
-            
-            val1 = row[1] if len(row) > 1 else None
-            val2 = row[2] if len(row) > 2 else None
-            val5 = row[5] if len(row) > 5 else None
-            val11 = row[11] if len(row) > 11 else None
-            val12 = row[12] if len(row) > 12 else None
-            val13 = row[13] if len(row) > 13 else None
-            
-            due_date_str = str(val1).strip() if not is_nan_or_none(val1) else ""
-            doc_date_str = str(val2).strip() if not is_nan_or_none(val2) else ""
-            doc_no = str(val5).strip() if not is_nan_or_none(val5) else ""
-            debit_str = str(val11).strip() if not is_nan_or_none(val11) else ""
-            credit_str = str(val12).strip() if not is_nan_or_none(val12) else ""
-            cum_bal_str = str(val13).strip() if not is_nan_or_none(val13) else ""
-            
-            if not doc_no:
-                val6 = row[6] if len(row) > 6 else None
-                doc_no = str(val6).strip() if not is_nan_or_none(val6) else "—"
-
             v_info = po_vendor_info.get(current_vendor_code, {})
             country = v_info.get('country', 'India')
-            
-            # Filter for foreign vendors (not India)
             if country == 'India':
                 continue
                 
+            if current_vendor_code not in vendor_transactions:
+                vendor_transactions[current_vendor_code] = []
+            vendor_transactions[current_vendor_code].append(row)
+            
+        # 3. Process each vendor's transactions using backward allocation
+        for vcode, txs in vendor_transactions.items():
+            if not txs:
+                continue
+            
+            last_tx = txs[-1]
+            final_bal = parse_numeric_val(last_tx[13])
+            
+            v_name = vendor_names.get(vcode, "—")
+            v_info = po_vendor_info.get(vcode, {})
+            country = v_info.get('country', 'India')
             vendor_group = v_info.get('group', 'Foreign vendor')
             if not vendor_group or vendor_group.lower() in ('nan', 'none', ''):
                 vendor_group = 'Foreign vendor'
                 
-            vendor_address = current_vendor_name if current_vendor_name else "—"
-            payment_terms = bp_terms.get(current_vendor_code, '—')
+            vendor_address = v_name
+            payment_terms = bp_terms.get(vcode, '—')
             
             term_type = "Advance"
             term_days = 0
@@ -238,69 +253,160 @@ def run_payment_aging_foreign(dfs: dict[str, pd.DataFrame]) -> dict:
                     if num_match:
                         term_days = int(num_match.group(0))
             
-            doc_dt = parse_date(doc_date_str, date_cache)
-            if doc_dt is None:
-                doc_dt = post_dt
-                doc_date_str = posting_date_str
+            # Find all credit/invoice transactions
+            credits = []
+            for idx, tx in enumerate(txs):
+                credit = parse_numeric_val(tx[12])
+                if credit > 0:
+                    credits.append((idx, tx, credit))
             
-            due_date_calc = doc_dt + timedelta(days=term_days)
+            allocated_map = {}
+            if final_bal < 0:
+                liability = abs(final_bal)
+                allocated = 0.0
+                for idx, tx, credit in reversed(credits):
+                    to_alloc = min(credit, liability - allocated)
+                    allocated_map[idx] = to_alloc
+                    allocated += to_alloc
+                    if allocated >= liability:
+                        break
                 
-            debit_val = parse_numeric_val(debit_str)
-            credit_val = parse_numeric_val(credit_str)
-            payment_date = "—"
-            pay_dt = None
-            if debit_val > 0:
-                payment_date = doc_date_str
-                pay_dt = doc_dt
+                if allocated < liability:
+                    remaining = liability - allocated
+                    first_tx = txs[0]
+                    date_str = str(first_tx[2]).strip() if not is_nan_or_none(first_tx[2]) else str(first_tx[0]).strip()
+                    
+                    due_date_calc = parse_date(date_str, date_cache)
+                    days_late = 0
+                    if due_date_calc and reference_date and reference_date > due_date_calc:
+                        days_late = (reference_date - due_date_calc).days
+                    
+                    if days_late <= 15:
+                        aging_cat = "Overdue 0-15"
+                    elif days_late <= 30:
+                        aging_cat = "Overdue 16-30"
+                    elif days_late <= 45:
+                        aging_cat = "Overdue 31-45"
+                    elif days_late <= 60:
+                        aging_cat = "Overdue 46-60"
+                    elif days_late <= 90:
+                        aging_cat = "Overdue 61-90"
+                    else:
+                        aging_cat = "Overdue >90"
+                        
+                    out_rows.append({
+                        "vendor_code": vcode,
+                        "vendor_name": v_name,
+                        "vendor_country": country,
+                        "vendor_group": vendor_group,
+                        "vendor_address": vendor_address,
+                        "payment_terms": payment_terms if payment_terms else "—",
+                        "payment_term_type": term_type,
+                        "term_days": term_days,
+                        "invoice_doc_number": "Opening Balance",
+                        "document_date": date_str,
+                        "posting_date": date_str,
+                        "due_date_doc_term": date_str,
+                        "payment_date": "—",
+                        "days_late": days_late,
+                        "actual_paid": 0.0,
+                        "outstanding": remaining,
+                        "status": "Open",
+                        "aging_category": aging_cat
+                    })
+            elif final_bal > 0:
+                last_tx = txs[-1]
+                date_str = str(last_tx[2]).strip() if not is_nan_or_none(last_tx[2]) else str(last_tx[0]).strip()
+                out_rows.append({
+                    "vendor_code": vcode,
+                    "vendor_name": v_name,
+                    "vendor_country": country,
+                    "vendor_group": vendor_group,
+                    "vendor_address": vendor_address,
+                    "payment_terms": payment_terms if payment_terms else "—",
+                    "payment_term_type": term_type,
+                    "term_days": term_days,
+                    "invoice_doc_number": "Advance",
+                    "document_date": date_str,
+                    "posting_date": date_str,
+                    "due_date_doc_term": date_str,
+                    "payment_date": "—",
+                    "days_late": 0,
+                    "actual_paid": 0.0,
+                    "outstanding": final_bal,
+                    "status": "Advance",
+                    "aging_category": "Overdue 0-15"
+                })
                 
-            days_late = 0
-            if pay_dt and due_date_calc:
-                diff = (pay_dt - due_date_calc).days
-                days_late = max(0, diff)
+            for idx, tx, credit in credits:
+                allocated = allocated_map.get(idx, 0.0)
+                outstanding = allocated
+                actual_paid = credit - outstanding
                 
-            actual_paid = debit_val if debit_val > 0 else 0.0
-            outstanding = parse_numeric_val(cum_bal_str)
-            
-            if abs(outstanding) <= 0.01:
-                status = "Fully paid"
-            elif actual_paid == 0:
-                status = "Open"
-            else:
-                status = "Partially paid"
+                # Payment date: search forward for first debit > 0
+                payment_date_str = "—"
+                pay_dt = None
+                for f_tx in txs[idx+1:]:
+                    f_debit = parse_numeric_val(f_tx[11])
+                    if f_debit > 0:
+                        payment_date_str = str(f_tx[2]).strip() if not is_nan_or_none(f_tx[2]) else str(f_tx[0]).strip()
+                        pay_dt = parse_date(payment_date_str, date_cache)
+                        break
+                        
+                status = "Fully paid" if outstanding <= 0.01 else ("Open" if actual_paid <= 0.01 else "Partially paid")
                 
-            if days_late <= 15:
-                aging_cat = "Overdue 0-15"
-            elif days_late <= 30:
-                aging_cat = "Overdue 16-30"
-            elif days_late <= 45:
-                aging_cat = "Overdue 31-45"
-            elif days_late <= 60:
-                aging_cat = "Overdue 46-60"
-            elif days_late <= 90:
-                aging_cat = "Overdue 61-90"
-            else:
-                aging_cat = "Overdue >90"
+                doc_date_str = str(tx[2]).strip() if not is_nan_or_none(tx[2]) else str(tx[0]).strip()
+                posting_date_str = str(tx[0]).strip() if not is_nan_or_none(tx[0]) else str(tx[2]).strip()
                 
-            out_rows.append({
-                "vendor_code": current_vendor_code if current_vendor_code else "—",
-                "vendor_name": current_vendor_name if current_vendor_name else "—",
-                "vendor_country": country,
-                "vendor_group": vendor_group,
-                "vendor_address": vendor_address,
-                "payment_terms": payment_terms if payment_terms else "—",
-                "payment_term_type": term_type,
-                "term_days": term_days,
-                "invoice_doc_number": doc_no,
-                "document_date": doc_date_str if doc_date_str else "—",
-                "posting_date": posting_date_str if posting_date_str else "—",
-                "due_date_doc_term": due_date_calc.strftime("%d/%m/%y") if due_date_calc else "—",
-                "payment_date": payment_date,
-                "days_late": days_late,
-                "actual_paid": actual_paid,
-                "outstanding": outstanding,
-                "status": status,
-                "aging_category": aging_cat
-            })
+                doc_dt = parse_date(doc_date_str, date_cache)
+                post_dt = parse_date(posting_date_str, date_cache)
+                if doc_dt is None:
+                    doc_dt = post_dt
+                    
+                due_date_calc = doc_dt + timedelta(days=term_days) if doc_dt else None
+                
+                # Compute days_late
+                days_late = 0
+                if status in ("Open", "Partially paid"):
+                    if due_date_calc and reference_date and reference_date > due_date_calc:
+                        days_late = (reference_date - due_date_calc).days
+                elif status == "Fully paid":
+                    if pay_dt and due_date_calc and pay_dt > due_date_calc:
+                        days_late = (pay_dt - due_date_calc).days
+                
+                if days_late <= 15:
+                    aging_cat = "Overdue 0-15"
+                elif days_late <= 30:
+                    aging_cat = "Overdue 16-30"
+                elif days_late <= 45:
+                    aging_cat = "Overdue 31-45"
+                elif days_late <= 60:
+                    aging_cat = "Overdue 46-60"
+                elif days_late <= 90:
+                    aging_cat = "Overdue 61-90"
+                else:
+                    aging_cat = "Overdue >90"
+                    
+                out_rows.append({
+                    "vendor_code": vcode,
+                    "vendor_name": v_name,
+                    "vendor_country": country,
+                    "vendor_group": vendor_group,
+                    "vendor_address": vendor_address,
+                    "payment_terms": payment_terms if payment_terms else "—",
+                    "payment_term_type": term_type,
+                    "term_days": term_days,
+                    "invoice_doc_number": str(tx[5]).strip() if not is_nan_or_none(tx[5]) else "—",
+                    "document_date": doc_date_str,
+                    "posting_date": posting_date_str,
+                    "due_date_doc_term": due_date_calc.strftime("%d/%m/%y") if due_date_calc else "—",
+                    "payment_date": payment_date_str,
+                    "days_late": days_late,
+                    "actual_paid": actual_paid,
+                    "outstanding": outstanding,
+                    "status": status,
+                    "aging_category": aging_cat
+                })
 
     out_rows.sort(key=lambda x: (x["vendor_code"], x["posting_date"]))
 

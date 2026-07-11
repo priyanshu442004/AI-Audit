@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { fetchVendorMasterNew } from '../api'
 import AiInsightBox from '../components/AiInsightBox'
 import { useStore } from '../store'
+import TruncatedCell from '../components/TruncatedCell'
 
 function SortIcon({ dir }) {
   if (!dir) return (
@@ -313,7 +314,9 @@ export default function VendorMasterNew() {
                 {relatedParties.map((v, i) => (
                   <tr key={i} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
                     <td className="py-2.5 font-mono font-bold text-slate-950 dark:text-white">{v.vendor_code}</td>
-                    <td className="py-2.5 text-slate-700 dark:text-slate-300 font-semibold">{v.vendor_name}</td>
+                    <td className="py-2.5 text-slate-700 dark:text-slate-300 font-semibold">
+                      <TruncatedCell value={v.vendor_name} />
+                    </td>
                     <td className="py-2.5 text-slate-500 dark:text-slate-500">{v.vendor_country} ({v.region})</td>
                     <td className="py-2.5 font-mono text-slate-600 dark:text-slate-400">{v.gstin}</td>
                     <td className="py-2.5 text-right">
@@ -554,7 +557,7 @@ export default function VendorMasterNew() {
                       {row.vendor_code}
                     </td>
                     <td className="px-4 py-3 text-slate-700 dark:text-slate-300 font-semibold">
-                      {row.vendor_name}
+                      <TruncatedCell value={row.vendor_name} />
                     </td>
                     <td className="px-4 py-3 text-slate-600 dark:text-slate-400">
                       {row.vendor_country}
@@ -575,7 +578,7 @@ export default function VendorMasterNew() {
                       {row.msme_registration}
                     </td>
                     <td className="px-4 py-3 text-slate-600 dark:text-slate-400">
-                      {row.payment_terms}
+                      <TruncatedCell value={row.payment_terms} />
                     </td>
                     <td className="px-4 py-3">
                       <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-mono font-bold ${

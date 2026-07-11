@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { fetchPriceVarianceSame } from '../api'
 import AiInsightBox from '../components/AiInsightBox'
 import { useStore } from '../store'
+import TruncatedCell from '../components/TruncatedCell'
 
 const formatCurrency = (val) => {
   if (val === null || val === undefined) return '—'
@@ -375,7 +376,7 @@ export default function PriceVarianceSame() {
                     {row.vendor_code || '—'}
                   </td>
                   <td className="px-4 py-3 text-xs font-medium text-slate-700 dark:text-slate-300">
-                    {row.vendor_name || '—'}
+                    <TruncatedCell value={row.vendor_name} />
                   </td>
                   <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">
                     {row.vendor_country}
@@ -392,8 +393,8 @@ export default function PriceVarianceSame() {
                   <td className="px-4 py-3 text-xs font-mono text-slate-700 dark:text-slate-300">
                     {row.item_code || '—'}
                   </td>
-                  <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400 max-w-[200px] truncate">
-                    {row.item_description || '—'}
+                  <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400 max-w-[200px]">
+                    <TruncatedCell value={row.item_description} />
                   </td>
                   <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">
                     {row.item_group || '—'}
@@ -413,8 +414,8 @@ export default function PriceVarianceSame() {
                   <td className="px-4 py-3 text-xs font-mono text-slate-600 dark:text-slate-400">
                     {row.no_of_pos}
                   </td>
-                  <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400 font-mono max-w-[180px] truncate">
-                    {row.po_numbers}
+                  <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400 font-mono max-w-[180px]">
+                    <TruncatedCell value={row.po_numbers} />
                   </td>
                   <td className="px-4 py-3 text-xs font-mono text-slate-600 dark:text-slate-400">
                     {row.ordered_qty}

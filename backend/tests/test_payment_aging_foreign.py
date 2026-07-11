@@ -61,6 +61,6 @@ def test_payment_aging_foreign_logic():
     assert inv_row["payment_date"] == "—"
     assert inv_row["days_late"] == 0
     assert inv_row["actual_paid"] == 0.0
-    assert inv_row["outstanding"] == -20709.0
+    assert inv_row["outstanding"] == 20709.0
     assert inv_row["status"] == "Open"
     assert inv_row["aging_category"] == "Overdue 0-15"
