@@ -3,6 +3,7 @@ import { fetchPriceVarianceCross } from '../api'
 import AiInsightBox from '../components/AiInsightBox'
 import { useStore } from '../store'
 import TruncatedCell from '../components/TruncatedCell'
+import useColumnOrder from '../hooks/useColumnOrder'
 
 const formatCurrency = (val) => {
   if (val === null || val === undefined) return '—'
@@ -52,6 +53,29 @@ function SortIcon({ dir }) {
   )
 }
 
+const COLUMNS = [
+  { id: 'item_code', label: 'Item Code' },
+  { id: 'item_description', label: 'Item Description' },
+  { id: 'item_group', label: 'Item Group' },
+  { id: 'vendor_code', label: 'Vendor Code' },
+  { id: 'vendor_name', label: 'Vendor Name' },
+  { id: 'vendor_country', label: 'Vendor Country' },
+  { id: 'po_numbers', label: 'PO Numbers' },
+  { id: 'grn_number', label: 'GRN No' },
+  { id: 'uom', label: 'UOM' },
+  { id: 'ordered_qty', label: 'Ordered Quantity' },
+  { id: 'received_qty', label: 'Received quantiti' },
+  { id: 'rate_inr', label: 'Rate(INR)' },
+  { id: 'item_min_rate', label: 'Item Min. Rate(INR)' },
+  { id: 'item_max_rate', label: 'Item Max. Rate(INR)' },
+  { id: 'vendor_position', label: 'Vendor Position' },
+  { id: 'pct_above_lowest', label: '%age above lowest' },
+  { id: 'higher_gt_5', label: 'Higher>5%' },
+  { id: 'uom_consistency', label: 'UOM consistency' },
+]
+const ALL_COLS = COLUMNS.map(c => c.id)
+const COL_LABEL = Object.fromEntries(COLUMNS.map(c => [c.id, c.label]))
+
 export default function PriceVarianceCross() {
   const { priceVarianceCross, setPriceVarianceCross } = useStore()
   const [loading, setLoading] = useState(!priceVarianceCross)
@@ -65,6 +89,11 @@ export default function PriceVarianceCross() {
   const [sortDir, setSortDir] = useState('asc')
   const [currentPage, setCurrentPage] = useState(1)
   const ITEMS_PER_PAGE = 25
+
+  const { order: colOrder, moveColumn } = useColumnOrder('price-variance-cross', ALL_COLS)
+  const [dragCol, setDragCol]     = useState(null)
+  const [dragOverCol, setDragOverCol] = useState(null)
+  const visibleCols = colOrder
 
   useEffect(() => {
     if (priceVarianceCross) {
@@ -341,34 +370,22 @@ export default function PriceVarianceCross() {
           <table className="w-full text-left border-collapse min-w-[2000px]">
             <thead>
               <tr className="bg-slate-50/50 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800">
-                {[
-                  { id: 'item_code', label: 'Item Code' },
-                  { id: 'item_description', label: 'Item Description' },
-                  { id: 'item_group', label: 'Item Group' },
-                  { id: 'vendor_code', label: 'Vendor Code' },
-                  { id: 'vendor_name', label: 'Vendor Name' },
-                  { id: 'vendor_country', label: 'Vendor Country' },
-                  { id: 'po_numbers', label: 'PO Numbers' },
-                  { id: 'grn_number', label: 'GRN No' },
-                  { id: 'uom', label: 'UOM' },
-                  { id: 'ordered_qty', label: 'Ordered Quantity' },
-                  { id: 'received_qty', label: 'Received quantiti' },
-                  { id: 'rate_inr', label: 'Rate(INR)' },
-                  { id: 'item_min_rate', label: 'Item Min. Rate(INR)' },
-                  { id: 'item_max_rate', label: 'Item Max. Rate(INR)' },
-                  { id: 'vendor_position', label: 'Vendor Position' },
-                  { id: 'pct_above_lowest', label: '%age above lowest' },
-                  { id: 'higher_gt_5', label: 'Higher>5%' },
-                  { id: 'uom_consistency', label: 'UOM consistency' }
-                ].map(col => (
+                {visibleCols.map(c => (
                   <th
-                    key={col.id}
-                    onClick={() => handleSort(col.id)}
-                    className="px-4 py-3 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100/50 dark:hover:bg-slate-800/60 select-none transition-colors"
+                    key={c}
+                    draggable
+                    onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; setDragCol(c) }}
+                    onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (dragOverCol !== c) setDragOverCol(c) }}
+                    onDragLeave={() => setDragOverCol(prev => (prev === c ? null : prev))}
+                    onDrop={(e) => { e.preventDefault(); if (dragCol && dragCol !== c) moveColumn(dragCol, c); setDragCol(null); setDragOverCol(null) }}
+                    onDragEnd={() => { setDragCol(null); setDragOverCol(null) }}
+                    onClick={() => handleSort(c)}
+                    title="Click to sort · Drag to reorder"
+                    className={`px-4 py-3 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider cursor-grab active:cursor-grabbing hover:bg-slate-100/50 dark:hover:bg-slate-800/60 select-none transition-colors${dragCol === c ? ' opacity-40' : ''}${dragOverCol === c && dragCol !== c ? ' bg-blue-100/70 dark:bg-blue-900/30 border-l-2 border-l-blue-500' : ''}`}
                   >
                     <div className="flex items-center">
-                      {col.label}
-                      <SortIcon dir={sortCol === col.id ? sortDir : null} />
+                      {COL_LABEL[c]}
+                      <SortIcon dir={sortCol === c ? sortDir : null} />
                     </div>
                   </th>
                 ))}
@@ -377,99 +394,124 @@ export default function PriceVarianceCross() {
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {paginated.map((row, i) => (
                 <tr key={i} className="hover:bg-slate-50/40 dark:hover:bg-slate-800/20 transition-colors duration-150">
-                  {/* 1. Item Code */}
-                  <td className="px-4 py-3 text-xs font-mono font-bold text-slate-900 dark:text-white">
-                    {row.item_code || '—'}
-                  </td>
-                  {/* 2. Item Description */}
-                  <td className="px-4 py-3 text-xs font-medium text-slate-700 dark:text-slate-300 max-w-[250px]">
-                    <TruncatedCell value={row.item_description} />
-                  </td>
-                  {/* 3. Item Group */}
-                  <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">
-                    {row.item_group || '—'}
-                  </td>
-                  {/* 4. Vendor Code */}
-                  <td className="px-4 py-3 text-xs font-mono font-bold text-slate-900 dark:text-white">
-                    {row.vendor_code || '—'}
-                  </td>
-                  {/* 5. Vendor Name */}
-                  <td className="px-4 py-3 text-xs font-medium text-slate-700 dark:text-slate-300 max-w-[200px]">
-                    <TruncatedCell value={row.vendor_name} />
-                  </td>
-                  {/* 6. Vendor Country */}
-                  <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">
-                    {row.vendor_country || '—'}
-                  </td>
-                  {/* 7. PO Numbers */}
-                  <td className="px-4 py-3 text-xs font-mono text-slate-600 dark:text-slate-400">
-                    <TruncatedCell value={row.po_numbers} />
-                  </td>
-                  {/* 8. GRN No */}
-                  <td className="px-4 py-3 text-xs font-mono text-slate-600 dark:text-slate-400 max-w-[150px]">
-                    <TruncatedCell value={row.grn_number} />
-                  </td>
-                  {/* 9. UOM */}
-                  <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">
-                    {row.uom || '—'}
-                  </td>
-                  {/* 10. Ordered Quantity */}
-                  <td className="px-4 py-3 text-xs font-mono text-right text-slate-900 dark:text-white">
-                    {row.ordered_qty !== undefined && row.ordered_qty !== null ? row.ordered_qty.toLocaleString() : '—'}
-                  </td>
-                  {/* 11. Received Quantity */}
-                  <td className="px-4 py-3 text-xs font-mono text-right text-slate-900 dark:text-white">
-                    {row.received_qty !== undefined && row.received_qty !== null ? row.received_qty.toLocaleString() : '—'}
-                  </td>
-                  {/* 12. Rate(INR) */}
-                  <td className="px-4 py-3 text-xs font-mono text-right text-slate-900 dark:text-white">
-                    {formatCurrency(row.rate_inr)}
-                  </td>
-                  {/* 13. Item Min. Rate(INR) */}
-                  <td className="px-4 py-3 text-xs font-mono text-right text-slate-600 dark:text-slate-400">
-                    {formatCurrency(row.item_min_rate)}
-                  </td>
-                  {/* 14. Item Max. Rate(INR) */}
-                  <td className="px-4 py-3 text-xs font-mono text-right text-slate-600 dark:text-slate-400">
-                    {formatCurrency(row.item_max_rate)}
-                  </td>
-                  {/* 15. Vendor Position */}
-                  <td className="px-4 py-3 text-xs text-center">
-                    <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
-                      row.vendor_position === 'Highest'
-                        ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400'
-                        : row.vendor_position === 'Lowest'
-                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400'
-                        : 'text-slate-400 dark:text-slate-500'
-                    }`}>
-                      {row.vendor_position}
-                    </span>
-                  </td>
-                  {/* 16. %age above lowest */}
-                  <td className="px-4 py-3 text-xs text-right font-mono font-bold text-slate-700 dark:text-slate-300">
-                    {row.pct_above_lowest !== undefined && row.pct_above_lowest !== null ? `${parseFloat(row.pct_above_lowest).toFixed(2)}%` : '—'}
-                  </td>
-                  {/* 17. Higher>5% */}
-                  <td className={`px-4 py-3 text-xs text-center font-mono font-bold transition-colors ${
-                    row.higher_gt_5 === 1
-                      ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300 font-extrabold border-l border-r border-yellow-200 dark:border-yellow-900/40'
-                      : 'bg-white dark:bg-slate-900'
-                  }`}>
-                    {row.higher_gt_5}
-                  </td>
-                  {/* 18. UOM consistency */}
-                  <td className={`px-4 py-3 text-xs text-center font-mono font-bold transition-colors ${
-                    row.uom_consistency === 1
-                      ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 font-extrabold border-l border-r border-green-200 dark:border-green-900/40'
-                      : 'bg-white dark:bg-slate-900'
-                  }`}>
-                    {row.uom_consistency}
-                  </td>
+                  {visibleCols.map(c => {
+                    if (c === 'item_code') return (
+                      <td key={c} className="px-4 py-3 text-xs font-mono font-bold text-slate-900 dark:text-white">
+                        <TruncatedCell value={row.item_code} />
+                      </td>
+                    )
+                    if (c === 'item_description') return (
+                      <td key={c} className="px-4 py-3 text-xs font-medium text-slate-700 dark:text-slate-300 max-w-[250px]">
+                        <TruncatedCell value={row.item_description} />
+                      </td>
+                    )
+                    if (c === 'item_group') return (
+                      <td key={c} className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">
+                        <TruncatedCell value={row.item_group} />
+                      </td>
+                    )
+                    if (c === 'vendor_code') return (
+                      <td key={c} className="px-4 py-3 text-xs font-mono font-bold text-slate-900 dark:text-white">
+                        <TruncatedCell value={row.vendor_code} />
+                      </td>
+                    )
+                    if (c === 'vendor_name') return (
+                      <td key={c} className="px-4 py-3 text-xs font-medium text-slate-700 dark:text-slate-300 max-w-[200px]">
+                        <TruncatedCell value={row.vendor_name} />
+                      </td>
+                    )
+                    if (c === 'vendor_country') return (
+                      <td key={c} className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">
+                        <TruncatedCell value={row.vendor_country} />
+                      </td>
+                    )
+                    if (c === 'po_numbers') return (
+                      <td key={c} className="px-4 py-3 text-xs font-mono text-slate-600 dark:text-slate-400">
+                        <TruncatedCell value={row.po_numbers} />
+                      </td>
+                    )
+                    if (c === 'grn_number') return (
+                      <td key={c} className="px-4 py-3 text-xs font-mono text-slate-600 dark:text-slate-400 max-w-[150px]">
+                        <TruncatedCell value={row.grn_number} />
+                      </td>
+                    )
+                    if (c === 'uom') return (
+                      <td key={c} className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">
+                        <TruncatedCell value={row.uom} />
+                      </td>
+                    )
+                    if (c === 'ordered_qty') return (
+                      <td key={c} className="px-4 py-3 text-xs font-mono text-right text-slate-900 dark:text-white">
+                        {row.ordered_qty !== undefined && row.ordered_qty !== null ? row.ordered_qty.toLocaleString() : '—'}
+                      </td>
+                    )
+                    if (c === 'received_qty') return (
+                      <td key={c} className="px-4 py-3 text-xs font-mono text-right text-slate-900 dark:text-white">
+                        {row.received_qty !== undefined && row.received_qty !== null ? row.received_qty.toLocaleString() : '—'}
+                      </td>
+                    )
+                    if (c === 'rate_inr') return (
+                      <td key={c} className="px-4 py-3 text-xs font-mono text-right text-slate-900 dark:text-white">
+                        {formatCurrency(row.rate_inr)}
+                      </td>
+                    )
+                    if (c === 'item_min_rate') return (
+                      <td key={c} className="px-4 py-3 text-xs font-mono text-right text-slate-600 dark:text-slate-400">
+                        {formatCurrency(row.item_min_rate)}
+                      </td>
+                    )
+                    if (c === 'item_max_rate') return (
+                      <td key={c} className="px-4 py-3 text-xs font-mono text-right text-slate-600 dark:text-slate-400">
+                        {formatCurrency(row.item_max_rate)}
+                      </td>
+                    )
+                    if (c === 'vendor_position') return (
+                      <td key={c} className="px-4 py-3 text-xs text-center">
+                        <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+                          row.vendor_position === 'Highest'
+                            ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400'
+                            : row.vendor_position === 'Lowest'
+                            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400'
+                            : 'text-slate-400 dark:text-slate-500'
+                        }`}>
+                          {row.vendor_position}
+                        </span>
+                      </td>
+                    )
+                    if (c === 'pct_above_lowest') return (
+                      <td key={c} className="px-4 py-3 text-xs text-right font-mono font-bold text-slate-700 dark:text-slate-300">
+                        {row.pct_above_lowest !== undefined && row.pct_above_lowest !== null ? `${parseFloat(row.pct_above_lowest).toFixed(2)}%` : '—'}
+                      </td>
+                    )
+                    if (c === 'higher_gt_5') return (
+                      <td key={c} className={`px-4 py-3 text-xs text-center font-mono font-bold transition-colors ${
+                        row.higher_gt_5 === 1
+                          ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300 font-extrabold border-l border-r border-yellow-200 dark:border-yellow-900/40'
+                          : 'bg-white dark:bg-slate-900'
+                      }`}>
+                        {row.higher_gt_5}
+                      </td>
+                    )
+                    if (c === 'uom_consistency') return (
+                      <td key={c} className={`px-4 py-3 text-xs text-center font-mono font-bold transition-colors ${
+                        row.uom_consistency === 1
+                          ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 font-extrabold border-l border-r border-green-200 dark:border-green-900/40'
+                          : 'bg-white dark:bg-slate-900'
+                      }`}>
+                        {row.uom_consistency}
+                      </td>
+                    )
+                    return (
+                      <td key={c} className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">
+                        <TruncatedCell value={row[c]} />
+                      </td>
+                    )
+                  })}
                 </tr>
               ))}
               {paginated.length === 0 && (
                 <tr>
-                  <td colSpan={20} className="px-6 py-10 text-center text-sm text-slate-400 dark:text-slate-500">
+                  <td colSpan={visibleCols.length} className="px-6 py-10 text-center text-sm text-slate-400 dark:text-slate-500">
                     No matching records found
                   </td>
                 </tr>

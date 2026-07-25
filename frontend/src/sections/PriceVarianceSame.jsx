@@ -3,6 +3,7 @@ import { fetchPriceVarianceSame } from '../api'
 import AiInsightBox from '../components/AiInsightBox'
 import { useStore } from '../store'
 import TruncatedCell from '../components/TruncatedCell'
+import useColumnOrder from '../hooks/useColumnOrder'
 
 const formatCurrency = (val) => {
   if (val === null || val === undefined) return '—'
@@ -52,6 +53,30 @@ function SortIcon({ dir }) {
   )
 }
 
+const COLUMNS = [
+  { id: 'vendor_code', label: 'Vendor Code' },
+  { id: 'vendor_name', label: 'Vendor Name' },
+  { id: 'vendor_country', label: 'Country' },
+  { id: 'vendor_group', label: 'Vendor Group' },
+  { id: 'document_date', label: 'Doc Date' },
+  { id: 'posting_date', label: 'Posting Date' },
+  { id: 'item_code', label: 'Item Code' },
+  { id: 'item_description', label: 'Item Description' },
+  { id: 'item_group', label: 'Item Group' },
+  { id: 'uom', label: 'UOM' },
+  { id: 'uom_consistent', label: 'UOM consistent' },
+  { id: 'no_of_pos', label: '#PO' },
+  { id: 'po_numbers', label: 'PO Numbers' },
+  { id: 'ordered_qty', label: 'Ordered qty' },
+  { id: 'received_qty', label: 'Received qty' },
+  { id: 'min_price', label: 'Min Price(INR)' },
+  { id: 'avg_price', label: 'Avg Price(INR)' },
+  { id: 'max_price', label: 'Max Price(INR)' },
+  { id: 'spread_gt_5', label: 'Spread > 5%' },
+]
+const ALL_COLS = COLUMNS.map(c => c.id)
+const COL_LABEL = Object.fromEntries(COLUMNS.map(c => [c.id, c.label]))
+
 export default function PriceVarianceSame() {
   const { priceVarianceSame, setPriceVarianceSame } = useStore()
   const [loading, setLoading] = useState(!priceVarianceSame)
@@ -65,6 +90,11 @@ export default function PriceVarianceSame() {
   const [sortDir, setSortDir] = useState('asc')
   const [currentPage, setCurrentPage] = useState(1)
   const ITEMS_PER_PAGE = 25
+
+  const { order: colOrder, moveColumn } = useColumnOrder('price-variance-same', ALL_COLS)
+  const [dragCol, setDragCol]     = useState(null)
+  const [dragOverCol, setDragOverCol] = useState(null)
+  const visibleCols = colOrder
 
   useEffect(() => {
     if (priceVarianceSame) {
@@ -335,35 +365,22 @@ export default function PriceVarianceSame() {
           <table className="w-full text-left border-collapse min-w-[1900px]">
             <thead>
               <tr className="bg-slate-50/50 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800">
-                {[
-                  { id: 'vendor_code', label: 'Vendor Code' },
-                  { id: 'vendor_name', label: 'Vendor Name' },
-                  { id: 'vendor_country', label: 'Country' },
-                  { id: 'vendor_group', label: 'Vendor Group' },
-                  { id: 'document_date', label: 'Doc Date' },
-                  { id: 'posting_date', label: 'Posting Date' },
-                  { id: 'item_code', label: 'Item Code' },
-                  { id: 'item_description', label: 'Item Description' },
-                  { id: 'item_group', label: 'Item Group' },
-                  { id: 'uom', label: 'UOM' },
-                  { id: 'uom_consistent', label: 'UOM consistent' },
-                  { id: 'no_of_pos', label: '#PO' },
-                  { id: 'po_numbers', label: 'PO Numbers' },
-                  { id: 'ordered_qty', label: 'Ordered qty' },
-                  { id: 'received_qty', label: 'Received qty' },
-                  { id: 'min_price', label: 'Min Price(INR)' },
-                  { id: 'avg_price', label: 'Avg Price(INR)' },
-                  { id: 'max_price', label: 'Max Price(INR)' },
-                  { id: 'spread_gt_5', label: 'Spread > 5%' },
-                ].map(col => (
+                {visibleCols.map(c => (
                   <th
-                    key={col.id}
-                    onClick={() => handleSort(col.id)}
-                    className="px-4 py-3 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100/50 dark:hover:bg-slate-800/60 select-none transition-colors"
+                    key={c}
+                    draggable
+                    onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; setDragCol(c) }}
+                    onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (dragOverCol !== c) setDragOverCol(c) }}
+                    onDragLeave={() => setDragOverCol(prev => (prev === c ? null : prev))}
+                    onDrop={(e) => { e.preventDefault(); if (dragCol && dragCol !== c) moveColumn(dragCol, c); setDragCol(null); setDragOverCol(null) }}
+                    onDragEnd={() => { setDragCol(null); setDragOverCol(null) }}
+                    onClick={() => handleSort(c)}
+                    title="Click to sort · Drag to reorder"
+                    className={`px-4 py-3 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider cursor-grab active:cursor-grabbing hover:bg-slate-100/50 dark:hover:bg-slate-800/60 select-none transition-colors${dragCol === c ? ' opacity-40' : ''}${dragOverCol === c && dragCol !== c ? ' bg-blue-100/70 dark:bg-blue-900/30 border-l-2 border-l-blue-500' : ''}`}
                   >
                     <div className="flex items-center font-bold">
-                      {col.label}
-                      <SortIcon dir={sortCol === col.id ? sortDir : null} />
+                      {COL_LABEL[c]}
+                      <SortIcon dir={sortCol === c ? sortDir : null} />
                     </div>
                   </th>
                 ))}
@@ -372,80 +389,125 @@ export default function PriceVarianceSame() {
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {paginated.map((row, i) => (
                 <tr key={i} className="hover:bg-slate-50/40 dark:hover:bg-slate-800/20 transition-colors duration-150">
-                  <td className="px-4 py-3 text-xs font-mono font-bold text-slate-900 dark:text-white">
-                    {row.vendor_code || '—'}
-                  </td>
-                  <td className="px-4 py-3 text-xs font-medium text-slate-700 dark:text-slate-300">
-                    <TruncatedCell value={row.vendor_name} />
-                  </td>
-                  <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">
-                    {row.vendor_country}
-                  </td>
-                  <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">
-                    {row.vendor_group || '—'}
-                  </td>
-                  <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400 font-mono">
-                    {row.document_date || '—'}
-                  </td>
-                  <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400 font-mono">
-                    {row.posting_date || '—'}
-                  </td>
-                  <td className="px-4 py-3 text-xs font-mono text-slate-700 dark:text-slate-300">
-                    {row.item_code || '—'}
-                  </td>
-                  <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400 max-w-[200px]">
-                    <TruncatedCell value={row.item_description} />
-                  </td>
-                  <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">
-                    {row.item_group || '—'}
-                  </td>
-                  <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">
-                    {row.uom || '—'}
-                  </td>
-                  <td className="px-4 py-3 text-xs text-center">
-                    <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
-                      row.uom_consistent === 1
-                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400'
-                        : 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400'
-                    }`}>
-                      {row.uom_consistent}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-xs font-mono text-slate-600 dark:text-slate-400">
-                    {row.no_of_pos}
-                  </td>
-                  <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400 font-mono max-w-[180px]">
-                    <TruncatedCell value={row.po_numbers} />
-                  </td>
-                  <td className="px-4 py-3 text-xs font-mono text-slate-600 dark:text-slate-400">
-                    {row.ordered_qty}
-                  </td>
-                  <td className="px-4 py-3 text-xs font-mono text-slate-600 dark:text-slate-400">
-                    {row.received_qty}
-                  </td>
-                  <td className="px-4 py-3 text-xs font-mono text-right text-slate-900 dark:text-white">
-                    {formatCurrency(row.min_price)}
-                  </td>
-                  <td className="px-4 py-3 text-xs font-mono text-right text-slate-900 dark:text-white font-semibold">
-                    {formatCurrency(row.avg_price)}
-                  </td>
-                  <td className="px-4 py-3 text-xs font-mono text-right text-slate-900 dark:text-white">
-                    {formatCurrency(row.max_price)}
-                  </td>
-                  <td className="px-4 py-3 text-xs text-center">
-                    <span className={`inline-block px-2.5 py-0.5 rounded text-[10px] font-mono font-bold ${
-                      row.spread_gt_5 === 1
-                        ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400'
-                        : 'bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-600'
-                    }`}>
-                      {row.spread_gt_5}
-                    </span>
-                  </td>
+                  {visibleCols.map(c => {
+                    if (c === 'vendor_code') return (
+                      <td key={c} className="px-4 py-3 text-xs font-mono font-bold text-slate-900 dark:text-white">
+                        <TruncatedCell value={row.vendor_code} />
+                      </td>
+                    )
+                    if (c === 'vendor_name') return (
+                      <td key={c} className="px-4 py-3 text-xs font-medium text-slate-700 dark:text-slate-300">
+                        <TruncatedCell value={row.vendor_name} />
+                      </td>
+                    )
+                    if (c === 'vendor_country') return (
+                      <td key={c} className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">
+                        <TruncatedCell value={row.vendor_country} />
+                      </td>
+                    )
+                    if (c === 'vendor_group') return (
+                      <td key={c} className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">
+                        <TruncatedCell value={row.vendor_group} />
+                      </td>
+                    )
+                    if (c === 'document_date') return (
+                      <td key={c} className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400 font-mono">
+                        <TruncatedCell value={row.document_date} />
+                      </td>
+                    )
+                    if (c === 'posting_date') return (
+                      <td key={c} className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400 font-mono">
+                        <TruncatedCell value={row.posting_date} />
+                      </td>
+                    )
+                    if (c === 'item_code') return (
+                      <td key={c} className="px-4 py-3 text-xs font-mono text-slate-700 dark:text-slate-300">
+                        <TruncatedCell value={row.item_code} />
+                      </td>
+                    )
+                    if (c === 'item_description') return (
+                      <td key={c} className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400 max-w-[200px]">
+                        <TruncatedCell value={row.item_description} />
+                      </td>
+                    )
+                    if (c === 'item_group') return (
+                      <td key={c} className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">
+                        <TruncatedCell value={row.item_group} />
+                      </td>
+                    )
+                    if (c === 'uom') return (
+                      <td key={c} className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">
+                        <TruncatedCell value={row.uom} />
+                      </td>
+                    )
+                    if (c === 'uom_consistent') return (
+                      <td key={c} className="px-4 py-3 text-xs text-center">
+                        <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+                          row.uom_consistent === 1
+                            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400'
+                            : 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400'
+                        }`}>
+                          {row.uom_consistent}
+                        </span>
+                      </td>
+                    )
+                    if (c === 'no_of_pos') return (
+                      <td key={c} className="px-4 py-3 text-xs font-mono text-slate-600 dark:text-slate-400">
+                        {row.no_of_pos}
+                      </td>
+                    )
+                    if (c === 'po_numbers') return (
+                      <td key={c} className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400 font-mono max-w-[180px]">
+                        <TruncatedCell value={row.po_numbers} />
+                      </td>
+                    )
+                    if (c === 'ordered_qty') return (
+                      <td key={c} className="px-4 py-3 text-xs font-mono text-slate-600 dark:text-slate-400">
+                        {row.ordered_qty}
+                      </td>
+                    )
+                    if (c === 'received_qty') return (
+                      <td key={c} className="px-4 py-3 text-xs font-mono text-slate-600 dark:text-slate-400">
+                        {row.received_qty}
+                      </td>
+                    )
+                    if (c === 'min_price') return (
+                      <td key={c} className="px-4 py-3 text-xs font-mono text-right text-slate-900 dark:text-white">
+                        {formatCurrency(row.min_price)}
+                      </td>
+                    )
+                    if (c === 'avg_price') return (
+                      <td key={c} className="px-4 py-3 text-xs font-mono text-right text-slate-900 dark:text-white font-semibold">
+                        {formatCurrency(row.avg_price)}
+                      </td>
+                    )
+                    if (c === 'max_price') return (
+                      <td key={c} className="px-4 py-3 text-xs font-mono text-right text-slate-900 dark:text-white">
+                        {formatCurrency(row.max_price)}
+                      </td>
+                    )
+                    if (c === 'spread_gt_5') return (
+                      <td key={c} className="px-4 py-3 text-xs text-center">
+                        <span className={`inline-block px-2.5 py-0.5 rounded text-[10px] font-mono font-bold ${
+                          row.spread_gt_5 === 1
+                            ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400'
+                            : 'bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-600'
+                        }`}>
+                          {row.spread_gt_5}
+                        </span>
+                      </td>
+                    )
+                    return (
+                      <td key={c} className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">
+                        <TruncatedCell value={row[c]} />
+                      </td>
+                    )
+                  })}
                 </tr>
               ))}
               {paginated.length === 0 && (
                 <tr>
-                  <td colSpan={20} className="px-6 py-10 text-center text-sm text-slate-400 dark:text-slate-500">
+                  <td colSpan={visibleCols.length} className="px-6 py-10 text-center text-sm text-slate-400 dark:text-slate-500">
                     No matching records found
                   </td>
                 </tr>

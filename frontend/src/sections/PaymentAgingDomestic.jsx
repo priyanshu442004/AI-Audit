@@ -3,6 +3,7 @@ import { fetchPaymentAgingDomestic } from '../api'
 import AiInsightBox from '../components/AiInsightBox'
 import { useStore } from '../store'
 import TruncatedCell from '../components/TruncatedCell'
+import useColumnOrder from '../hooks/useColumnOrder'
 
 const formatCurrency = (val) => {
   if (val === null || val === undefined) return '—'
@@ -54,6 +55,29 @@ function SortIcon({ dir }) {
   )
 }
 
+const TABLE_COLS = [
+  { id: 'vendor_code', label: 'Vendor Code', tdClass: 'font-mono font-bold text-slate-900 dark:text-white' },
+  { id: 'vendor_name', label: 'Vendor Name', tdClass: 'font-medium text-slate-700 dark:text-slate-300' },
+  { id: 'vendor_country', label: 'Country', tdClass: 'text-slate-600 dark:text-slate-400' },
+  { id: 'vendor_group', label: 'Vendor Group', tdClass: 'text-slate-600 dark:text-slate-400' },
+  { id: 'vendor_address', label: 'Vendor Address', tdClass: 'text-slate-500 dark:text-slate-500 max-w-[150px]' },
+  { id: 'payment_terms', label: 'Payment Terms', tdClass: 'text-slate-600 dark:text-slate-400' },
+  { id: 'payment_term_type', label: 'Term Type', tdClass: 'text-slate-600 dark:text-slate-400 font-semibold' },
+  { id: 'term_days', label: 'Term Days', tdClass: 'font-mono text-slate-600 dark:text-slate-400' },
+  { id: 'invoice_doc_number', label: 'Doc Number', tdClass: 'font-mono text-slate-700 dark:text-slate-300' },
+  { id: 'document_date', label: 'Doc Date', tdClass: 'text-slate-600 dark:text-slate-400 font-mono' },
+  { id: 'posting_date', label: 'Posting Date', tdClass: 'text-slate-600 dark:text-slate-400 font-mono' },
+  { id: 'due_date_doc_term', label: 'Due Date(Doc+Term)', tdClass: 'text-slate-600 dark:text-slate-400 font-mono' },
+  { id: 'payment_date', label: 'Payment Date', tdClass: 'text-slate-600 dark:text-slate-400 font-mono' },
+  { id: 'days_late', label: 'Days Late', tdClass: 'font-mono text-slate-600 dark:text-slate-400' },
+  { id: 'actual_paid', label: 'Actual Paid', tdClass: 'font-mono text-right text-slate-900 dark:text-white' },
+  { id: 'outstanding', label: 'Outstanding', tdClass: 'font-mono text-right text-slate-900 dark:text-white' },
+  { id: 'status', label: 'Status', tdClass: 'text-center' },
+  { id: 'aging_category', label: 'Aging Category', tdClass: 'text-center' }
+]
+const ALL_COLS = TABLE_COLS.map(c => c.id)
+const colMeta = new Map(TABLE_COLS.map(c => [c.id, c]))
+
 export default function PaymentAgingDomestic() {
   const { paymentAgingDomestic, setPaymentAgingDomestic } = useStore()
   const [loading, setLoading] = useState(!paymentAgingDomestic)
@@ -67,6 +91,10 @@ export default function PaymentAgingDomestic() {
   const [sortDir, setSortDir] = useState('asc')
   const [currentPage, setCurrentPage] = useState(1)
   const ITEMS_PER_PAGE = 25
+
+  const { order: colOrder, moveColumn } = useColumnOrder('payment-aging-domestic', ALL_COLS)
+  const [dragCol, setDragCol] = useState(null)
+  const [dragOverCol, setDragOverCol] = useState(null)
 
   useEffect(() => {
     if (paymentAgingDomestic) {
@@ -519,37 +547,29 @@ export default function PaymentAgingDomestic() {
           <table className="w-full text-left border-collapse min-w-[2000px]">
             <thead>
               <tr className="bg-slate-50/50 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800">
-                {[
-                  { id: 'vendor_code', label: 'Vendor Code' },
-                  { id: 'vendor_name', label: 'Vendor Name' },
-                  { id: 'vendor_country', label: 'Country' },
-                  { id: 'vendor_group', label: 'Vendor Group' },
-                  { id: 'vendor_address', label: 'Vendor Address' },
-                  { id: 'payment_terms', label: 'Payment Terms' },
-                  { id: 'payment_term_type', label: 'Term Type' },
-                  { id: 'term_days', label: 'Term Days' },
-                  { id: 'invoice_doc_number', label: 'Doc Number' },
-                  { id: 'document_date', label: 'Doc Date' },
-                  { id: 'posting_date', label: 'Posting Date' },
-                  { id: 'due_date_doc_term', label: 'Due Date(Doc+Term)' },
-                  { id: 'payment_date', label: 'Payment Date' },
-                  { id: 'days_late', label: 'Days Late' },
-                  { id: 'actual_paid', label: 'Actual Paid' },
-                  { id: 'outstanding', label: 'Outstanding' },
-                  { id: 'status', label: 'Status' },
-                  { id: 'aging_category', label: 'Aging Category' }
-                ].map(col => (
-                  <th
-                    key={col.id}
-                    onClick={() => handleSort(col.id)}
-                    className="px-4 py-3 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100/50 dark:hover:bg-slate-800/60 select-none transition-colors"
-                  >
-                    <div className="flex items-center font-bold">
-                      {col.label}
-                      <SortIcon dir={sortCol === col.id ? sortDir : null} />
-                    </div>
-                  </th>
-                ))}
+                {colOrder.map(colId => {
+                  const col = colMeta.get(colId)
+                  if (!col) return null
+                  return (
+                    <th
+                      key={col.id}
+                      draggable
+                      onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; setDragCol(col.id) }}
+                      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (dragOverCol !== col.id) setDragOverCol(col.id) }}
+                      onDragLeave={() => setDragOverCol(prev => (prev === col.id ? null : prev))}
+                      onDrop={(e) => { e.preventDefault(); if (dragCol && dragCol !== col.id) moveColumn(dragCol, col.id); setDragCol(null); setDragOverCol(null) }}
+                      onDragEnd={() => { setDragCol(null); setDragOverCol(null) }}
+                      onClick={() => handleSort(col.id)}
+                      title="Click to sort · Drag to reorder"
+                      className={`px-4 py-3 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider cursor-grab active:cursor-grabbing hover:bg-slate-100/50 dark:hover:bg-slate-800/60 select-none transition-colors${dragCol === col.id ? ' opacity-40' : ''}${dragOverCol === col.id && dragCol !== col.id ? ' bg-blue-100/70 dark:bg-blue-900/30 border-l-2 border-l-blue-500' : ''}`}
+                    >
+                      <div className="flex items-center font-bold">
+                        {col.label}
+                        <SortIcon dir={sortCol === col.id ? sortDir : null} />
+                      </div>
+                    </th>
+                  )
+                })}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -564,76 +584,57 @@ export default function PaymentAgingDomestic() {
 
                 return (
                   <tr key={i} className="hover:bg-slate-50/40 dark:hover:bg-slate-800/20 transition-colors duration-150">
-                    <td className="px-4 py-3 text-xs font-mono font-bold text-slate-900 dark:text-white">
-                      {row.vendor_code || '—'}
-                    </td>
-                    <td className="px-4 py-3 text-xs font-medium text-slate-700 dark:text-slate-300">
-                      <TruncatedCell value={row.vendor_name} />
-                    </td>
-                    <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">
-                      {row.vendor_country}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">
-                      {row.vendor_group || '—'}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-slate-500 dark:text-slate-500 max-w-[150px]">
-                      <TruncatedCell value={row.vendor_address} />
-                    </td>
-                    <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">
-                      <TruncatedCell value={row.payment_terms} />
-                    </td>
-                    <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400 font-semibold">
-                      {row.payment_term_type || '—'}
-                    </td>
-                    <td className="px-4 py-3 text-xs font-mono text-slate-600 dark:text-slate-400">
-                      {row.term_days}
-                    </td>
-                    <td className="px-4 py-3 text-xs font-mono text-slate-700 dark:text-slate-300">
-                      {row.invoice_doc_number || '—'}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400 font-mono">
-                      {row.document_date || '—'}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400 font-mono">
-                      {row.posting_date || '—'}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400 font-mono">
-                      {row.due_date_doc_term || '—'}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400 font-mono">
-                      {row.payment_date || '—'}
-                    </td>
-                    <td className="px-4 py-3 text-xs font-mono text-slate-600 dark:text-slate-400">
-                      {row.days_late}
-                    </td>
-                    <td className="px-4 py-3 text-xs font-mono text-right text-slate-900 dark:text-white">
-                      {formatCurrency(row.actual_paid)}
-                    </td>
-                    <td className="px-4 py-3 text-xs font-mono text-right text-slate-900 dark:text-white">
-                      {formatCurrency(row.outstanding)}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-center">
-                      <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
-                        row.status === 'Fully paid'
-                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400'
-                          : row.status === 'Partially paid'
-                          ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400'
-                          : 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400'
-                      }`}>
-                        {row.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-xs text-center">
-                      <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-mono ${catBadge}`}>
-                        {row.aging_category}
-                      </span>
-                    </td>
+                    {colOrder.map(colId => {
+                      const meta = colMeta.get(colId)
+                      if (!meta) return null
+
+                      if (colId === 'status') {
+                        return (
+                          <td key={colId} className={`px-4 py-3 text-xs ${meta.tdClass}`}>
+                            <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+                              row.status === 'Fully paid'
+                                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400'
+                                : row.status === 'Partially paid'
+                                ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400'
+                                : 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400'
+                            }`}>
+                              {row.status}
+                            </span>
+                          </td>
+                        )
+                      }
+
+                      if (colId === 'aging_category') {
+                        return (
+                          <td key={colId} className={`px-4 py-3 text-xs ${meta.tdClass}`}>
+                            <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-mono ${catBadge}`}>
+                              {row.aging_category}
+                            </span>
+                          </td>
+                        )
+                      }
+
+                      if (colId === 'actual_paid' || colId === 'outstanding') {
+                        return (
+                          <td key={colId} className={`px-4 py-3 text-xs ${meta.tdClass}`}>
+                            <TruncatedCell value={formatCurrency(row[colId])} />
+                          </td>
+                        )
+                      }
+
+                      const val = row[colId]
+                      return (
+                        <td key={colId} className={`px-4 py-3 text-xs ${meta.tdClass}`}>
+                          {val === null || val === undefined || val === '' ? '—' : <TruncatedCell value={val} />}
+                        </td>
+                      )
+                    })}
                   </tr>
                 )
               })}
               {paginated.length === 0 && (
                 <tr>
-                  <td colSpan={20} className="px-6 py-10 text-center text-sm text-slate-400 dark:text-slate-500">
+                  <td colSpan={colOrder.length} className="px-6 py-10 text-center text-sm text-slate-400 dark:text-slate-500">
                     No matching records found
                   </td>
                 </tr>

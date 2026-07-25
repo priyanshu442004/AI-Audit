@@ -1,0 +1,65 @@
+import pickle
+import os
+
+cache_dir = r"c:\Users\hp\Desktop\Audit\backend\.cache_dfs"
+gl_path = os.path.join(cache_dir, "e3f8150e4b09f608a66240ea00fb6e6e.pkl")
+with open(gl_path, "rb") as f:
+    df_gl = pickle.load(f)
+
+# Mock the vendor mappings
+po_path = os.path.join(cache_dir, "7145fca09fa8c896029d0326324dba61.pkl")
+with open(po_path, "rb") as f:
+    df_po = pickle.load(f)
+po_vendor_info = {}
+for idx, row in df_po.iterrows():
+    vcode = str(row.get("Vendor Code", "")).strip()
+    if vcode:
+        curr = str(row.get("Document Currency", "")).strip()
+        vgroup = str(row.get("Vendor Group", "")).strip()
+        country = "India" if curr.upper() in ("INR", "") else "USA"
+        po_vendor_info[vcode] = {'country': country, 'group': vgroup}
+
+gl_rows = df_gl.values.tolist()
+current_vendor_code = None
+current_vendor_name = None
+
+non_vendor_cats = {'Revenue', 'Asset', 'Equity', 'Expenditure', 'Liability', 'Customer'}
+
+vendor_lasts = {}
+vendor_transactions = {}
+
+for row in gl_rows:
+    if not row:
+        continue
+    val0 = row[0]
+    col0_val = str(val0).strip() if (val0 is not None and val0 == val0) else ""
+    
+    if col0_val == 'Vendor':
+        current_vendor_code = str(row[1]).strip() if (row[1] is not None and row[1] == row[1]) else None
+        current_vendor_name = str(row[9]).strip() if (len(row) > 9 and row[9] is not None and row[9] == row[9]) else ""
+    elif col0_val in non_vendor_cats:
+        current_vendor_code = None
+        current_vendor_name = None
+        
+    if not current_vendor_code:
+        continue
+        
+    v_info = po_vendor_info.get(current_vendor_code, {})
+    country = v_info.get('country', 'India')
+    if country != 'India':
+        continue
+        
+    # Process transactional row
+    if not col0_val or col0_val.lower() in ("nan", "none", "vendor"):
+        continue
+        
+    vendor_lasts[current_vendor_code] = row
+    if current_vendor_code not in vendor_transactions:
+        vendor_transactions[current_vendor_code] = []
+    vendor_transactions[current_vendor_code].append(row)
+
+lasts_keys = set(vendor_lasts.keys())
+txs_keys = set(vendor_transactions.keys())
+print("Keys in lasts but not in txs:", lasts_keys - txs_keys)
+print("Keys in txs but not in lasts:", txs_keys - lasts_keys)
+print(f"Len lasts: {len(lasts_keys)}, Len txs: {len(txs_keys)}")

@@ -2,6 +2,36 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { useStore } from '../store'
 import { fetchThreeWayMatching } from '../api'
 import TruncatedCell from '../components/TruncatedCell'
+import useColumnOrder from '../hooks/useColumnOrder'
+
+const COLUMNS = [
+  { id: 'grn_number',         label: 'GRN Number',        align: 'left',   sortable: true  },
+  { id: 'grpo_date',          label: 'GRPO Date',         align: 'left',   sortable: false },
+  { id: 'po_number',          label: 'PO Number',         align: 'left',   sortable: true  },
+  { id: 'po_date',            label: 'PO Date',           align: 'left',   sortable: false },
+  { id: 'gate_entry_date',    label: 'Gate Entry Date',   align: 'left',   sortable: false },
+  { id: 'invoice_date',       label: 'Invoice Date',      align: 'left',   sortable: false },
+  { id: 'ap_invoice_number',  label: 'AP Invoice Number', align: 'left',   sortable: false },
+  { id: 'ap_credit_note',     label: 'AP Credit Note',    align: 'left',   sortable: false },
+  { id: 'vendor_code',        label: 'Vendo Code',        align: 'left',   sortable: false },
+  { id: 'vendor_name',        label: 'Vendo Name',        align: 'left',   sortable: true  },
+  { id: 'vendor_country',     label: 'Vendor Country',    align: 'left',   sortable: false },
+  { id: 'item_code',          label: 'Item code',         align: 'left',   sortable: false },
+  { id: 'item_description',   label: 'Item description',  align: 'left',   sortable: false },
+  { id: 'item_group',         label: 'Item group',        align: 'left',   sortable: false },
+  { id: 'po_qty',             label: 'PO qty',            align: 'right',  sortable: true  },
+  { id: 'grpo_qty',           label: 'GRPO qty',          align: 'right',  sortable: false },
+  { id: 'inv_qty',            label: 'Inv qty',           align: 'right',  sortable: false },
+  { id: 'qty_po_gt_grpo',     label: 'Qty PO > GRPO',     align: 'center', sortable: false },
+  { id: 'qty_grpo_gt_inv',    label: 'Qty GRPO > Inv',    align: 'center', sortable: false },
+  { id: 'po_rate',            label: 'PO Rate (INR)',     align: 'right',  sortable: false },
+  { id: 'grpo_rate',          label: 'GRPO Rate(INR)',    align: 'right',  sortable: false },
+  { id: 'inv_rate',           label: 'INV Rate(INR)',     align: 'right',  sortable: false },
+  { id: 'excess_over_5',      label: 'Excess over 5%',    align: 'center', sortable: false },
+  { id: 'match_status',       label: 'Match Status',      align: 'center', sortable: true  },
+]
+const ALL_COLS = COLUMNS.map(c => c.id)
+const COL_META = Object.fromEntries(COLUMNS.map(c => [c.id, c]))
 
 export default function ThreeWayMatching() {
   const { threeWayMatching, setThreeWayMatching } = useStore()
@@ -21,6 +51,11 @@ export default function ThreeWayMatching() {
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
+
+  const { order: colOrder, moveColumn } = useColumnOrder('three-way-matching', ALL_COLS)
+  const [dragCol, setDragCol]     = useState(null)
+  const [dragOverCol, setDragOverCol] = useState(null)
+  const visibleCols = colOrder
 
   // Load data if not cached
   useEffect(() => {
@@ -331,40 +366,27 @@ export default function ThreeWayMatching() {
           <table className="w-full text-left border-collapse text-xs">
             <thead className="bg-slate-50 dark:bg-slate-950 sticky top-0 z-10 border-b border-slate-200 dark:border-slate-800">
               <tr>
-                <th onClick={() => handleSort('grn_number')} className="px-4 py-3.5 font-semibold text-slate-500 dark:text-slate-400 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 select-none">
-                  GRN Number {sortField === 'grn_number' ? (sortAsc ? '↑' : '↓') : ''}
-                </th>
-                <th className="px-4 py-3.5 font-semibold text-slate-500 dark:text-slate-400">GRPO Date</th>
-                <th onClick={() => handleSort('po_number')} className="px-4 py-3.5 font-semibold text-slate-500 dark:text-slate-400 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 select-none">
-                  PO Number {sortField === 'po_number' ? (sortAsc ? '↑' : '↓') : ''}
-                </th>
-                <th className="px-4 py-3.5 font-semibold text-slate-500 dark:text-slate-400">PO Date</th>
-                <th className="px-4 py-3.5 font-semibold text-slate-500 dark:text-slate-400">Gate Entry Date</th>
-                <th className="px-4 py-3.5 font-semibold text-slate-500 dark:text-slate-400">Invoice Date</th>
-                <th className="px-4 py-3.5 font-semibold text-slate-500 dark:text-slate-400">AP Invoice Number</th>
-                <th className="px-4 py-3.5 font-semibold text-slate-500 dark:text-slate-400">AP Credit Note</th>
-                <th className="px-4 py-3.5 font-semibold text-slate-500 dark:text-slate-400">Vendo Code</th>
-                <th onClick={() => handleSort('vendor_name')} className="px-4 py-3.5 font-semibold text-slate-500 dark:text-slate-400 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 select-none">
-                  Vendo Name {sortField === 'vendor_name' ? (sortAsc ? '↑' : '↓') : ''}
-                </th>
-                <th className="px-4 py-3.5 font-semibold text-slate-500 dark:text-slate-400">Vendor Country</th>
-                <th className="px-4 py-3.5 font-semibold text-slate-500 dark:text-slate-400">Item code</th>
-                <th className="px-4 py-3.5 font-semibold text-slate-500 dark:text-slate-400">Item description</th>
-                <th className="px-4 py-3.5 font-semibold text-slate-500 dark:text-slate-400">Item group</th>
-                <th onClick={() => handleSort('po_qty')} className="px-4 py-3.5 font-semibold text-slate-500 dark:text-slate-400 text-right cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 select-none">
-                  PO qty {sortField === 'po_qty' ? (sortAsc ? '↑' : '↓') : ''}
-                </th>
-                <th className="px-4 py-3.5 font-semibold text-slate-500 dark:text-slate-400 text-right">GRPO qty</th>
-                <th className="px-4 py-3.5 font-semibold text-slate-500 dark:text-slate-400 text-right">Inv qty</th>
-                <th className="px-4 py-3.5 font-semibold text-slate-500 dark:text-slate-400 text-center">Qty PO &gt; GRPO</th>
-                <th className="px-4 py-3.5 font-semibold text-slate-500 dark:text-slate-400 text-center">Qty GRPO &gt; Inv</th>
-                <th className="px-4 py-3.5 font-semibold text-slate-500 dark:text-slate-400 text-right">PO Rate (INR)</th>
-                <th className="px-4 py-3.5 font-semibold text-slate-500 dark:text-slate-400 text-right">GRPO Rate(INR)</th>
-                <th className="px-4 py-3.5 font-semibold text-slate-500 dark:text-slate-400 text-right">INV Rate(INR)</th>
-                <th className="px-4 py-3.5 font-semibold text-slate-500 dark:text-slate-400 text-center">Excess over 5%</th>
-                <th onClick={() => handleSort('match_status')} className="px-4 py-3.5 font-semibold text-slate-500 dark:text-slate-400 text-center cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 select-none">
-                  Match Status {sortField === 'match_status' ? (sortAsc ? '↑' : '↓') : ''}
-                </th>
+                {visibleCols.map(c => {
+                  const meta = COL_META[c]
+                  const alignClass = meta.align === 'right' ? ' text-right' : meta.align === 'center' ? ' text-center' : ''
+                  const sortHoverClass = meta.sortable ? ' hover:bg-slate-100 dark:hover:bg-slate-800' : ''
+                  return (
+                    <th
+                      key={c}
+                      draggable
+                      onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; setDragCol(c) }}
+                      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (dragOverCol !== c) setDragOverCol(c) }}
+                      onDragLeave={() => setDragOverCol(prev => (prev === c ? null : prev))}
+                      onDrop={(e) => { e.preventDefault(); if (dragCol && dragCol !== c) moveColumn(dragCol, c); setDragCol(null); setDragOverCol(null) }}
+                      onDragEnd={() => { setDragCol(null); setDragOverCol(null) }}
+                      onClick={meta.sortable ? () => handleSort(c) : undefined}
+                      title={meta.sortable ? 'Click to sort · Drag to reorder' : 'Drag to reorder'}
+                      className={`px-4 py-3.5 font-semibold text-slate-500 dark:text-slate-400 cursor-grab active:cursor-grabbing select-none${alignClass}${sortHoverClass}${dragCol === c ? ' opacity-40' : ''}${dragOverCol === c && dragCol !== c ? ' bg-blue-100/70 dark:bg-blue-900/30 border-l-2 border-l-blue-500' : ''}`}
+                    >
+                      {meta.label} {meta.sortable && sortField === c ? (sortAsc ? '↑' : '↓') : ''}
+                    </th>
+                  )
+                })}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -378,72 +400,147 @@ export default function ThreeWayMatching() {
                         isPriceFlagged ? 'bg-amber-50/20 dark:bg-amber-950/5' : ''
                       }`}
                     >
-                      <td className="px-4 py-3 font-semibold text-slate-900 dark:text-slate-100">{row.grn_number}</td>
-                      <td className="px-4 py-3 text-slate-500 dark:text-slate-400 whitespace-nowrap">{row.grpo_date || '—'}</td>
-                      <td className="px-4 py-3 text-slate-700 dark:text-slate-300 font-medium">{row.po_number || '—'}</td>
-                      <td className="px-4 py-3 text-slate-500 dark:text-slate-400 whitespace-nowrap">{row.po_date || '—'}</td>
-                      <td className="px-4 py-3 text-slate-500 dark:text-slate-400 whitespace-nowrap">{row.gate_entry_date || '—'}</td>
-                      <td className="px-4 py-3 text-slate-500 dark:text-slate-400 whitespace-nowrap">{row.invoice_date || '—'}</td>
-                      <td className="px-4 py-3 text-slate-700 dark:text-slate-300">{row.ap_invoice_number || '—'}</td>
-                      <td className="px-4 py-3 text-slate-700 dark:text-slate-300 font-medium">{row.ap_credit_note || '—'}</td>
-                      <td className="px-4 py-3 text-slate-600 dark:text-slate-400 font-mono">{row.vendor_code || '—'}</td>
-                      <td className="px-4 py-3 text-slate-700 dark:text-slate-300 max-w-[200px]">
-                        <TruncatedCell value={row.vendor_name} />
-                      </td>
-                      <td className="px-4 py-3 text-slate-600 dark:text-slate-400">{row.vendor_country || '—'}</td>
-                      <td className="px-4 py-3 text-slate-700 dark:text-slate-300 font-mono">{row.item_code || '—'}</td>
-                      <td className="px-4 py-3 text-slate-500 dark:text-slate-400 max-w-[250px]">
-                        <TruncatedCell value={row.item_description} />
-                      </td>
-                      <td className="px-4 py-3 text-slate-600 dark:text-slate-400">{row.item_group || '—'}</td>
-                      <td className="px-4 py-3 text-right font-medium text-slate-700 dark:text-slate-300">{formatNumber(row.po_qty)}</td>
-                      <td className="px-4 py-3 text-right font-medium text-slate-700 dark:text-slate-300">{formatNumber(row.grpo_qty)}</td>
-                      <td className="px-4 py-3 text-right font-medium text-slate-700 dark:text-slate-300">{formatNumber(row.inv_qty)}</td>
-                      
-                      <td className="px-4 py-3 text-center">
-                        {row.qty_po_gt_grpo === 1 ? (
-                          <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200 dark:border-amber-900/50">Yes</span>
-                        ) : (
-                          <span className="text-slate-400 dark:text-slate-600">—</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        {row.qty_grpo_gt_inv === 1 ? (
-                          <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200 dark:border-amber-900/50">Yes</span>
-                        ) : (
-                          <span className="text-slate-400 dark:text-slate-600">—</span>
-                        )}
-                      </td>
-
-                      <td className="px-4 py-3 text-right font-semibold text-slate-700 dark:text-slate-300">₹{formatNumber(row.po_rate, 2)}</td>
-                      <td className="px-4 py-3 text-right font-semibold text-slate-700 dark:text-slate-300">₹{formatNumber(row.grpo_rate, 2)}</td>
-                      <td className="px-4 py-3 text-right font-semibold text-slate-700 dark:text-slate-300">₹{formatNumber(row.inv_rate, 2)}</td>
-                      
-                      <td className="px-4 py-3 text-center">
-                        {isPriceFlagged ? (
-                          <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-extrabold bg-rose-100 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-900/50">Flagged</span>
-                        ) : (
-                          <span className="text-slate-400 dark:text-slate-600">—</span>
-                        )}
-                      </td>
-
-                      <td className="px-4 py-3 text-center">
-                        {row.match_status === 'Perfect match' ? (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-400">
-                            Perfect Match
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/30 dark:text-amber-400">
-                            Variance
-                          </span>
-                        )}
-                      </td>
+                      {visibleCols.map(c => {
+                        if (c === 'grn_number') return (
+                          <td key={c} className="px-4 py-3 font-semibold text-slate-900 dark:text-slate-100">
+                            <TruncatedCell value={row.grn_number} />
+                          </td>
+                        )
+                        if (c === 'grpo_date') return (
+                          <td key={c} className="px-4 py-3 text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                            <TruncatedCell value={row.grpo_date} />
+                          </td>
+                        )
+                        if (c === 'po_number') return (
+                          <td key={c} className="px-4 py-3 text-slate-700 dark:text-slate-300 font-medium">
+                            <TruncatedCell value={row.po_number} />
+                          </td>
+                        )
+                        if (c === 'po_date') return (
+                          <td key={c} className="px-4 py-3 text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                            <TruncatedCell value={row.po_date} />
+                          </td>
+                        )
+                        if (c === 'gate_entry_date') return (
+                          <td key={c} className="px-4 py-3 text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                            <TruncatedCell value={row.gate_entry_date} />
+                          </td>
+                        )
+                        if (c === 'invoice_date') return (
+                          <td key={c} className="px-4 py-3 text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                            <TruncatedCell value={row.invoice_date} />
+                          </td>
+                        )
+                        if (c === 'ap_invoice_number') return (
+                          <td key={c} className="px-4 py-3 text-slate-700 dark:text-slate-300">
+                            <TruncatedCell value={row.ap_invoice_number} />
+                          </td>
+                        )
+                        if (c === 'ap_credit_note') return (
+                          <td key={c} className="px-4 py-3 text-slate-700 dark:text-slate-300 font-medium">
+                            <TruncatedCell value={row.ap_credit_note} />
+                          </td>
+                        )
+                        if (c === 'vendor_code') return (
+                          <td key={c} className="px-4 py-3 text-slate-600 dark:text-slate-400 font-mono">
+                            <TruncatedCell value={row.vendor_code} />
+                          </td>
+                        )
+                        if (c === 'vendor_name') return (
+                          <td key={c} className="px-4 py-3 text-slate-700 dark:text-slate-300 max-w-[200px]">
+                            <TruncatedCell value={row.vendor_name} />
+                          </td>
+                        )
+                        if (c === 'vendor_country') return (
+                          <td key={c} className="px-4 py-3 text-slate-600 dark:text-slate-400">
+                            <TruncatedCell value={row.vendor_country} />
+                          </td>
+                        )
+                        if (c === 'item_code') return (
+                          <td key={c} className="px-4 py-3 text-slate-700 dark:text-slate-300 font-mono">
+                            <TruncatedCell value={row.item_code} />
+                          </td>
+                        )
+                        if (c === 'item_description') return (
+                          <td key={c} className="px-4 py-3 text-slate-500 dark:text-slate-400 max-w-[250px]">
+                            <TruncatedCell value={row.item_description} />
+                          </td>
+                        )
+                        if (c === 'item_group') return (
+                          <td key={c} className="px-4 py-3 text-slate-600 dark:text-slate-400">
+                            <TruncatedCell value={row.item_group} />
+                          </td>
+                        )
+                        if (c === 'po_qty') return (
+                          <td key={c} className="px-4 py-3 text-right font-medium text-slate-700 dark:text-slate-300">{formatNumber(row.po_qty)}</td>
+                        )
+                        if (c === 'grpo_qty') return (
+                          <td key={c} className="px-4 py-3 text-right font-medium text-slate-700 dark:text-slate-300">{formatNumber(row.grpo_qty)}</td>
+                        )
+                        if (c === 'inv_qty') return (
+                          <td key={c} className="px-4 py-3 text-right font-medium text-slate-700 dark:text-slate-300">{formatNumber(row.inv_qty)}</td>
+                        )
+                        if (c === 'qty_po_gt_grpo') return (
+                          <td key={c} className="px-4 py-3 text-center">
+                            {row.qty_po_gt_grpo === 1 ? (
+                              <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200 dark:border-amber-900/50">Yes</span>
+                            ) : (
+                              <span className="text-slate-400 dark:text-slate-600">—</span>
+                            )}
+                          </td>
+                        )
+                        if (c === 'qty_grpo_gt_inv') return (
+                          <td key={c} className="px-4 py-3 text-center">
+                            {row.qty_grpo_gt_inv === 1 ? (
+                              <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200 dark:border-amber-900/50">Yes</span>
+                            ) : (
+                              <span className="text-slate-400 dark:text-slate-600">—</span>
+                            )}
+                          </td>
+                        )
+                        if (c === 'po_rate') return (
+                          <td key={c} className="px-4 py-3 text-right font-semibold text-slate-700 dark:text-slate-300">₹{formatNumber(row.po_rate, 2)}</td>
+                        )
+                        if (c === 'grpo_rate') return (
+                          <td key={c} className="px-4 py-3 text-right font-semibold text-slate-700 dark:text-slate-300">₹{formatNumber(row.grpo_rate, 2)}</td>
+                        )
+                        if (c === 'inv_rate') return (
+                          <td key={c} className="px-4 py-3 text-right font-semibold text-slate-700 dark:text-slate-300">₹{formatNumber(row.inv_rate, 2)}</td>
+                        )
+                        if (c === 'excess_over_5') return (
+                          <td key={c} className="px-4 py-3 text-center">
+                            {isPriceFlagged ? (
+                              <span className="inline-flex px-2 py-0.5 rounded text-[10px] font-extrabold bg-rose-100 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-900/50">Flagged</span>
+                            ) : (
+                              <span className="text-slate-400 dark:text-slate-600">—</span>
+                            )}
+                          </td>
+                        )
+                        if (c === 'match_status') return (
+                          <td key={c} className="px-4 py-3 text-center">
+                            {row.match_status === 'Perfect match' ? (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-400">
+                                Perfect Match
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/30 dark:text-amber-400">
+                                Variance
+                              </span>
+                            )}
+                          </td>
+                        )
+                        return (
+                          <td key={c} className="px-4 py-3 text-slate-600 dark:text-slate-400">
+                            <TruncatedCell value={row[c]} />
+                          </td>
+                        )
+                      })}
                     </tr>
                   )
                 })
               ) : (
                 <tr>
-                  <td colSpan="24" className="text-center py-10 text-slate-500 dark:text-slate-400 font-medium">
+                  <td colSpan={visibleCols.length} className="text-center py-10 text-slate-500 dark:text-slate-400 font-medium">
                     No rows match current search and filters.
                   </td>
                 </tr>

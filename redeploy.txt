@@ -1,0 +1,93 @@
+# P2P Audit Platform - Redeployment Commands
+# Use these commands to pull the latest changes and redeploy the platform on your EC2 instance.
+
+# -------------------------------------------------------------
+# Option 1: Step-by-Step Manual Commands
+# -------------------------------------------------------------
+
+# 1. Navigate to the project directory
+cd /var/www/audit-platform
+
+# 2. Pull the latest code from the github branch
+git reset --hard
+git checkout priyanshu
+git pull origin priyanshu
+
+# 3. Update Backend Dependencies (venv)
+cd /var/www/audit-platform/backend
+source venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+deactivate
+
+# 4. Restart FastAPI Backend Service
+sudo systemctl daemon-reload
+sudo systemctl restart audit-backend
+
+# 5. Build Frontend Static Assets
+cd /var/www/audit-platform/frontend
+npm install
+npm run build
+
+# 6. Adjust Permissions (Ensures Nginx can access build artifacts)
+sudo chown -R ubuntu:www-data /var/www/audit-platform
+sudo chmod -R 755 /var/www/audit-platform
+
+# 7. Restart Nginx
+sudo systemctl restart nginx
+
+
+# -------------------------------------------------------------
+# Option 2: One-Click Automated Redeployment Script
+# -------------------------------------------------------------
+# You can copy the code below into a file named `redeploy.sh` on your server:
+# 
+# 1. Create script file:
+#    nano /var/www/audit-platform/redeploy.sh
+# 
+# 2. Paste the contents below and save (Ctrl+O, Enter, Ctrl+X).
+# 
+# 3. Make it executable:
+#    chmod +x /var/www/audit-platform/redeploy.sh
+# 
+# 4. Run it whenever you want to update:
+#    ./redeploy.sh
+#
+# -------------------------------------------------------------
+#!/bin/bash
+set -e
+
+echo "=== Starting P2P Audit Redeployment ==="
+
+echo "1. Navigating to project directory..."
+cd /var/www/audit-platform
+
+echo "2. Fetching and pulling latest code from branch 'priyanshu'..."
+git reset --hard
+git checkout priyanshu
+git pull origin priyanshu
+
+echo "3. Updating Python dependencies..."
+cd /var/www/audit-platform/backend
+source venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+deactivate
+
+echo "4. Restarting systemd Backend Service..."
+sudo systemctl daemon-reload
+sudo systemctl restart audit-backend
+
+echo "5. Building Frontend (Vite/React)..."
+cd /var/www/audit-platform/frontend
+npm install
+npm run build
+
+echo "6. Adjusting directory permissions..."
+sudo chown -R ubuntu:www-data /var/www/audit-platform
+sudo chmod -R 755 /var/www/audit-platform
+
+echo "7. Restarting Nginx Server..."
+sudo systemctl restart nginx
+
+echo "=== Redeployment Completed Successfully! ==="

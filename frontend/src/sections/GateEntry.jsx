@@ -3,6 +3,7 @@ import DonutChart from '../components/DonutChart'
 import AiInsightBox from '../components/AiInsightBox'
 import { CHART_COLORS } from '../theme'
 import TruncatedCell from '../components/TruncatedCell'
+import useColumnOrder from '../hooks/useColumnOrder'
 
 const formatCurrency = (val) => {
   if (val === null || val === undefined) return '—'
@@ -14,11 +15,11 @@ const formatCurrency = (val) => {
 }
 
 const COL_GROUPS = [
-  { label: 'Gate Entry Info', cols: ['Gate Entry number', 'Gate Entry Date', 'PO Number', 'GRN Number', 'AP Invoice Number'] },
+  { label: 'Gate Entry Info', cols: ['Gate Entry number', 'Gate Entry Date', 'GRPO Date', 'PO Number', 'GRN Number', 'AP Invoice Number'] },
   { label: 'Vendor Details', cols: ['Vendor Code', 'Vendor Name', 'Vendor Country', 'Vendor Bill Number'] },
   { label: 'Item Details', cols: ['Item Code', 'Item Description', 'Item Group'] },
   { label: 'Value & Qty', cols: ['Quantity', 'Rate(INR)', 'Value(INR)'] },
-  { label: 'Analysis', cols: ['GRPO Date', 'Days(GRPO-GE)', 'Seq Exception(GE>GRPO)', 'Exceeds 3 days'] }
+  { label: 'Analysis', cols: ['Days(GRPO-GE)', 'Seq Exception(GE>GRPO)', 'Exceeds 3 days'] }
 ]
 
 const ALL_COLS = COL_GROUPS.flatMap(g => g.cols)
@@ -92,6 +93,10 @@ export default function GateEntry({ data }) {
   const [endDate, setEndDate]               = useState('')
   const ITEMS_PER_PAGE = 25
 
+  const { order: colOrder, moveColumn } = useColumnOrder('gate-entry', ALL_COLS)
+  const [dragCol, setDragCol]     = useState(null)
+  const [dragOverCol, setDragOverCol] = useState(null)
+
   const handleColFilter = (col, val) => {
     setColFilters(prev => ({ ...prev, [col]: val }))
     setCurrentPage(1)
@@ -100,10 +105,12 @@ export default function GateEntry({ data }) {
   const activeColFilterCount = Object.values(colFilters).filter(v => v.trim()).length
 
   const visibleCols = useMemo(() => {
-    if (activeGroup === 'All') return ALL_COLS
-    const grp = COL_GROUPS.find(g => g.label === activeGroup)
-    return grp ? grp.cols : ALL_COLS
-  }, [activeGroup])
+    const base = activeGroup === 'All'
+      ? ALL_COLS
+      : (COL_GROUPS.find(g => g.label === activeGroup)?.cols || ALL_COLS)
+    const baseSet = new Set(base)
+    return colOrder.filter(c => baseSet.has(c))
+  }, [activeGroup, colOrder])
 
   const handleSort = (col) => {
     if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
@@ -404,12 +411,19 @@ export default function GateEntry({ data }) {
                 {visibleCols.map(c => (
                   <th
                     key={c}
+                    draggable
+                    onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; setDragCol(c) }}
+                    onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (dragOverCol !== c) setDragOverCol(c) }}
+                    onDragLeave={() => setDragOverCol(prev => (prev === c ? null : prev))}
+                    onDrop={(e) => { e.preventDefault(); if (dragCol && dragCol !== c) moveColumn(dragCol, c); setDragCol(null); setDragOverCol(null) }}
+                    onDragEnd={() => { setDragCol(null); setDragOverCol(null) }}
                     onClick={() => handleSort(c)}
-                    className={`px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap cursor-pointer select-none border-b border-slate-200 dark:border-slate-700 hover:text-slate-600 dark:hover:text-slate-300 transition-colors ${
+                    title="Click to sort · Drag to reorder"
+                    className={`px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap cursor-grab active:cursor-grabbing select-none border-b border-slate-200 dark:border-slate-700 hover:text-slate-600 dark:hover:text-slate-300 transition-colors ${
                       colFilters[c]?.trim()
                         ? 'text-blue-600 dark:text-blue-400 bg-blue-50/60 dark:bg-blue-950/20'
                         : 'text-slate-400 dark:text-slate-500'
-                    }`}
+                    } ${dragCol === c ? 'opacity-40' : ''} ${dragOverCol === c && dragCol !== c ? 'bg-blue-100/70 dark:bg-blue-900/30 border-l-2 border-l-blue-500' : ''}`}
                   >
                     {c}
                     <SortIcon dir={sortCol === c ? sortDir : null} />
@@ -490,8 +504,8 @@ export default function GateEntry({ data }) {
 
                     const isNum = typeof val === 'number' || (!isNaN(parseFloat(val)) && isFinite(val) && !String(val).startsWith('0'))
                     return (
-                      <td key={c} className={`px-4 py-2 text-slate-700 dark:text-slate-350 ${isNum ? 'font-mono whitespace-nowrap' : ''}`}>
-                        {val === null || val === undefined || val === '' ? '—' : (isNum ? String(val) : <TruncatedCell value={val} />)}
+                      <td key={c} className={`px-4 py-2 text-slate-700 dark:text-slate-350 ${isNum ? 'font-mono' : ''}`}>
+                        {val === null || val === undefined || val === '' ? '—' : <TruncatedCell value={val} />}
                       </td>
                     )
                   })}

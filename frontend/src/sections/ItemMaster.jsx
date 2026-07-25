@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react'
 import AiInsightBox from '../components/AiInsightBox'
 import TruncatedCell from '../components/TruncatedCell'
+import useColumnOrder from '../hooks/useColumnOrder'
 
 const ROWS_PER_PAGE = 100
 
@@ -39,6 +40,12 @@ export default function ItemMaster({ data }) {
       return !colLower.includes('g/l') && !colLower.includes('wtax')
     })
   }, [allColumns])
+
+  const { order: colOrder, moveColumn } = useColumnOrder('item-master', displayColumns)
+  const [dragCol, setDragCol]     = useState(null)
+  const [dragOverCol, setDragOverCol] = useState(null)
+
+  const visibleCols = colOrder
 
   const handleNextPage = () => {
     if (paginationData.totalPages > 0 && currentPage < paginationData.totalPages - 1) {
@@ -120,10 +127,17 @@ export default function ItemMaster({ data }) {
           <table className="w-full text-xs">
             <thead className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200/80 dark:border-slate-800/80 sticky top-0">
               <tr>
-                {displayColumns.map(col => (
-                  <th 
+                {visibleCols.map(col => (
+                  <th
                     key={col}
-                    className="px-4 py-3 text-left font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap"
+                    draggable
+                    onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; setDragCol(col) }}
+                    onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (dragOverCol !== col) setDragOverCol(col) }}
+                    onDragLeave={() => setDragOverCol(prev => (prev === col ? null : prev))}
+                    onDrop={(e) => { e.preventDefault(); if (dragCol && dragCol !== col) moveColumn(dragCol, col); setDragCol(null); setDragOverCol(null) }}
+                    onDragEnd={() => { setDragCol(null); setDragOverCol(null) }}
+                    title="Drag to reorder"
+                    className={`px-4 py-3 text-left font-semibold text-slate-600 dark:text-slate-300 whitespace-nowrap cursor-grab active:cursor-grabbing select-none${dragCol === col ? ' opacity-40' : ''}${dragOverCol === col && dragCol !== col ? ' bg-blue-100/70 dark:bg-blue-900/30 border-l-2 border-l-blue-500' : ''}`}
                   >
                     {col}
                   </th>
@@ -133,23 +147,18 @@ export default function ItemMaster({ data }) {
             <tbody className="divide-y divide-slate-200/80 dark:divide-slate-800/80">
               {paginationData.currentRows.map((row, idx) => (
                 <tr key={idx} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
-                  {displayColumns.map(col => {
+                  {visibleCols.map(col => {
                     const value = row[col] || '—'
                     const isNumeric = col === 'PO Qty' || col === 'Rate' || col === 'Price' || col === 'Items per Purchasing Unit' || col === 'No. of Items per Sales Unit'
-                    
+
                     return (
-                      <td 
+                      <td
                         key={`${idx}-${col}`}
                         className={`px-4 py-3 ${
-                          isNumeric ? 'text-right font-mono whitespace-nowrap' : 'text-slate-600 dark:text-slate-300'
+                          isNumeric ? 'text-right font-mono' : 'text-slate-600 dark:text-slate-300'
                         }`}
-                        title={value}
                       >
-                        {isNumeric ? (
-                          <span className="block max-w-xs truncate">{value}</span>
-                        ) : (
-                          <TruncatedCell value={value} />
-                        )}
+                        <TruncatedCell value={value} />
                       </td>
                     )
                   })}

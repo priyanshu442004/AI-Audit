@@ -3,6 +3,7 @@ import { fetchVendorMasterNew } from '../api'
 import AiInsightBox from '../components/AiInsightBox'
 import { useStore } from '../store'
 import TruncatedCell from '../components/TruncatedCell'
+import useColumnOrder from '../hooks/useColumnOrder'
 
 function SortIcon({ dir }) {
   if (!dir) return (
@@ -17,6 +18,99 @@ function SortIcon({ dir }) {
         : <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />}
     </svg>
   )
+}
+
+const COLS = [
+  { id: 'vendor_code', label: 'Vendor Code' },
+  { id: 'vendor_name', label: 'Vendor Name' },
+  { id: 'vendor_country', label: 'Vendor Country' },
+  { id: 'vendor_group', label: 'Vendor Group' },
+  { id: 'region', label: 'Region' },
+  { id: 'currency', label: 'Currency' },
+  { id: 'gstin', label: 'GSTIN' },
+  { id: 'msme_registration', label: 'MSME Registration' },
+  { id: 'payment_terms', label: 'Payment Terms' },
+  { id: 'active', label: 'Active' },
+  { id: 'same_gst_multi_code', label: 'Same GST Multi-Code' },
+  { id: 'missing_gstin', label: 'Missing GSTIN (Dom)' },
+  { id: 'foreign_w_gstin', label: 'Missing GSTIN (For)' },
+  { id: 'related_party', label: 'Related Party' },
+]
+const ALL_COLS = COLS.map(c => c.id)
+const COL_LABEL = Object.fromEntries(COLS.map(c => [c.id, c.label]))
+
+const CELL_CLASS = {
+  vendor_code: 'px-4 py-3 font-mono font-bold text-slate-900 dark:text-white',
+  vendor_name: 'px-4 py-3 text-slate-700 dark:text-slate-300 font-semibold',
+  vendor_country: 'px-4 py-3 text-slate-600 dark:text-slate-400',
+  vendor_group: 'px-4 py-3 text-slate-600 dark:text-slate-400',
+  region: 'px-4 py-3 text-slate-700 dark:text-slate-300',
+  currency: 'px-4 py-3 font-mono text-slate-600 dark:text-slate-400',
+  gstin: 'px-4 py-3 font-mono text-slate-600 dark:text-slate-400',
+  msme_registration: 'px-4 py-3 text-center text-slate-700 dark:text-slate-300',
+  payment_terms: 'px-4 py-3 text-slate-600 dark:text-slate-400',
+  active: 'px-4 py-3',
+  same_gst_multi_code: 'px-4 py-3 text-center',
+  missing_gstin: 'px-4 py-3 text-center',
+  foreign_w_gstin: 'px-4 py-3 text-center',
+  related_party: 'px-4 py-3 text-center',
+}
+
+function renderCell(colId, row) {
+  switch (colId) {
+    case 'active':
+      return (
+        <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+          row.active === 'Active'
+            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400'
+            : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-400'
+        }`}>
+          {row.active}
+        </span>
+      )
+    case 'same_gst_multi_code':
+      return (
+        <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+          row.same_gst_multi_code === 1
+            ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-450'
+            : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-500'
+        }`}>
+          {row.same_gst_multi_code}
+        </span>
+      )
+    case 'missing_gstin':
+      return (
+        <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+          row.missing_gstin === 1
+            ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-450'
+            : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-500'
+        }`}>
+          {row.missing_gstin}
+        </span>
+      )
+    case 'foreign_w_gstin':
+      return (
+        <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+          row.foreign_w_gstin === 1
+            ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-450'
+            : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-500'
+        }`}>
+          {row.foreign_w_gstin}
+        </span>
+      )
+    case 'related_party':
+      return (
+        <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+          row.related_party === 1
+            ? 'bg-rose-100 text-rose-750 dark:bg-rose-950/50 dark:text-rose-400'
+            : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-500'
+        }`}>
+          {row.related_party}
+        </span>
+      )
+    default:
+      return <TruncatedCell value={row[colId]} />
+  }
 }
 
 export default function VendorMasterNew() {
@@ -36,6 +130,10 @@ export default function VendorMasterNew() {
   const [sortDir, setSortDir] = useState('asc')
   const [currentPage, setCurrentPage] = useState(1)
   const ITEMS_PER_PAGE = 25
+
+  const { order: colOrder, moveColumn } = useColumnOrder('vendor-master', ALL_COLS)
+  const [dragCol, setDragCol] = useState(null)
+  const [dragOverCol, setDragOverCol] = useState(null)
 
   useEffect(() => {
     if (vendorMasterNew) {
@@ -512,30 +610,22 @@ export default function VendorMasterNew() {
           <table className="w-full text-left border-collapse min-w-[1800px]">
             <thead>
               <tr className="bg-slate-50/50 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800">
-                {[
-                  { id: 'vendor_code', label: 'Vendor Code' },
-                  { id: 'vendor_name', label: 'Vendor Name' },
-                  { id: 'vendor_country', label: 'Vendor Country' },
-                  { id: 'vendor_group', label: 'Vendor Group' },
-                  { id: 'region', label: 'Region' },
-                  { id: 'currency', label: 'Currency' },
-                  { id: 'gstin', label: 'GSTIN' },
-                  { id: 'msme_registration', label: 'MSME Registration' },
-                  { id: 'payment_terms', label: 'Payment Terms' },
-                  { id: 'active', label: 'Active' },
-                  { id: 'same_gst_multi_code', label: 'Same GST Multi-Code' },
-                  { id: 'missing_gstin', label: 'Missing GSTIN (Dom)' },
-                  { id: 'foreign_w_gstin', label: 'Missing GSTIN (For)' },
-                  { id: 'related_party', label: 'Related Party' }
-                ].map(col => (
+                {colOrder.map(colId => (
                   <th
-                    key={col.id}
-                    onClick={() => handleSort(col.id)}
-                    className="px-4 py-3 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100/50 dark:hover:bg-slate-800/60 select-none transition-colors"
+                    key={colId}
+                    draggable
+                    onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; setDragCol(colId) }}
+                    onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (dragOverCol !== colId) setDragOverCol(colId) }}
+                    onDragLeave={() => setDragOverCol(prev => (prev === colId ? null : prev))}
+                    onDrop={(e) => { e.preventDefault(); if (dragCol && dragCol !== colId) moveColumn(dragCol, colId); setDragCol(null); setDragOverCol(null) }}
+                    onDragEnd={() => { setDragCol(null); setDragOverCol(null) }}
+                    onClick={() => handleSort(colId)}
+                    title="Click to sort · Drag to reorder"
+                    className={`px-4 py-3 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider cursor-grab active:cursor-grabbing select-none transition-colors hover:bg-slate-100/50 dark:hover:bg-slate-800/60 ${dragCol === colId ? 'opacity-40' : ''} ${dragOverCol === colId && dragCol !== colId ? 'bg-blue-100/70 dark:bg-blue-900/30 border-l-2 border-l-blue-500' : ''}`}
                   >
                     <div className="flex items-center font-bold">
-                      {col.label}
-                      <SortIcon dir={sortCol === col.id ? sortDir : null} />
+                      {COL_LABEL[colId]}
+                      <SortIcon dir={sortCol === colId ? sortDir : null} />
                     </div>
                   </th>
                 ))}
@@ -545,92 +635,25 @@ export default function VendorMasterNew() {
               {paginated.map((row, i) => {
                 const isRP = row.related_party === 1
                 return (
-                  <tr 
-                    key={i} 
+                  <tr
+                    key={i}
                     className={`transition-colors duration-150 ${
-                      isRP 
-                        ? 'bg-rose-50/20 dark:bg-rose-950/10 hover:bg-rose-50/40 dark:hover:bg-rose-950/20' 
+                      isRP
+                        ? 'bg-rose-50/20 dark:bg-rose-950/10 hover:bg-rose-50/40 dark:hover:bg-rose-950/20'
                         : 'hover:bg-slate-50/40 dark:hover:bg-slate-800/20'
                     }`}
                   >
-                    <td className="px-4 py-3 font-mono font-bold text-slate-900 dark:text-white">
-                      {row.vendor_code}
-                    </td>
-                    <td className="px-4 py-3 text-slate-700 dark:text-slate-300 font-semibold">
-                      <TruncatedCell value={row.vendor_name} />
-                    </td>
-                    <td className="px-4 py-3 text-slate-600 dark:text-slate-400">
-                      {row.vendor_country}
-                    </td>
-                    <td className="px-4 py-3 text-slate-600 dark:text-slate-400">
-                      {row.vendor_group}
-                    </td>
-                    <td className="px-4 py-3 text-slate-700 dark:text-slate-300">
-                      {row.region}
-                    </td>
-                    <td className="px-4 py-3 font-mono text-slate-600 dark:text-slate-400">
-                      {row.currency}
-                    </td>
-                    <td className="px-4 py-3 font-mono text-slate-600 dark:text-slate-400">
-                      {row.gstin}
-                    </td>
-                    <td className="px-4 py-3 text-center text-slate-700 dark:text-slate-300">
-                      {row.msme_registration}
-                    </td>
-                    <td className="px-4 py-3 text-slate-600 dark:text-slate-400">
-                      <TruncatedCell value={row.payment_terms} />
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
-                        row.active === 'Active'
-                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400'
-                          : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-400'
-                      }`}>
-                        {row.active}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
-                        row.same_gst_multi_code === 1
-                          ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-450'
-                          : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-500'
-                      }`}>
-                        {row.same_gst_multi_code}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
-                        row.missing_gstin === 1
-                          ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-450'
-                          : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-500'
-                      }`}>
-                        {row.missing_gstin}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
-                        row.foreign_w_gstin === 1
-                          ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-450'
-                          : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-500'
-                      }`}>
-                        {row.foreign_w_gstin}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
-                        row.related_party === 1
-                          ? 'bg-rose-100 text-rose-750 dark:bg-rose-950/50 dark:text-rose-400'
-                          : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-500'
-                      }`}>
-                        {row.related_party}
-                      </span>
-                    </td>
+                    {colOrder.map(colId => (
+                      <td key={colId} className={CELL_CLASS[colId] || 'px-4 py-3 text-slate-700 dark:text-slate-300'}>
+                        {renderCell(colId, row)}
+                      </td>
+                    ))}
                   </tr>
                 )
               })}
               {paginated.length === 0 && (
                 <tr>
-                  <td colSpan={14} className="px-6 py-10 text-center text-sm text-slate-400 dark:text-slate-500">
+                  <td colSpan={colOrder.length} className="px-6 py-10 text-center text-sm text-slate-400 dark:text-slate-500">
                     No matching records found
                   </td>
                 </tr>

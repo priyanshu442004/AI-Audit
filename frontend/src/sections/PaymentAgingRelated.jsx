@@ -3,6 +3,7 @@ import { fetchPaymentAgingRelated } from '../api'
 import AiInsightBox from '../components/AiInsightBox'
 import { useStore } from '../store'
 import TruncatedCell from '../components/TruncatedCell'
+import useColumnOrder from '../hooks/useColumnOrder'
 
 const formatCurrency = (val) => {
   if (val === null || val === undefined) return '—'
@@ -54,6 +55,83 @@ function SortIcon({ dir }) {
   )
 }
 
+const COLS = [
+  { id: 'vendor_code', label: 'Vendor Code' },
+  { id: 'vendor_name', label: 'Vendor Name' },
+  { id: 'vendor_country', label: 'Country' },
+  { id: 'vendor_group', label: 'Vendor Group' },
+  { id: 'vendor_address', label: 'Vendor Address' },
+  { id: 'payment_terms', label: 'Payment Terms' },
+  { id: 'payment_term_type', label: 'Term Type' },
+  { id: 'term_days', label: 'Term Days' },
+  { id: 'invoice_doc_number', label: 'Doc Number' },
+  { id: 'document_date', label: 'Doc Date' },
+  { id: 'posting_date', label: 'Posting Date' },
+  { id: 'due_date_doc_term', label: 'Due Date(Doc+Term)' },
+  { id: 'payment_date', label: 'Payment Date' },
+  { id: 'days_late', label: 'Days Late' },
+  { id: 'actual_paid', label: 'Actual Paid' },
+  { id: 'outstanding', label: 'Outstanding' },
+  { id: 'status', label: 'Status' },
+  { id: 'aging_category', label: 'Aging Category' },
+]
+const ALL_COLS = COLS.map(c => c.id)
+const COL_LABEL = Object.fromEntries(COLS.map(c => [c.id, c.label]))
+
+const CELL_CLASS = {
+  vendor_code: 'px-4 py-3 text-xs font-mono font-bold text-slate-900 dark:text-white',
+  vendor_name: 'px-4 py-3 text-xs font-medium text-slate-700 dark:text-slate-300',
+  vendor_country: 'px-4 py-3 text-xs text-slate-600 dark:text-slate-400',
+  vendor_group: 'px-4 py-3 text-xs text-slate-600 dark:text-slate-400',
+  vendor_address: 'px-4 py-3 text-xs text-slate-500 dark:text-slate-500 max-w-[150px]',
+  payment_terms: 'px-4 py-3 text-xs text-slate-600 dark:text-slate-400',
+  payment_term_type: 'px-4 py-3 text-xs text-slate-600 dark:text-slate-400 font-semibold',
+  term_days: 'px-4 py-3 text-xs font-mono text-slate-600 dark:text-slate-400',
+  invoice_doc_number: 'px-4 py-3 text-xs font-mono text-slate-700 dark:text-slate-300',
+  document_date: 'px-4 py-3 text-xs text-slate-600 dark:text-slate-400 font-mono',
+  posting_date: 'px-4 py-3 text-xs text-slate-600 dark:text-slate-400 font-mono',
+  due_date_doc_term: 'px-4 py-3 text-xs text-slate-600 dark:text-slate-400 font-mono',
+  payment_date: 'px-4 py-3 text-xs text-slate-600 dark:text-slate-400 font-mono',
+  days_late: 'px-4 py-3 text-xs font-mono text-slate-600 dark:text-slate-400',
+  actual_paid: 'px-4 py-3 text-xs font-mono text-right text-slate-900 dark:text-white',
+  outstanding: 'px-4 py-3 text-xs font-mono text-right text-slate-900 dark:text-white',
+  status: 'px-4 py-3 text-xs text-center',
+  aging_category: 'px-4 py-3 text-xs text-center',
+}
+
+function renderCell(colId, row) {
+  switch (colId) {
+    case 'actual_paid':
+      return <TruncatedCell value={formatCurrency(row.actual_paid)} />
+    case 'outstanding':
+      return <TruncatedCell value={formatCurrency(row.outstanding)} />
+    case 'status':
+      return (
+        <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+          row.status === 'Fully paid'
+            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400'
+            : row.status === 'Partially paid'
+            ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400'
+            : 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400'
+        }`}>
+          {row.status}
+        </span>
+      )
+    case 'aging_category': {
+      let catBadge = 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+      const ac = row.aging_category || ''
+      if (ac.includes('16-30')) catBadge = 'bg-amber-50 text-amber-700 dark:bg-amber-950/20 dark:text-amber-400'
+      else if (ac.includes('31-45')) catBadge = 'bg-orange-50 text-orange-700 dark:bg-orange-950/20 dark:text-orange-400'
+      else if (ac.includes('46-60')) catBadge = 'bg-orange-100 text-orange-800 dark:bg-orange-900/20 dark:text-orange-400'
+      else if (ac.includes('61-90')) catBadge = 'bg-red-50 text-red-700 dark:bg-red-950/20 dark:text-red-400'
+      else if (ac.includes('>90')) catBadge = 'bg-rose-100 text-rose-700 dark:bg-rose-950/30 dark:text-rose-400 font-bold'
+      return <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-mono ${catBadge}`}>{row.aging_category}</span>
+    }
+    default:
+      return <TruncatedCell value={row[colId]} />
+  }
+}
+
 export default function PaymentAgingRelated() {
   const { paymentAgingRelated, setPaymentAgingRelated } = useStore()
   const [loading, setLoading] = useState(!paymentAgingRelated)
@@ -67,6 +145,10 @@ export default function PaymentAgingRelated() {
   const [sortDir, setSortDir] = useState('asc')
   const [currentPage, setCurrentPage] = useState(1)
   const ITEMS_PER_PAGE = 25
+
+  const { order: colOrder, moveColumn } = useColumnOrder('payment-aging-related', ALL_COLS)
+  const [dragCol, setDragCol] = useState(null)
+  const [dragOverCol, setDragOverCol] = useState(null)
 
   useEffect(() => {
     if (paymentAgingRelated) {
@@ -519,121 +601,40 @@ export default function PaymentAgingRelated() {
           <table className="w-full text-left border-collapse min-w-[2000px]">
             <thead>
               <tr className="bg-slate-50/50 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800">
-                {[
-                  { id: 'vendor_code', label: 'Vendor Code' },
-                  { id: 'vendor_name', label: 'Vendor Name' },
-                  { id: 'vendor_country', label: 'Country' },
-                  { id: 'vendor_group', label: 'Vendor Group' },
-                  { id: 'vendor_address', label: 'Vendor Address' },
-                  { id: 'payment_terms', label: 'Payment Terms' },
-                  { id: 'payment_term_type', label: 'Term Type' },
-                  { id: 'term_days', label: 'Term Days' },
-                  { id: 'invoice_doc_number', label: 'Doc Number' },
-                  { id: 'document_date', label: 'Doc Date' },
-                  { id: 'posting_date', label: 'Posting Date' },
-                  { id: 'due_date_doc_term', label: 'Due Date(Doc+Term)' },
-                  { id: 'payment_date', label: 'Payment Date' },
-                  { id: 'days_late', label: 'Days Late' },
-                  { id: 'actual_paid', label: 'Actual Paid' },
-                  { id: 'outstanding', label: 'Outstanding' },
-                  { id: 'status', label: 'Status' },
-                  { id: 'aging_category', label: 'Aging Category' }
-                ].map(col => (
+                {colOrder.map(colId => (
                   <th
-                    key={col.id}
-                    onClick={() => handleSort(col.id)}
-                    className="px-4 py-3 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider cursor-pointer hover:bg-slate-100/50 dark:hover:bg-slate-800/60 select-none transition-colors"
+                    key={colId}
+                    draggable
+                    onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; setDragCol(colId) }}
+                    onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (dragOverCol !== colId) setDragOverCol(colId) }}
+                    onDragLeave={() => setDragOverCol(prev => (prev === colId ? null : prev))}
+                    onDrop={(e) => { e.preventDefault(); if (dragCol && dragCol !== colId) moveColumn(dragCol, colId); setDragCol(null); setDragOverCol(null) }}
+                    onDragEnd={() => { setDragCol(null); setDragOverCol(null) }}
+                    onClick={() => handleSort(colId)}
+                    title="Click to sort · Drag to reorder"
+                    className={`px-4 py-3 text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider cursor-grab active:cursor-grabbing select-none transition-colors hover:bg-slate-100/50 dark:hover:bg-slate-800/60 ${dragCol === colId ? 'opacity-40' : ''} ${dragOverCol === colId && dragCol !== colId ? 'bg-blue-100/70 dark:bg-blue-900/30 border-l-2 border-l-blue-500' : ''}`}
                   >
                     <div className="flex items-center font-bold">
-                      {col.label}
-                      <SortIcon dir={sortCol === col.id ? sortDir : null} />
+                      {COL_LABEL[colId]}
+                      <SortIcon dir={sortCol === colId ? sortDir : null} />
                     </div>
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {paginated.map((row, i) => {
-                // Color codes for category:
-                let catBadge = 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
-                if (row.aging_category.includes('16-30')) catBadge = 'bg-amber-50 text-amber-700 dark:bg-amber-950/20 dark:text-amber-400'
-                else if (row.aging_category.includes('31-45')) catBadge = 'bg-orange-50 text-orange-700 dark:bg-orange-950/20 dark:text-orange-400'
-                else if (row.aging_category.includes('46-60')) catBadge = 'bg-orange-100 text-orange-800 dark:bg-orange-900/20 dark:text-orange-400'
-                else if (row.aging_category.includes('61-90')) catBadge = 'bg-red-50 text-red-700 dark:bg-red-950/20 dark:text-red-400'
-                else if (row.aging_category.includes('>90')) catBadge = 'bg-rose-100 text-rose-700 dark:bg-rose-950/30 dark:text-rose-400 font-bold'
-
-                return (
-                  <tr key={i} className="hover:bg-slate-50/40 dark:hover:bg-slate-800/20 transition-colors duration-150">
-                    <td className="px-4 py-3 text-xs font-mono font-bold text-slate-900 dark:text-white">
-                      {row.vendor_code || '—'}
+              {paginated.map((row, i) => (
+                <tr key={i} className="hover:bg-slate-50/40 dark:hover:bg-slate-800/20 transition-colors duration-150">
+                  {colOrder.map(colId => (
+                    <td key={colId} className={CELL_CLASS[colId] || 'px-4 py-3 text-xs text-slate-700 dark:text-slate-300'}>
+                      {renderCell(colId, row)}
                     </td>
-                    <td className="px-4 py-3 text-xs font-medium text-slate-700 dark:text-slate-300">
-                      <TruncatedCell value={row.vendor_name} />
-                    </td>
-                    <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">
-                      {row.vendor_country}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">
-                      {row.vendor_group || '—'}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-slate-500 dark:text-slate-500 max-w-[150px]">
-                      <TruncatedCell value={row.vendor_address} />
-                    </td>
-                    <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400">
-                      <TruncatedCell value={row.payment_terms} />
-                    </td>
-                    <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400 font-semibold">
-                      {row.payment_term_type || '—'}
-                    </td>
-                    <td className="px-4 py-3 text-xs font-mono text-slate-600 dark:text-slate-400">
-                      {row.term_days}
-                    </td>
-                    <td className="px-4 py-3 text-xs font-mono text-slate-700 dark:text-slate-300">
-                      {row.invoice_doc_number || '—'}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400 font-mono">
-                      {row.document_date || '—'}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400 font-mono">
-                      {row.posting_date || '—'}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400 font-mono">
-                      {row.due_date_doc_term || '—'}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-slate-600 dark:text-slate-400 font-mono">
-                      {row.payment_date || '—'}
-                    </td>
-                    <td className="px-4 py-3 text-xs font-mono text-slate-600 dark:text-slate-400">
-                      {row.days_late}
-                    </td>
-                    <td className="px-4 py-3 text-xs font-mono text-right text-slate-900 dark:text-white">
-                      {formatCurrency(row.actual_paid)}
-                    </td>
-                    <td className="px-4 py-3 text-xs font-mono text-right text-slate-900 dark:text-white">
-                      {formatCurrency(row.outstanding)}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-center">
-                      <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
-                        row.status === 'Fully paid'
-                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400'
-                          : row.status === 'Partially paid'
-                          ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400'
-                          : 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400'
-                      }`}>
-                        {row.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-xs text-center">
-                      <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-mono ${catBadge}`}>
-                        {row.aging_category}
-                      </span>
-                    </td>
-                  </tr>
-                )
-              })}
+                  ))}
+                </tr>
+              ))}
               {paginated.length === 0 && (
                 <tr>
-                  <td colSpan={20} className="px-6 py-10 text-center text-sm text-slate-400 dark:text-slate-500">
+                  <td colSpan={colOrder.length} className="px-6 py-10 text-center text-sm text-slate-400 dark:text-slate-500">
                     No matching records found
                   </td>
                 </tr>
