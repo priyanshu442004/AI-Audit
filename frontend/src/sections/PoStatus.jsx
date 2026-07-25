@@ -542,10 +542,12 @@ export default function PoStatus({ data }) {
                     }
 
                     if (['Rate(INR)', 'Line Value(INR)', 'Open Value(INR)', 'Financial difference'].includes(c)) return (
-                      <td key={c} className="px-4 py-2 whitespace-nowrap font-mono text-slate-700 dark:text-slate-300">
-                        {typeof val === 'number' ? formatCurrency(val) : (val === 'PO is closed'
-                          ? <span className="text-slate-400 italic text-[10px]">closed</span>
-                          : String(val ?? '—'))}
+                      <td key={c} className="px-4 py-2 font-mono text-slate-700 dark:text-slate-300">
+                        {val === 'PO is closed' ? (
+                          <span className="text-slate-400 italic text-[10px]">closed</span>
+                        ) : (
+                          <TruncatedCell value={typeof val === 'number' ? formatCurrency(val) : (val ?? '—')} />
+                        )}
                       </td>
                     )
 

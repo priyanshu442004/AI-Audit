@@ -474,9 +474,9 @@ export default function PaymentAgingForeign() {
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
                 {topOverdue.map((v, i) => (
                   <tr key={i} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
-                    <td className="py-2.5 font-mono font-bold text-slate-950 dark:text-white">{v.code}</td>
-                    <td className="py-2.5 text-slate-700 dark:text-slate-300">{v.name}</td>
-                    <td className="py-2.5 text-slate-500 dark:text-slate-500">{v.group}</td>
+                    <td className="py-2.5 font-mono font-bold text-slate-950 dark:text-white"><TruncatedCell value={v.code} /></td>
+                    <td className="py-2.5 text-slate-700 dark:text-slate-300"><TruncatedCell value={v.name} /></td>
+                    <td className="py-2.5 text-slate-500 dark:text-slate-500"><TruncatedCell value={v.group} /></td>
                     <td className="py-2.5 text-right font-mono font-bold text-rose-600 dark:text-rose-400">{formatCurrency(v.outstanding)}</td>
                     <td className="py-2.5 text-right font-mono text-slate-700 dark:text-slate-300">{v.maxLate} days</td>
                   </tr>

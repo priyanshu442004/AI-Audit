@@ -472,14 +472,14 @@ export default function GateEntry({ data }) {
                     }
 
                     if (c === 'Quantity') return (
-                      <td key={c} className="px-4 py-2 whitespace-nowrap font-mono text-slate-750 dark:text-slate-250">
-                        {typeof val === 'number' ? val.toLocaleString() : String(val ?? '—')}
+                      <td key={c} className="px-4 py-2 font-mono text-slate-750 dark:text-slate-250">
+                        <TruncatedCell value={typeof val === 'number' ? val.toLocaleString() : (val ?? '—')} />
                       </td>
                     )
 
                     if (['Rate(INR)', 'Value(INR)'].includes(c)) return (
-                      <td key={c} className="px-4 py-2 whitespace-nowrap font-mono text-slate-755 dark:text-slate-245">
-                        {typeof val === 'number' ? formatCurrency(val) : String(val ?? '—')}
+                      <td key={c} className="px-4 py-2 font-mono text-slate-755 dark:text-slate-245">
+                        <TruncatedCell value={typeof val === 'number' ? formatCurrency(val) : (val ?? '—')} />
                       </td>
                     )
 

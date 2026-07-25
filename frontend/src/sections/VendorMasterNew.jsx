@@ -411,12 +411,12 @@ export default function VendorMasterNew() {
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
                 {relatedParties.map((v, i) => (
                   <tr key={i} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40">
-                    <td className="py-2.5 font-mono font-bold text-slate-950 dark:text-white">{v.vendor_code}</td>
+                    <td className="py-2.5 font-mono font-bold text-slate-950 dark:text-white"><TruncatedCell value={v.vendor_code} /></td>
                     <td className="py-2.5 text-slate-700 dark:text-slate-300 font-semibold">
                       <TruncatedCell value={v.vendor_name} />
                     </td>
-                    <td className="py-2.5 text-slate-500 dark:text-slate-500">{v.vendor_country} ({v.region})</td>
-                    <td className="py-2.5 font-mono text-slate-600 dark:text-slate-400">{v.gstin}</td>
+                    <td className="py-2.5 text-slate-500 dark:text-slate-500"><TruncatedCell value={`${v.vendor_country} (${v.region})`} /></td>
+                    <td className="py-2.5 font-mono text-slate-600 dark:text-slate-400"><TruncatedCell value={v.gstin} /></td>
                     <td className="py-2.5 text-right">
                       <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-mono font-bold ${
                         v.active === 'Active' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400' : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-400'

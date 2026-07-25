@@ -34,7 +34,7 @@ sudo chown -R ubuntu:www-data /var/www/audit-platform
 sudo chmod -R 755 /var/www/audit-platform
 
 # 7. Restart Nginx
-sudo systemctl restart nginx
+sudo chmod -R 755 /var/www/audit-platform
 
 
 # -------------------------------------------------------------
