@@ -407,7 +407,7 @@ export default function ThreeWayMatching() {
                           </td>
                         )
                         if (c === 'grpo_date') return (
-                          <td key={c} className="px-4 py-3 text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                          <td key={c} className="px-4 py-3 text-slate-500 dark:text-slate-400">
                             <TruncatedCell value={row.grpo_date} />
                           </td>
                         )
@@ -417,17 +417,17 @@ export default function ThreeWayMatching() {
                           </td>
                         )
                         if (c === 'po_date') return (
-                          <td key={c} className="px-4 py-3 text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                          <td key={c} className="px-4 py-3 text-slate-500 dark:text-slate-400">
                             <TruncatedCell value={row.po_date} />
                           </td>
                         )
                         if (c === 'gate_entry_date') return (
-                          <td key={c} className="px-4 py-3 text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                          <td key={c} className="px-4 py-3 text-slate-500 dark:text-slate-400">
                             <TruncatedCell value={row.gate_entry_date} />
                           </td>
                         )
                         if (c === 'invoice_date') return (
-                          <td key={c} className="px-4 py-3 text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                          <td key={c} className="px-4 py-3 text-slate-500 dark:text-slate-400">
                             <TruncatedCell value={row.invoice_date} />
                           </td>
                         )
@@ -472,13 +472,19 @@ export default function ThreeWayMatching() {
                           </td>
                         )
                         if (c === 'po_qty') return (
-                          <td key={c} className="px-4 py-3 text-right font-medium text-slate-700 dark:text-slate-300">{formatNumber(row.po_qty)}</td>
+                          <td key={c} className="px-4 py-3 text-right font-medium text-slate-700 dark:text-slate-300">
+                            <TruncatedCell value={formatNumber(row.po_qty)} />
+                          </td>
                         )
                         if (c === 'grpo_qty') return (
-                          <td key={c} className="px-4 py-3 text-right font-medium text-slate-700 dark:text-slate-300">{formatNumber(row.grpo_qty)}</td>
+                          <td key={c} className="px-4 py-3 text-right font-medium text-slate-700 dark:text-slate-300">
+                            <TruncatedCell value={formatNumber(row.grpo_qty)} />
+                          </td>
                         )
                         if (c === 'inv_qty') return (
-                          <td key={c} className="px-4 py-3 text-right font-medium text-slate-700 dark:text-slate-300">{formatNumber(row.inv_qty)}</td>
+                          <td key={c} className="px-4 py-3 text-right font-medium text-slate-700 dark:text-slate-300">
+                            <TruncatedCell value={formatNumber(row.inv_qty)} />
+                          </td>
                         )
                         if (c === 'qty_po_gt_grpo') return (
                           <td key={c} className="px-4 py-3 text-center">
@@ -499,13 +505,19 @@ export default function ThreeWayMatching() {
                           </td>
                         )
                         if (c === 'po_rate') return (
-                          <td key={c} className="px-4 py-3 text-right font-semibold text-slate-700 dark:text-slate-300">₹{formatNumber(row.po_rate, 2)}</td>
+                          <td key={c} className="px-4 py-3 text-right font-semibold text-slate-700 dark:text-slate-300">
+                            <TruncatedCell value={`₹${formatNumber(row.po_rate, 2)}`} />
+                          </td>
                         )
                         if (c === 'grpo_rate') return (
-                          <td key={c} className="px-4 py-3 text-right font-semibold text-slate-700 dark:text-slate-300">₹{formatNumber(row.grpo_rate, 2)}</td>
+                          <td key={c} className="px-4 py-3 text-right font-semibold text-slate-700 dark:text-slate-300">
+                            <TruncatedCell value={`₹${formatNumber(row.grpo_rate, 2)}`} />
+                          </td>
                         )
                         if (c === 'inv_rate') return (
-                          <td key={c} className="px-4 py-3 text-right font-semibold text-slate-700 dark:text-slate-300">₹{formatNumber(row.inv_rate, 2)}</td>
+                          <td key={c} className="px-4 py-3 text-right font-semibold text-slate-700 dark:text-slate-300">
+                            <TruncatedCell value={`₹${formatNumber(row.inv_rate, 2)}`} />
+                          </td>
                         )
                         if (c === 'excess_over_5') return (
                           <td key={c} className="px-4 py-3 text-center">

@@ -484,7 +484,7 @@ export default function GeToGrn({ data }) {
                       const isSeq    = !isNaN(num) && num < 0   // sequence exception
                       const isBreach = !isNaN(num) && num > 2   // exceeds 2-day SLA
                       return (
-                        <td key={c} className={`px-4 py-2 whitespace-nowrap font-mono text-center ${
+                        <td key={c} className={`px-4 py-2 font-mono text-center ${
                           isSeq    ? 'bg-rose-50/30 dark:bg-rose-950/10'
                           : isBreach ? 'bg-amber-50/30 dark:bg-amber-950/10'
                           : ''
@@ -494,7 +494,7 @@ export default function GeToGrn({ data }) {
                             : isBreach ? 'text-amber-600 dark:text-amber-400 font-semibold'
                             : 'text-slate-700 dark:text-slate-300'
                           }>
-                            {val === '' || val === null || val === undefined ? '—' : val}
+                            {val === '' || val === null || val === undefined ? '—' : <TruncatedCell value={val} />}
                           </span>
                         </td>
                       )
@@ -502,22 +502,22 @@ export default function GeToGrn({ data }) {
 
                     // ── Within 2-day SLA: raw value (0 = met, blank = not applicable) ──
                     if (c === 'Within 2-day SLA') return (
-                      <td key={c} className="px-4 py-2 whitespace-nowrap font-mono text-slate-700 dark:text-slate-300 text-center">
-                        {val === null || val === undefined || val === '' ? '—' : String(val)}
+                      <td key={c} className="px-4 py-2 font-mono text-slate-700 dark:text-slate-300 text-center">
+                        {val === null || val === undefined || val === '' ? '—' : <TruncatedCell value={val} />}
                       </td>
                     )
 
                     // ── GRN > 2 days (Breach): raw value (1 = breach, 0 = no breach) ──
                     if (c === 'GRN > 2 days (Breach)') return (
-                      <td key={c} className={`px-4 py-2 whitespace-nowrap font-mono text-center ${val === 1 || val === '1' ? 'bg-amber-50/30 dark:bg-amber-950/10 text-amber-700 dark:text-amber-400' : 'text-slate-700 dark:text-slate-300'}`}>
-                        {val === null || val === undefined || val === '' ? '—' : String(val)}
+                      <td key={c} className={`px-4 py-2 font-mono text-center ${val === 1 || val === '1' ? 'bg-amber-50/30 dark:bg-amber-950/10 text-amber-700 dark:text-amber-400' : 'text-slate-700 dark:text-slate-300'}`}>
+                        {val === null || val === undefined || val === '' ? '—' : <TruncatedCell value={val} />}
                       </td>
                     )
 
                     // ── Seq Exception (GRN < GE): raw value (1 = exception, 0 = correct) ──
                     if (c === 'Seq Exception (GRN < GE)') return (
-                      <td key={c} className={`px-4 py-2 whitespace-nowrap font-mono text-center ${val === 1 || val === '1' ? 'bg-rose-50/30 dark:bg-rose-950/10 text-rose-700 dark:text-rose-400' : 'text-slate-700 dark:text-slate-300'}`}>
-                        {val === null || val === undefined || val === '' ? '—' : String(val)}
+                      <td key={c} className={`px-4 py-2 font-mono text-center ${val === 1 || val === '1' ? 'bg-rose-50/30 dark:bg-rose-950/10 text-rose-700 dark:text-rose-400' : 'text-slate-700 dark:text-slate-300'}`}>
+                        {val === null || val === undefined || val === '' ? '—' : <TruncatedCell value={val} />}
                       </td>
                     )
 

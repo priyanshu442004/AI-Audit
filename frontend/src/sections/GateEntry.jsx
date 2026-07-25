@@ -488,7 +488,7 @@ export default function GateEntry({ data }) {
                       const isNeg = !isNaN(num) && num < 0
                       const isHi = !isNaN(num) && num > 3
                       return (
-                        <td key={c} className={`px-4 py-2 whitespace-nowrap font-mono text-center ${isNeg ? 'bg-rose-50/30 dark:bg-rose-950/10' : isHi ? 'bg-amber-50/30 dark:bg-amber-950/10' : ''}`}>
+                        <td key={c} className={`px-4 py-2 font-mono text-center ${isNeg ? 'bg-rose-50/30 dark:bg-rose-950/10' : isHi ? 'bg-amber-50/30 dark:bg-amber-950/10' : ''}`}>
                           <span className={
                             isNeg
                               ? 'text-rose-600 dark:text-rose-450 font-bold'
@@ -496,7 +496,7 @@ export default function GateEntry({ data }) {
                               ? 'text-amber-600 dark:text-amber-450 font-semibold'
                               : 'text-slate-700 dark:text-slate-300'
                           }>
-                            {val === '' || val === null || val === undefined ? '—' : val}
+                            {val === '' || val === null || val === undefined ? '—' : <TruncatedCell value={val} />}
                           </span>
                         </td>
                       )

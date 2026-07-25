@@ -5,6 +5,7 @@ import DonutChart from '../components/DonutChart'
 import BarRow from '../components/BarRow'
 import RiskTable from '../components/RiskTable'
 import AiInsightBox from '../components/AiInsightBox'
+import TruncatedCell from '../components/TruncatedCell'
 import { BAR_COLORS, CHART_COLORS } from '../theme'
 import { calculateConsolidatedMetrics } from '../utils/dashboardConsolidator'
 
@@ -733,19 +734,19 @@ export default function DashboardSection({ results }) {
 
                         return (
                           <tr key={log.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-900/30 transition-colors">
-                            <td className="px-4 py-3 text-slate-500 dark:text-slate-400 whitespace-nowrap">
-                              {new Date(log.timestamp).toLocaleString()}
+                            <td className="px-4 py-3 text-slate-500 dark:text-slate-400">
+                              <TruncatedCell value={new Date(log.timestamp).toLocaleString()} />
                             </td>
                             <td className="px-4 py-3 font-semibold">
                               <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide ${actionBadgeColor}`}>
                                 {log.action}
                               </span>
                             </td>
-                            <td className="px-4 py-3 text-slate-900 dark:text-white font-mono truncate max-w-[120px]" title={log.filename}>
-                              {log.filename || '—'}
+                            <td className="px-4 py-3 text-slate-900 dark:text-white font-mono">
+                              <TruncatedCell value={log.filename || '—'} />
                             </td>
-                            <td className="px-4 py-3 text-slate-600 dark:text-slate-300 max-w-xs truncate" title={log.user_action}>
-                              {log.user_action || '—'}
+                            <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
+                              <TruncatedCell value={log.user_action || '—'} />
                             </td>
                           </tr>
                         )

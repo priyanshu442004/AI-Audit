@@ -1,4 +1,5 @@
 import React from 'react'
+import TruncatedCell from './TruncatedCell'
 
 const SEV_CLASSES = {
   CRITICAL: 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300',
@@ -31,11 +32,13 @@ export default function RiskTable({ risks = [] }) {
             {risks.map((r, i) => (
               <tr key={i} className="app-row-hover">
                 <td className="px-4 py-3 font-mono text-xs font-semibold app-body">
-                  {r.id}
+                  <TruncatedCell value={r.id} />
                 </td>
-                <td className="px-4 py-3 app-title text-[11px]">{r.risk}</td>
+                <td className="px-4 py-3 app-title text-[11px]">
+                  <TruncatedCell value={r.risk} />
+                </td>
                 <td className="px-4 py-3 app-muted text-[11px] hidden md:table-cell">
-                  {r.magnitude}
+                  <TruncatedCell value={r.magnitude} />
                 </td>
                 <td className="px-4 py-3">
                   <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${SEV_CLASSES[r.severity] || SEV_CLASSES.LOW}`}>
@@ -43,7 +46,7 @@ export default function RiskTable({ risks = [] }) {
                   </span>
                 </td>
                 <td className="px-4 py-3 app-muted text-[11px] hidden lg:table-cell">
-                  {r.action}
+                  <TruncatedCell value={r.action} />
                 </td>
               </tr>
             ))}

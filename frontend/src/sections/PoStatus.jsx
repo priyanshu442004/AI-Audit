@@ -519,11 +519,11 @@ export default function PoStatus({ data }) {
                       const raw = parseFloat(r['variance_pct_raw'] || 0)
                       const hi  = raw > 5
                       return (
-                        <td key={c} className="px-4 py-2 whitespace-nowrap">
+                        <td key={c} className="px-4 py-2">
                           <span className={hi
                             ? 'bg-rose-50 text-rose-700 dark:bg-rose-950/30 dark:text-rose-400 px-2 py-0.5 rounded border border-rose-200/50 dark:border-rose-800/30 font-bold'
                             : 'text-slate-500 dark:text-slate-400'}>
-                            {val}
+                            <TruncatedCell value={val} />
                           </span>
                         </td>
                       )
@@ -533,9 +533,9 @@ export default function PoStatus({ data }) {
                       const pct = parseFloat(val)
                       const lo  = !isNaN(pct) && pct < 50
                       return (
-                        <td key={c} className="px-4 py-2 whitespace-nowrap font-mono">
+                        <td key={c} className="px-4 py-2 font-mono">
                           <span className={lo ? 'text-amber-600 dark:text-amber-400 font-bold' : 'text-slate-600 dark:text-slate-300'}>
-                            {val}
+                            <TruncatedCell value={val} />
                           </span>
                         </td>
                       )
@@ -552,11 +552,11 @@ export default function PoStatus({ data }) {
                     )
 
                     if (c === 'Days Open') return (
-                      <td key={c} className="px-4 py-2 whitespace-nowrap">
+                      <td key={c} className="px-4 py-2 font-mono">
                         {val === 'PO is closed'
                           ? <span className="text-slate-400 italic text-[10px]">closed</span>
-                          : <span className={`font-mono font-bold ${parseInt(val) > 90 ? 'text-rose-600 dark:text-rose-400' : parseInt(val) > 30 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-700 dark:text-slate-300'}`}>
-                              {val}
+                          : <span className={`font-bold ${parseInt(val) > 90 ? 'text-rose-600 dark:text-rose-400' : parseInt(val) > 30 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-700 dark:text-slate-300'}`}>
+                              <TruncatedCell value={val} />
                             </span>}
                       </td>
                     )
