@@ -792,6 +792,7 @@ def get_logs(limit: int = 100):
 async def audit_trace_search(query: str):
     """
     Real-time cross-reference search across the 9 raw source DataFrames.
+    Supports comma-separated multi-value queries (e.g. multiple POs, dates, GRNs, Invoices).
     Returns matched rows grouped by file role.
     """
     if not query:
@@ -807,53 +808,111 @@ async def audit_trace_search(query: str):
             if not query_str:
                 return {}
                 
-            # Try parsing the query as a float for numeric columns
-            query_float = None
-            try:
-                query_float = float(query_str)
-            except ValueError:
-                pass
-                
+            # Split comma-separated tokens if present
+            raw_tokens = [t.strip() for t in query_str.split(",") if t.strip()]
+            tokens = [t for t in raw_tokens if t.lower() not in ("—", "none", "nan", "null", "nat", "")]
+            if not tokens:
+                return {}
+
             for role, df in dfs.items():
                 if df is None or df.empty:
                     continue
                     
-                # Initialize matching mask
-                mask = pd.Series(False, index=df.index)
-                
-                # Check each column using dtype-specific checks
+                combined_mask = pd.Series(False, index=df.index)
+
+                # Pre-identify date columns in this df to avoid running pd.to_datetime on arbitrary string columns
+                date_cols = set()
                 for col in df.columns:
-                    col_series = df[col]
-                    
-                    # 1. Numeric column check
-                    if pd.api.types.is_numeric_dtype(col_series):
-                        if query_float is not None:
+                    col_str = str(col).lower()
+                    if pd.api.types.is_datetime64_any_dtype(df[col]):
+                        date_cols.add(col)
+                    elif any(k in col_str for k in ("date", "dt", "time", "created", "updated", "period", "posting")):
+                        date_cols.add(col)
+
+                for token_str in tokens:
+                    token_mask = pd.Series(False, index=df.index)
+
+                    # 1. Check numeric token
+                    token_float = None
+                    try:
+                        token_float = float(token_str)
+                    except ValueError:
+                        pass
+
+                    # 2. Check date token
+                    token_dt = None
+                    token_date_str_variants = set([token_str])
+                    if any(c in token_str for c in ("/", "-", ".")) and len(token_str) >= 6:
+                        try:
+                            dt_cand = pd.to_datetime(token_str, dayfirst=True, errors="coerce")
+                            if not pd.isna(dt_cand) and 1990 <= dt_cand.year <= 2100:
+                                token_dt = dt_cand
+                                d = dt_cand.day
+                                m = dt_cand.month
+                                y = dt_cand.year
+                                yy = str(y)[-2:]
+                                token_date_str_variants.add(f"{d:02d}/{m:02d}/{y}")
+                                token_date_str_variants.add(f"{d:02d}.{m:02d}.{y}")
+                                token_date_str_variants.add(f"{d:02d}-{m:02d}-{y}")
+                                token_date_str_variants.add(f"{y}-{m:02d}-{d:02d}")
+                                token_date_str_variants.add(f"{d:02d}/{m:02d}/{yy}")
+                                token_date_str_variants.add(f"{d:02d}.{m:02d}.{yy}")
+                                token_date_str_variants.add(f"{d}/{m}/{y}")
+                                token_date_str_variants.add(f"{d}.{m}.{y}")
+                        except Exception:
+                            pass
+
+                    # Check each column
+                    for col in df.columns:
+                        col_series = df[col]
+                        
+                        # Numeric column check
+                        if pd.api.types.is_numeric_dtype(col_series):
+                            if token_float is not None:
+                                try:
+                                    num_mask = (col_series == token_float) | (col_series.round(2) == round(token_float, 2))
+                                    token_mask = token_mask | num_mask
+                                except Exception:
+                                    pass
+                        # String / Object column check
+                        elif pd.api.types.is_object_dtype(col_series) or pd.api.types.is_string_dtype(col_series):
                             try:
-                                num_mask = (col_series == query_float) | (col_series.round(2) == round(query_float, 2))
-                                mask = mask | num_mask
+                                str_col = col_series.astype(str)
+                                str_mask = pd.Series(False, index=df.index)
+                                for var in token_date_str_variants:
+                                    str_mask = str_mask | str_col.str.contains(var, case=False, na=False, regex=False)
+                                token_mask = token_mask | str_mask
                             except Exception:
                                 pass
-                        # If query is not numeric, it can never match a numeric column
-                        
-                    # 2. Object or String column check
-                    elif pd.api.types.is_object_dtype(col_series) or pd.api.types.is_string_dtype(col_series):
-                        try:
-                            str_mask = col_series.str.contains(query_str, case=False, na=False, regex=False)
-                            mask = mask | str_mask
-                        except Exception:
-                            pass
-                            
-                    # 3. Fallback check (bool, datetime, category, etc.)
-                    else:
-                        try:
-                            str_mask = col_series.astype(str).str.contains(query_str, case=False, na=False, regex=False)
-                            mask = mask | str_mask
-                        except Exception:
-                            pass
-                            
-                matched_df = df[mask]
+                        # Datetime column check
+                        elif pd.api.types.is_datetime64_any_dtype(col_series):
+                            if token_dt is not None:
+                                try:
+                                    dt_mask = col_series.dt.date == token_dt.date()
+                                    token_mask = token_mask | dt_mask
+                                except Exception:
+                                    pass
+                        else:
+                            try:
+                                str_col = col_series.astype(str)
+                                str_mask = str_col.str.contains(token_str, case=False, na=False, regex=False)
+                                token_mask = token_mask | str_mask
+                            except Exception:
+                                pass
+
+                        # Additional date matching for known date columns
+                        if token_dt is not None and col in date_cols and not pd.api.types.is_datetime64_any_dtype(col_series):
+                            try:
+                                col_dt = pd.to_datetime(col_series, dayfirst=True, errors="coerce")
+                                dt_mask = col_dt.dt.date == token_dt.date()
+                                token_mask = token_mask | dt_mask.fillna(False)
+                            except Exception:
+                                pass
+
+                    combined_mask = combined_mask | token_mask
+
+                matched_df = df[combined_mask]
                 if not matched_df.empty:
-                    # Limit to top 50 matches per sheet to prevent huge responses
                     sample_df = matched_df.head(50)
                     records = sample_df.replace({pd.NA: None, float('nan'): None}).to_dict(orient="records")
                     results[role] = sanitize_for_json(records)

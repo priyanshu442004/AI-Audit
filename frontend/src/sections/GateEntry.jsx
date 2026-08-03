@@ -422,7 +422,7 @@ export default function GateEntry({ data }) {
                     className={`px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap cursor-grab active:cursor-grabbing select-none border-b border-slate-200 dark:border-slate-700 hover:text-slate-600 dark:hover:text-slate-300 transition-colors ${
                       colFilters[c]?.trim()
                         ? 'text-blue-600 dark:text-blue-400 bg-blue-50/60 dark:bg-blue-950/20'
-                        : 'text-slate-400 dark:text-slate-500'
+                        : 'text-slate-700 dark:text-slate-300'
                     } ${dragCol === c ? 'opacity-40' : ''} ${dragOverCol === c && dragCol !== c ? 'bg-blue-100/70 dark:bg-blue-900/30 border-l-2 border-l-blue-500' : ''}`}
                   >
                     {c}
@@ -472,13 +472,13 @@ export default function GateEntry({ data }) {
                     }
 
                     if (c === 'Quantity') return (
-                      <td key={c} className="px-4 py-2 font-mono text-slate-750 dark:text-slate-250">
+                      <td key={c} className="px-4 py-2 font-mono text-slate-800 dark:text-slate-200 font-medium">
                         <TruncatedCell value={typeof val === 'number' ? val.toLocaleString() : (val ?? '—')} />
                       </td>
                     )
 
                     if (['Rate(INR)', 'Value(INR)'].includes(c)) return (
-                      <td key={c} className="px-4 py-2 font-mono text-slate-755 dark:text-slate-245">
+                      <td key={c} className="px-4 py-2 font-mono text-slate-800 dark:text-slate-200 font-medium">
                         <TruncatedCell value={typeof val === 'number' ? formatCurrency(val) : (val ?? '—')} />
                       </td>
                     )
@@ -491,10 +491,10 @@ export default function GateEntry({ data }) {
                         <td key={c} className={`px-4 py-2 font-mono text-center ${isNeg ? 'bg-rose-50/30 dark:bg-rose-950/10' : isHi ? 'bg-amber-50/30 dark:bg-amber-950/10' : ''}`}>
                           <span className={
                             isNeg
-                              ? 'text-rose-600 dark:text-rose-450 font-bold'
+                              ? 'text-rose-600 dark:text-rose-400 font-bold'
                               : isHi
-                              ? 'text-amber-600 dark:text-amber-450 font-semibold'
-                              : 'text-slate-700 dark:text-slate-300'
+                              ? 'text-amber-600 dark:text-amber-400 font-semibold'
+                              : 'text-slate-800 dark:text-slate-200'
                           }>
                             {val === '' || val === null || val === undefined ? '—' : <TruncatedCell value={val} />}
                           </span>
@@ -504,7 +504,7 @@ export default function GateEntry({ data }) {
 
                     const isNum = typeof val === 'number' || (!isNaN(parseFloat(val)) && isFinite(val) && !String(val).startsWith('0'))
                     return (
-                      <td key={c} className={`px-4 py-2 text-slate-700 dark:text-slate-350 ${isNum ? 'font-mono' : ''}`}>
+                      <td key={c} className={`px-4 py-2 text-slate-800 dark:text-slate-200 font-medium ${isNum ? 'font-mono' : ''}`}>
                         {val === null || val === undefined || val === '' ? '—' : <TruncatedCell value={val} />}
                       </td>
                     )

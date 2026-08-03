@@ -65,56 +65,13 @@ const parseDate = (dateStr) => {
 }
 
 // ---------------------------------------------------------------------------
-// Placeholder rows — replaced automatically once the backend table is wired.
-// Column keys must match COL_GROUPS above exactly (including unicode arrow).
-// ---------------------------------------------------------------------------
-const MOCK_ROWS = [
-  { 'GRN No.': '490001201', 'GRN Date': '03/04/25', 'AP Invoice No.': 'INV-TT-20250001', 'Invoice Date': '05/04/25', 'PO Number': '4500089123', 'Vendor Code': 'V001', 'Vendor Name': 'Tata Steel Ltd',             'Vendor Country': 'India',   'PO Qty': 4, 'PO Price':  61450.00, 'Invoice Value (INR)': 245800,  'Days GRN→Inv':   2, 'Within 7-day SLA': true,  'Invoice > 7 days (Breach)': false, 'Seq Exception (Inv<GRN)': false },
-  { 'GRN No.': '490001202', 'GRN Date': '05/04/25', 'AP Invoice No.': 'INV-BO-20250002', 'Invoice Date': '07/04/25', 'PO Number': '4500089124', 'Vendor Code': 'V002', 'Vendor Name': 'Bosch Limited',               'Vendor Country': 'Germany', 'PO Qty': 2, 'PO Price':  44725.00, 'Invoice Value (INR)':  89450,  'Days GRN→Inv':   2, 'Within 7-day SLA': true,  'Invoice > 7 days (Breach)': false, 'Seq Exception (Inv<GRN)': false },
-  { 'GRN No.': '490001203', 'GRN Date': '07/04/25', 'AP Invoice No.': 'INV-MR-20250003', 'Invoice Date': '15/04/25', 'PO Number': '4500089125', 'Vendor Code': 'V003', 'Vendor Name': 'Maruti Suzuki Industries',     'Vendor Country': 'India',   'PO Qty': 6, 'PO Price':  68783.33, 'Invoice Value (INR)': 412700,  'Days GRN→Inv':   8, 'Within 7-day SLA': false, 'Invoice > 7 days (Breach)': true,  'Seq Exception (Inv<GRN)': false },
-  { 'GRN No.': '490001204', 'GRN Date': '11/04/25', 'AP Invoice No.': 'INV-AB-20250004', 'Invoice Date': '22/05/25', 'PO Number': '4500089126', 'Vendor Code': 'V004', 'Vendor Name': 'ABB India Limited',             'Vendor Country': 'India',   'PO Qty': 3, 'PO Price':  59400.00, 'Invoice Value (INR)': 178200,  'Days GRN→Inv':  41, 'Within 7-day SLA': false, 'Invoice > 7 days (Breach)': true,  'Seq Exception (Inv<GRN)': false },
-  { 'GRN No.': '490001205', 'GRN Date': '09/04/25', 'AP Invoice No.': 'INV-HV-20250005', 'Invoice Date': '10/04/25', 'PO Number': '4500089127', 'Vendor Code': 'V005', 'Vendor Name': 'Havells India Ltd',             'Vendor Country': 'India',   'PO Qty': 1, 'PO Price':  56300.00, 'Invoice Value (INR)':  56300,  'Days GRN→Inv':   1, 'Within 7-day SLA': true,  'Invoice > 7 days (Breach)': false, 'Seq Exception (Inv<GRN)': false },
-  { 'GRN No.': '490001206', 'GRN Date': '10/04/25', 'AP Invoice No.': 'INV-BF-20250006', 'Invoice Date': '11/04/25', 'PO Number': '4500089128', 'Vendor Code': 'V006', 'Vendor Name': 'BASF India Limited',           'Vendor Country': 'Germany', 'PO Qty': 8, 'PO Price':  65387.50, 'Invoice Value (INR)': 523100,  'Days GRN→Inv':   1, 'Within 7-day SLA': true,  'Invoice > 7 days (Breach)': false, 'Seq Exception (Inv<GRN)': false },
-  { 'GRN No.': '490001207', 'GRN Date': '12/04/25', 'AP Invoice No.': 'INV-SI-20250007', 'Invoice Date': '30/05/25', 'PO Number': '4500089129', 'Vendor Code': 'V007', 'Vendor Name': 'Siemens Limited',               'Vendor Country': 'Germany', 'PO Qty': 5, 'PO Price':  62100.00, 'Invoice Value (INR)': 310500,  'Days GRN→Inv':  48, 'Within 7-day SLA': false, 'Invoice > 7 days (Breach)': true,  'Seq Exception (Inv<GRN)': false },
-  { 'GRN No.': '490001208', 'GRN Date': '14/04/25', 'AP Invoice No.': 'INV-MT-20250008', 'Invoice Date': '14/04/25', 'PO Number': '4500089130', 'Vendor Code': 'V008', 'Vendor Name': 'Mitsubishi Electric India',     'Vendor Country': 'Japan',   'PO Qty': 2, 'PO Price':  97700.00, 'Invoice Value (INR)': 195400,  'Days GRN→Inv':   0, 'Within 7-day SLA': true,  'Invoice > 7 days (Breach)': false, 'Seq Exception (Inv<GRN)': false },
-  { 'GRN No.': '490001209', 'GRN Date': '24/04/25', 'AP Invoice No.': 'INV-PN-20250009', 'Invoice Date': '18/06/25', 'PO Number': '4500089131', 'Vendor Code': 'V009', 'Vendor Name': 'Panasonic India Pvt Ltd',       'Vendor Country': 'Japan',   'PO Qty': 3, 'PO Price':  29200.00, 'Invoice Value (INR)':  87600,  'Days GRN→Inv':  55, 'Within 7-day SLA': false, 'Invoice > 7 days (Breach)': true,  'Seq Exception (Inv<GRN)': false },
-  { 'GRN No.': '490001210', 'GRN Date': '17/04/25', 'AP Invoice No.': 'INV-SC-20250010', 'Invoice Date': '19/04/25', 'PO Number': '4500089132', 'Vendor Code': 'V010', 'Vendor Name': 'Schneider Electric India',       'Vendor Country': 'France',  'PO Qty': 7, 'PO Price':  89914.29, 'Invoice Value (INR)': 629400,  'Days GRN→Inv':   2, 'Within 7-day SLA': true,  'Invoice > 7 days (Breach)': false, 'Seq Exception (Inv<GRN)': false },
-  { 'GRN No.': '490001211', 'GRN Date': '17/04/25', 'AP Invoice No.': 'INV-DL-20250011', 'Invoice Date': '25/04/25', 'PO Number': '4500089133', 'Vendor Code': 'V011', 'Vendor Name': 'Delta Electronics India',       'Vendor Country': 'China',   'PO Qty': 4, 'PO Price':  35575.00, 'Invoice Value (INR)': 142300,  'Days GRN→Inv':   8, 'Within 7-day SLA': false, 'Invoice > 7 days (Breach)': true,  'Seq Exception (Inv<GRN)': false },
-  { 'GRN No.': '490001212', 'GRN Date': '19/04/25', 'AP Invoice No.': 'INV-HN-20250012', 'Invoice Date': '03/06/25', 'PO Number': '4500089134', 'Vendor Code': 'V012', 'Vendor Name': 'Honeywell Automation India',   'Vendor Country': 'USA',     'PO Qty': 2, 'PO Price': 157900.00, 'Invoice Value (INR)': 315800,  'Days GRN→Inv':  45, 'Within 7-day SLA': false, 'Invoice > 7 days (Breach)': true,  'Seq Exception (Inv<GRN)': false },
-  { 'GRN No.': '490001213', 'GRN Date': '22/04/25', 'AP Invoice No.': 'INV-TT-20250013', 'Invoice Date': '25/04/25', 'PO Number': '4500089135', 'Vendor Code': 'V001', 'Vendor Name': 'Tata Steel Ltd',                 'Vendor Country': 'India',   'PO Qty': 5, 'PO Price':  77520.00, 'Invoice Value (INR)': 387600,  'Days GRN→Inv':   3, 'Within 7-day SLA': true,  'Invoice > 7 days (Breach)': false, 'Seq Exception (Inv<GRN)': false },
-  { 'GRN No.': '490001214', 'GRN Date': '24/04/25', 'AP Invoice No.': 'INV-BO-20250014', 'Invoice Date': '26/04/25', 'PO Number': '4500089136', 'Vendor Code': 'V002', 'Vendor Name': 'Bosch Limited',                   'Vendor Country': 'Germany', 'PO Qty': 3, 'PO Price':  42900.00, 'Invoice Value (INR)': 128700,  'Days GRN→Inv':   2, 'Within 7-day SLA': true,  'Invoice > 7 days (Breach)': false, 'Seq Exception (Inv<GRN)': false },
-  { 'GRN No.': '490001215', 'GRN Date': '24/04/25', 'AP Invoice No.': 'INV-AB-20250015', 'Invoice Date': '30/04/25', 'PO Number': '4500089137', 'Vendor Code': 'V004', 'Vendor Name': 'ABB India Limited',               'Vendor Country': 'India',   'PO Qty': 6, 'PO Price':  46483.33, 'Invoice Value (INR)': 278900,  'Days GRN→Inv':   6, 'Within 7-day SLA': true,  'Invoice > 7 days (Breach)': false, 'Seq Exception (Inv<GRN)': false },
-  { 'GRN No.': '490001216', 'GRN Date': '22/06/25', 'AP Invoice No.': 'INV-SI-20250016', 'Invoice Date': '21/06/25', 'PO Number': '4500089138', 'Vendor Code': 'V007', 'Vendor Name': 'Siemens Limited',                 'Vendor Country': 'Germany', 'PO Qty': 1, 'PO Price':  94200.00, 'Invoice Value (INR)':  94200,  'Days GRN→Inv':  -1, 'Within 7-day SLA': false, 'Invoice > 7 days (Breach)': false, 'Seq Exception (Inv<GRN)': true  },
-  { 'GRN No.': '490001217', 'GRN Date': '28/04/25', 'AP Invoice No.': 'INV-MR-20250017', 'Invoice Date': '10/04/25', 'PO Number': '4500089139', 'Vendor Code': 'V003', 'Vendor Name': 'Maruti Suzuki Industries',         'Vendor Country': 'India',   'PO Qty': 2, 'PO Price':  78200.00, 'Invoice Value (INR)': 156400,  'Days GRN→Inv': -18, 'Within 7-day SLA': false, 'Invoice > 7 days (Breach)': false, 'Seq Exception (Inv<GRN)': true  },
-  { 'GRN No.': '490001218', 'GRN Date': '28/04/25', 'AP Invoice No.': 'INV-HV-20250018', 'Invoice Date': '15/05/25', 'PO Number': '4500089140', 'Vendor Code': 'V005', 'Vendor Name': 'Havells India Ltd',               'Vendor Country': 'India',   'PO Qty': 4, 'PO Price':  22325.00, 'Invoice Value (INR)':  89300,  'Days GRN→Inv':  17, 'Within 7-day SLA': false, 'Invoice > 7 days (Breach)': true,  'Seq Exception (Inv<GRN)': false },
-]
-
-// ---------------------------------------------------------------------------
-// Placeholder values — keyed by the backend kpis field name that will
-// replace each entry once the backend populates them.
-// ---------------------------------------------------------------------------
-const KPI_DEFAULTS = {
-  invoices_linked_to_grn: 1938,
-  within_7_day_sla:       1812,
-  breach_gt_7_days:       126,
-  sla_compliance_pct:     '93.5%',
-  avg_days_grn_to_inv:    4.2,
-  max_days_grn_to_inv:    62.0,
-  sequence_exceptions:    17,
-  unique_po_numbers:      1221,
-  unique_grn_nos:         2346,
-  unique_ap_invoices:     1974,
-  unique_pos_flagged:     38,
-  unique_grns_flagged:    41,
-}
-
 export default function GrnToAp({ data }) {
   const kpis   = data?.kpis   || {}
   const charts = data?.charts || {}
   const tables = data?.tables || []
 
   const mainTable = tables.find(t => t.title === 'GRN to AP Invoice Full Reconciliation List')
-  const rows = mainTable?.rows?.length > 0 ? mainTable.rows : MOCK_ROWS
+  const rows = mainTable?.rows || []
 
   const [searchTerm, setSearchTerm]         = useState('')
   const [currentPage, setCurrentPage]       = useState(1)
@@ -197,7 +154,7 @@ export default function GrnToAp({ data }) {
   const startRec   = filtered.length === 0 ? 0 : (currentPage - 1) * ITEMS_PER_PAGE + 1
   const endRec     = Math.min(currentPage * ITEMS_PER_PAGE, filtered.length)
 
-  const k = (key) => kpis[key] ?? KPI_DEFAULTS[key]
+  const k = (key) => kpis[key]
 
   const fmtOneDP = (v) => (v != null && !isNaN(v)) ? Number(v).toFixed(1) : '—'
 

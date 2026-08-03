@@ -78,60 +78,13 @@ const parseDate = (dateStr) => {
   return isNaN(parsed) ? null : new Date(parsed)
 }
 
-// ---------------------------------------------------------------------------
-// Placeholder rows — replaced automatically once the backend table is wired.
-// Column keys must match COL_GROUPS above exactly (including unicode arrow).
-// ---------------------------------------------------------------------------
-const MOCK_ROWS = [
-  { 'GRN No.': '490001201', 'Gate Entry No.': 'GE/2025/00347', 'Gate Entry Date': '03/04/25', 'GRN Date': '03/04/25', 'PO Number': '4500089123', 'AP Invoice No.': 'INV-TT-20250001', 'Vendor Code': 'V001', 'Vendor Name': 'Tata Steel Ltd',             'Vendor Country': 'India',   '#Items': 4, 'GRN Value': 245800, 'Days GE→GRN':  0, 'Within 2-day SLA': true,  'GRN > 2 days (Breach)': false },
-  { 'GRN No.': '490001202', 'Gate Entry No.': 'GE/2025/00349', 'Gate Entry Date': '04/04/25', 'GRN Date': '05/04/25', 'PO Number': '4500089124', 'AP Invoice No.': 'INV-BO-20250002', 'Vendor Code': 'V002', 'Vendor Name': 'Bosch Limited',               'Vendor Country': 'Germany', '#Items': 2, 'GRN Value':  89450, 'Days GE→GRN':  1, 'Within 2-day SLA': true,  'GRN > 2 days (Breach)': false },
-  { 'GRN No.': '490001203', 'Gate Entry No.': 'GE/2025/00352', 'Gate Entry Date': '05/04/25', 'GRN Date': '07/04/25', 'PO Number': '4500089125', 'AP Invoice No.': 'INV-MR-20250003', 'Vendor Code': 'V003', 'Vendor Name': 'Maruti Suzuki Industries', 'Vendor Country': 'India',   '#Items': 6, 'GRN Value': 412700, 'Days GE→GRN':  2, 'Within 2-day SLA': true,  'GRN > 2 days (Breach)': false },
-  { 'GRN No.': '490001204', 'Gate Entry No.': 'GE/2025/00358', 'Gate Entry Date': '07/04/25', 'GRN Date': '11/04/25', 'PO Number': '4500089126', 'AP Invoice No.': 'INV-AB-20250004', 'Vendor Code': 'V004', 'Vendor Name': 'ABB India Limited',           'Vendor Country': 'India',   '#Items': 3, 'GRN Value': 178200, 'Days GE→GRN':  4, 'Within 2-day SLA': false, 'GRN > 2 days (Breach)': true  },
-  { 'GRN No.': '490001205', 'Gate Entry No.': 'GE/2025/00361', 'Gate Entry Date': '08/04/25', 'GRN Date': '09/04/25', 'PO Number': '4500089127', 'AP Invoice No.': 'INV-HV-20250005', 'Vendor Code': 'V005', 'Vendor Name': 'Havells India Ltd',           'Vendor Country': 'India',   '#Items': 1, 'GRN Value':  56300, 'Days GE→GRN':  1, 'Within 2-day SLA': true,  'GRN > 2 days (Breach)': false },
-  { 'GRN No.': '490001206', 'Gate Entry No.': 'GE/2025/00365', 'Gate Entry Date': '10/04/25', 'GRN Date': '10/04/25', 'PO Number': '4500089128', 'AP Invoice No.': 'INV-BF-20250006', 'Vendor Code': 'V006', 'Vendor Name': 'BASF India Limited',           'Vendor Country': 'Germany', '#Items': 8, 'GRN Value': 523100, 'Days GE→GRN':  0, 'Within 2-day SLA': true,  'GRN > 2 days (Breach)': false },
-  { 'GRN No.': '490001207', 'Gate Entry No.': 'GE/2025/00368', 'Gate Entry Date': '11/04/25', 'GRN Date': '12/04/25', 'PO Number': '4500089129', 'AP Invoice No.': 'INV-SI-20250007', 'Vendor Code': 'V007', 'Vendor Name': 'Siemens Limited',              'Vendor Country': 'Germany', '#Items': 5, 'GRN Value': 310500, 'Days GE→GRN':  1, 'Within 2-day SLA': true,  'GRN > 2 days (Breach)': false },
-  { 'GRN No.': '490001208', 'Gate Entry No.': 'GE/2025/00371', 'Gate Entry Date': '14/04/25', 'GRN Date': '14/04/25', 'PO Number': '4500089130', 'AP Invoice No.': 'INV-MT-20250008', 'Vendor Code': 'V008', 'Vendor Name': 'Mitsubishi Electric India',    'Vendor Country': 'Japan',   '#Items': 2, 'GRN Value': 195400, 'Days GE→GRN':  0, 'Within 2-day SLA': true,  'GRN > 2 days (Breach)': false },
-  { 'GRN No.': '490001209', 'Gate Entry No.': 'GE/2025/00374', 'Gate Entry Date': '15/04/25', 'GRN Date': '24/04/25', 'PO Number': '4500089131', 'AP Invoice No.': 'INV-PN-20250009', 'Vendor Code': 'V009', 'Vendor Name': 'Panasonic India Pvt Ltd',     'Vendor Country': 'Japan',   '#Items': 3, 'GRN Value':  87600, 'Days GE→GRN':  9, 'Within 2-day SLA': false, 'GRN > 2 days (Breach)': true  },
-  { 'GRN No.': '490001210', 'Gate Entry No.': 'GE/2025/00378', 'Gate Entry Date': '16/04/25', 'GRN Date': '17/04/25', 'PO Number': '4500089132', 'AP Invoice No.': 'INV-SC-20250010', 'Vendor Code': 'V010', 'Vendor Name': 'Schneider Electric India',     'Vendor Country': 'France',  '#Items': 7, 'GRN Value': 629400, 'Days GE→GRN':  1, 'Within 2-day SLA': true,  'GRN > 2 days (Breach)': false },
-  { 'GRN No.': '490001211', 'Gate Entry No.': 'GE/2025/00382', 'Gate Entry Date': '17/04/25', 'GRN Date': '17/04/25', 'PO Number': '4500089133', 'AP Invoice No.': 'INV-DL-20250011', 'Vendor Code': 'V011', 'Vendor Name': 'Delta Electronics India',      'Vendor Country': 'China',   '#Items': 4, 'GRN Value': 142300, 'Days GE→GRN':  0, 'Within 2-day SLA': true,  'GRN > 2 days (Breach)': false },
-  { 'GRN No.': '490001212', 'Gate Entry No.': 'GE/2025/00385', 'Gate Entry Date': '18/04/25', 'GRN Date': '19/04/25', 'PO Number': '4500089134', 'AP Invoice No.': 'INV-HN-20250012', 'Vendor Code': 'V012', 'Vendor Name': 'Honeywell Automation India',   'Vendor Country': 'USA',     '#Items': 2, 'GRN Value': 315800, 'Days GE→GRN':  1, 'Within 2-day SLA': true,  'GRN > 2 days (Breach)': false },
-  { 'GRN No.': '490001213', 'Gate Entry No.': 'GE/2025/00389', 'Gate Entry Date': '22/04/25', 'GRN Date': '22/04/25', 'PO Number': '4500089135', 'AP Invoice No.': 'INV-TT-20250013', 'Vendor Code': 'V001', 'Vendor Name': 'Tata Steel Ltd',             'Vendor Country': 'India',   '#Items': 5, 'GRN Value': 387600, 'Days GE→GRN':  0, 'Within 2-day SLA': true,  'GRN > 2 days (Breach)': false },
-  { 'GRN No.': '490001214', 'Gate Entry No.': 'GE/2025/00392', 'Gate Entry Date': '23/04/25', 'GRN Date': '24/04/25', 'PO Number': '4500089136', 'AP Invoice No.': 'INV-BO-20250014', 'Vendor Code': 'V002', 'Vendor Name': 'Bosch Limited',               'Vendor Country': 'Germany', '#Items': 3, 'GRN Value': 128700, 'Days GE→GRN':  1, 'Within 2-day SLA': true,  'GRN > 2 days (Breach)': false },
-  { 'GRN No.': '490001215', 'Gate Entry No.': 'GE/2025/00395', 'Gate Entry Date': '24/04/25', 'GRN Date': '24/04/25', 'PO Number': '4500089137', 'AP Invoice No.': 'INV-AB-20250015', 'Vendor Code': 'V004', 'Vendor Name': 'ABB India Limited',           'Vendor Country': 'India',   '#Items': 6, 'GRN Value': 278900, 'Days GE→GRN':  0, 'Within 2-day SLA': true,  'GRN > 2 days (Breach)': false },
-  { 'GRN No.': '490001216', 'Gate Entry No.': 'GE/2025/00399', 'Gate Entry Date': '25/04/25', 'GRN Date': '22/06/25', 'PO Number': '4500089138', 'AP Invoice No.': 'INV-SI-20250016', 'Vendor Code': 'V007', 'Vendor Name': 'Siemens Limited',              'Vendor Country': 'Germany', '#Items': 1, 'GRN Value':  94200, 'Days GE→GRN': 58, 'Within 2-day SLA': false, 'GRN > 2 days (Breach)': true  },
-  { 'GRN No.': '490001217', 'Gate Entry No.': 'GE/2025/00403', 'Gate Entry Date': '28/04/25', 'GRN Date': '28/04/25', 'PO Number': '4500089139', 'AP Invoice No.': 'INV-MR-20250017', 'Vendor Code': 'V003', 'Vendor Name': 'Maruti Suzuki Industries', 'Vendor Country': 'India',   '#Items': 2, 'GRN Value': 156400, 'Days GE→GRN':  0, 'Within 2-day SLA': true,  'GRN > 2 days (Breach)': false },
-  { 'GRN No.': '490001218', 'Gate Entry No.': 'GE/2025/00406', 'Gate Entry Date': '29/04/25', 'GRN Date': '28/04/25', 'PO Number': '4500089140', 'AP Invoice No.': 'INV-HV-20250018', 'Vendor Code': 'V005', 'Vendor Name': 'Havells India Ltd',           'Vendor Country': 'India',   '#Items': 4, 'GRN Value':  89300, 'Days GE→GRN': -1, 'Within 2-day SLA': false, 'GRN > 2 days (Breach)': false },
-]
-
-// ---------------------------------------------------------------------------
-// Placeholder values — keyed by the backend kpis field name that will
-// replace each entry. To wire real data: remove KPI_DEFAULTS and change
-// k(key) calls to kpis[key] directly once the backend populates them.
-// ---------------------------------------------------------------------------
-const KPI_DEFAULTS = {
-  grns_with_gate_entry:   2346,
-  within_2_day_sla:       2279,
-  breach_gt_2_days:       33,
-  sla_compliance_pct:     '97.1%',
-  avg_days_ge_to_grn:     0.2,
-  max_days_ge_to_grn:     58.0,
-  sequence_exceptions:    2,
-  unique_po_numbers:      1221,
-  unique_grn_nos:         2346,
-  unique_ap_invoices:     1974,
-  unique_ap_credit_notes: 43,
-  unique_pos_flagged:     33,
-  unique_grns_flagged:    35,
-}
-
 export default function GeToGrn({ data }) {
   const kpis   = data?.kpis   || {}
   const charts = data?.charts || {}
   const tables = data?.tables || []
 
   const mainTable = tables.find(t => t.title === 'GE to GRN Full Reconciliation List')
-  // Fall back to MOCK_ROWS until the backend populates the table
-  const rows = mainTable?.rows?.length > 0 ? mainTable.rows : MOCK_ROWS
+  const rows = mainTable?.rows || []
 
   const [searchTerm, setSearchTerm]         = useState('')
   const [currentPage, setCurrentPage]       = useState(1)
@@ -214,8 +167,8 @@ export default function GeToGrn({ data }) {
   const startRec   = filtered.length === 0 ? 0 : (currentPage - 1) * ITEMS_PER_PAGE + 1
   const endRec     = Math.min(currentPage * ITEMS_PER_PAGE, filtered.length)
 
-  // k(key) — reads live backend value when available, falls back to placeholder
-  const k = (key) => kpis[key] ?? KPI_DEFAULTS[key]
+  // k(key) — reads live backend value
+  const k = (key) => kpis[key]
 
   // fmt helpers — used by cards that need specific decimal precision
   const fmtOneDP  = (v) => (v != null && !isNaN(v)) ? Number(v).toFixed(1) : '—'

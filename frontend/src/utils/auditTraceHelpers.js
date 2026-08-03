@@ -69,10 +69,28 @@ export function getCrossReferences(value, storeState) {
 }
 
 export function findMatchedRow(rows, value, rowValues) {
-  const normalizedVal = String(value).trim().toLowerCase()
-  const possible = rows.filter(r => {
+  if (!rows || !value) return null
+  const strVal = String(value).trim()
+  const normalizedVal = strVal.toLowerCase()
+
+  // 1. Try exact cell match
+  let possible = rows.filter(r => {
     return Object.entries(r).some(([k, v]) => String(v).trim().toLowerCase() === normalizedVal)
   })
+
+  // 2. If no exact match and value contains commas, try matching any individual token
+  if (possible.length === 0 && strVal.includes(',')) {
+    const tokens = strVal.split(',').map(t => t.trim().toLowerCase()).filter(t => t && t !== '—' && t !== 'none' && t !== 'nan')
+    if (tokens.length > 0) {
+      possible = rows.filter(r => {
+        return Object.entries(r).some(([k, v]) => {
+          const cellStr = String(v).trim().toLowerCase()
+          return tokens.some(tok => cellStr.includes(tok) || tok.includes(cellStr))
+        })
+      })
+    }
+  }
+
   if (possible.length === 0) return null
   if (possible.length === 1) return possible[0]
 

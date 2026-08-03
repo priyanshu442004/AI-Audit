@@ -194,6 +194,31 @@ export default function AuditTraceModal({ isOpen, onClose, initialData }) {
                     <div className="text-2xl font-black text-blue-600 dark:text-blue-400 break-all leading-tight">
                       {currentTrace.value}
                     </div>
+                    {String(currentTrace.value).includes(',') && (
+                      <div className="mt-3 p-2.5 rounded-lg bg-blue-50/60 dark:bg-blue-950/40 border border-blue-200/80 dark:border-blue-800/60">
+                        <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wider block mb-1.5">
+                          Multiple Values ({String(currentTrace.value).split(',').filter(Boolean).length}) — Click to pivot single item:
+                        </span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {String(currentTrace.value)
+                            .split(',')
+                            .map(item => item.trim())
+                            .filter(item => item && item !== '—' && item !== 'None' && item !== 'NaN')
+                            .map((item, idx) => (
+                              <button
+                                key={idx}
+                                onClick={() => handlePivot(item, currentTrace.columnName)}
+                                className="px-2.5 py-1 text-xs font-bold rounded-md bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-300 hover:bg-blue-600 hover:text-white dark:hover:bg-blue-600 dark:hover:text-white border border-blue-200 dark:border-blue-700 shadow-xs transition-all flex items-center gap-1"
+                              >
+                                <span>{item}</span>
+                                <svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M13 9l3 3m0 0l-3 3m3-3H8" />
+                                </svg>
+                              </button>
+                            ))}
+                        </div>
+                      </div>
+                    )}
                     <span className="text-xs text-slate-500/80 dark:text-slate-500 mt-2 block">
                       Source: <span className="font-medium text-slate-600 dark:text-slate-400">{SECTION_LABELS[currentTrace.section] || currentTrace.section}</span>
                     </span>
@@ -207,7 +232,10 @@ export default function AuditTraceModal({ isOpen, onClose, initialData }) {
                     {currentMatchedRow ? (
                       <div className="flex-1 overflow-y-auto border border-slate-200 dark:border-slate-800 rounded-lg bg-white dark:bg-slate-950/30 divide-y divide-slate-100 dark:divide-slate-800">
                         {Object.entries(currentMatchedRow).map(([key, val]) => {
-                          const isClickable = val !== null && val !== undefined && val !== '' && val !== '—' && val !== 'None' && val !== 'NaN'
+                          const strVal = String(val ?? '').trim()
+                          const isClickable = strVal !== '' && strVal !== '—' && strVal !== 'None' && strVal !== 'NaN' && strVal !== 'null'
+                          const isCommaSeparated = isClickable && strVal.includes(',')
+
                           return (
                             <div key={key} className="px-4 py-3 hover:bg-blue-50/45 dark:hover:bg-blue-950/25 transition-colors">
                               <div className="flex items-start justify-between gap-2">
@@ -220,19 +248,43 @@ export default function AuditTraceModal({ isOpen, onClose, initialData }) {
                                   </svg>
                                 )}
                               </div>
-                              <span
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  if (isClickable) handlePivot(val, key)
-                                }}
-                                className={`text-xs font-semibold mt-1.5 block break-all leading-relaxed ${
-                                  isClickable
-                                    ? 'text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 cursor-pointer hover:underline decoration-dotted underline-offset-2'
-                                    : 'text-slate-500 dark:text-slate-600'
-                                }`}
-                              >
-                                {val === null || val === undefined || val === '' ? '—' : String(val)}
-                              </span>
+                              {isCommaSeparated ? (
+                                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                                  {strVal
+                                    .split(',')
+                                    .map(item => item.trim())
+                                    .filter(item => item && item !== '—' && item !== 'None' && item !== 'NaN')
+                                    .map((item, idx) => (
+                                      <button
+                                        key={idx}
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          handlePivot(item, key)
+                                        }}
+                                        className="text-xs font-semibold px-2 py-0.5 rounded bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 hover:text-white hover:bg-blue-600 dark:hover:bg-blue-600 cursor-pointer border border-blue-200/60 dark:border-blue-800/60 transition-colors flex items-center gap-1"
+                                      >
+                                        <span>{item}</span>
+                                        <svg className="w-3 h-3 flex-shrink-0 opacity-70" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" d="M13 9l3 3m0 0l-3 3m3-3H8" />
+                                        </svg>
+                                      </button>
+                                    ))}
+                                </div>
+                              ) : (
+                                <span
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    if (isClickable) handlePivot(val, key)
+                                  }}
+                                  className={`text-xs font-semibold mt-1.5 block break-all leading-relaxed ${
+                                    isClickable
+                                      ? 'text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 cursor-pointer hover:underline decoration-dotted underline-offset-2'
+                                      : 'text-slate-500 dark:text-slate-600'
+                                  }`}
+                                >
+                                  {val === null || val === undefined || val === '' ? '—' : String(val)}
+                                </span>
+                              )}
                             </div>
                           )
                         })}
