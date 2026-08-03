@@ -149,8 +149,8 @@ def run(dfs_or_ge: dict[str, pd.DataFrame] | pd.DataFrame, df_grpo_raw: pd.DataF
         col_grpo_po_no = find_col(df_grpo_raw, ["po number", "po no", "po no.", "purchase order number", "purchase order no", "purchase order", "po_no", "pono", "base ref", "baseref", "base ref.", "base_ref"])
         col_grpo_no = find_col(df_grpo_raw, ["grpo no", "grpo no.", "receipt no", "receipt number", "grpono", "goods receipt no", "grpo number", "grn", "grn no", "grn no.", "grn number"])
         col_grpo_date = find_col(df_grpo_raw, ["document date", "doc date", "docdate", "posting date", "date", "grpo date", "receipt date"])
-        col_grpo_qty = find_col(df_grpo_raw, ["po qty", "grpo qty", "received qty", "quantity", "qty", "received quantity"])
-        col_grpo_rate = find_col(df_grpo_raw, ["po price", "grpo rate", "unit price", "price", "rate", "item price", "unit cost"])
+        col_grpo_qty = find_col(df_grpo_raw, ["grpo qty", "po qty", "received qty", "quantity", "qty", "received quantity"])
+        col_grpo_rate = find_col(df_grpo_raw, ["grpo price", "po price", "grpo rate", "unit price", "price", "rate", "item price", "unit cost"])
         col_grpo_line_total = find_col(df_grpo_raw, ["line total", "linetotal", "line amount", "u_total", "total"])
         col_grpo_vendor_code = find_col(df_grpo_raw, ["vendor code", "bp code", "supplier code", "vendorcode", "bpcode", "account code", "vendor", "cardcode", "card code"])
         col_grpo_vendor_name = find_col(df_grpo_raw, ["vendor name", "bp name", "supplier name", "vendorname", "bpname", "account name", "accountname", "party name", "name", "cardname", "card name"])
@@ -388,73 +388,90 @@ def run(dfs_or_ge: dict[str, pd.DataFrame] | pd.DataFrame, df_grpo_raw: pd.DataF
         v_bill_no_grpo = "—"
         currency = ""
         
-        # Item details and values from PO Report
-        matched_po_lines = []
-        for p in po_parts:
-            matched_po_lines.extend(po_items_lookup.get(p, []))
-            
+        # Extract Item details, PO Numbers, Quantities, Rates, and Values directly from GRPO Sheet (matched_grpos) via GRN Number
+        po_numbers_from_grpo = []
         po_item_codes = []
         po_item_descs = []
         po_item_groups = []
         po_qty_sum = 0.0
         po_val_sum = 0.0
         po_rates = []
-        
-        if matched_po_lines:
-            for r_po in matched_po_lines:
-                ic = clean_str_val(r_po.get(col_po_item, "")) if col_po_item else "—"
-                if ic and ic != "—" and ic not in po_item_codes:
-                    po_item_codes.append(ic)
-                    
-                idsc = clean_str_val(r_po.get(col_po_desc, "")) if col_po_desc else "—"
-                if idsc and idsc != "—" and idsc not in po_item_descs:
-                    po_item_descs.append(idsc)
-                    
-                ig = clean_str_val(r_po.get(col_po_group, "")) if col_po_group else "—"
-                if ig and ig != "—" and ig not in po_item_groups:
-                    po_item_groups.append(ig)
-                    
-                po_qty = parse_numeric_val(r_po.get(col_po_qty)) if col_po_qty else 0.0
-                po_price = parse_numeric_val(r_po.get(col_po_price)) if col_po_price else 0.0
-                po_rate_mult = parse_numeric_val(r_po.get(col_po_rate)) if col_po_rate else 1.0
-                po_rate_inr = po_price * po_rate_mult
-                
-                po_qty_sum += po_qty
-                line_val = parse_numeric_val(r_po.get(col_po_total)) if col_po_total else (po_qty * po_rate_inr)
-                po_val_sum += line_val
-                
-                if po_rate_inr > 0:
-                    po_rate_str = f"{po_rate_inr:.2f}"
-                    if po_rate_str not in po_rates:
-                        po_rates.append(po_rate_str)
-        elif matched_grpos:
-            # Fallback to GRPO item details if PO is missing
+
+        if matched_grpos:
             for r_grpo in matched_grpos:
+                # PO Number from GRPO
+                if col_grpo_po_no:
+                    p_raw = r_grpo.get(col_grpo_po_no)
+                    p_list = [normalize_id(p) for p in str(p_raw).split(",") if normalize_id(p)] if pd.notna(p_raw) else []
+                    for p_val in p_list:
+                        if p_val and p_val not in po_numbers_from_grpo:
+                            po_numbers_from_grpo.append(p_val)
+
+                # Item Code
                 ic = clean_str_val(r_grpo.get(col_grpo_item_code, "")) if col_grpo_item_code else "—"
                 if ic and ic != "—" and ic not in po_item_codes:
                     po_item_codes.append(ic)
-                    
+
+                # Item Description
                 idsc = clean_str_val(r_grpo.get(col_grpo_item_desc, "")) if col_grpo_item_desc else "—"
                 if idsc and idsc != "—" and idsc not in po_item_descs:
                     po_item_descs.append(idsc)
-                    
+
+                # Item Group
                 ig = clean_str_val(r_grpo.get(col_grpo_item_group, "")) if col_grpo_item_group else "—"
                 if ig and ig != "—" and ig not in po_item_groups:
                     po_item_groups.append(ig)
-                    
+
+                # Quantity & Rates
                 grpo_qty = parse_numeric_val(r_grpo.get(col_grpo_qty)) if col_grpo_qty else 0.0
                 grpo_price = parse_numeric_val(r_grpo.get(col_grpo_rate)) if col_grpo_rate else 0.0
                 grpo_rate_mult = parse_numeric_val(r_grpo.get(col_grpo_doc_rate)) if col_grpo_doc_rate else 1.0
                 grpo_rate_inr = grpo_price * grpo_rate_mult
-                
+
                 po_qty_sum += grpo_qty
                 line_val = parse_numeric_val(r_grpo.get(col_grpo_line_total)) if col_grpo_line_total else (grpo_qty * grpo_rate_inr)
                 po_val_sum += line_val
-                
+
                 if grpo_rate_inr > 0:
                     grpo_rate_str = f"{grpo_rate_inr:.2f}"
                     if grpo_rate_str not in po_rates:
                         po_rates.append(grpo_rate_str)
+        else:
+            # Fallback to PO Report lines if GRPO matching is not found
+            matched_po_lines = []
+            for p in po_parts:
+                matched_po_lines.extend(po_items_lookup.get(p, []))
+
+            if matched_po_lines:
+                for r_po in matched_po_lines:
+                    ic = clean_str_val(r_po.get(col_po_item, "")) if col_po_item else "—"
+                    if ic and ic != "—" and ic not in po_item_codes:
+                        po_item_codes.append(ic)
+
+                    idsc = clean_str_val(r_po.get(col_po_desc, "")) if col_po_desc else "—"
+                    if idsc and idsc != "—" and idsc not in po_item_descs:
+                        po_item_descs.append(idsc)
+
+                    ig = clean_str_val(r_po.get(col_po_group, "")) if col_po_group else "—"
+                    if ig and ig != "—" and ig not in po_item_groups:
+                        po_item_groups.append(ig)
+
+                    po_qty = parse_numeric_val(r_po.get(col_po_qty)) if col_po_qty else 0.0
+                    po_price = parse_numeric_val(r_po.get(col_po_price)) if col_po_price else 0.0
+                    po_rate_mult = parse_numeric_val(r_po.get(col_po_rate)) if col_po_rate else 1.0
+                    po_rate_inr = po_price * po_rate_mult
+
+                    po_qty_sum += po_qty
+                    line_val = parse_numeric_val(r_po.get(col_po_total)) if col_po_total else (po_qty * po_rate_inr)
+                    po_val_sum += line_val
+
+                    if po_rate_inr > 0:
+                        po_rate_str = f"{po_rate_inr:.2f}"
+                        if po_rate_str not in po_rates:
+                            po_rates.append(po_rate_str)
+
+        if po_numbers_from_grpo:
+            po_no = ", ".join(po_numbers_from_grpo)
 
         if matched_grpos:
             for r_grpo in matched_grpos:
