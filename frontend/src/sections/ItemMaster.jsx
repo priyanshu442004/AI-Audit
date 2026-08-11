@@ -123,9 +123,9 @@ export default function ItemMaster({ data }) {
           </div>
         </div>
         
-        <div className="overflow-x-auto flex-1">
+        <div className="overflow-x-auto flex-1 max-h-[520px] overflow-y-auto">
           <table className="w-full text-xs">
-            <thead className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200/80 dark:border-slate-800/80 sticky top-0">
+            <thead className="bg-slate-50 dark:bg-slate-800/95 backdrop-blur-sm border-b border-slate-200/80 dark:border-slate-800/80 sticky top-0 z-20">
               <tr>
                 {visibleCols.map(col => (
                   <th

@@ -650,7 +650,7 @@ export default function DashboardSection({ results }) {
                 <div className="overflow-x-auto max-h-[350px] overflow-y-auto">
                   <table className="w-full text-left border-collapse">
                     <thead>
-                      <tr className="bg-slate-50 dark:bg-slate-950/80 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 dark:border-slate-800/80 sticky top-0 z-10">
+                      <tr className="bg-slate-50 dark:bg-slate-950/95 backdrop-blur-sm text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 dark:border-slate-800/80 sticky top-0 z-20">
                         <th className="px-4 py-3">Role</th>
                         <th className="px-4 py-3">Filename</th>
                         <th className="px-4 py-3 text-right">Rows</th>
@@ -716,7 +716,7 @@ export default function DashboardSection({ results }) {
                 <div className="overflow-x-auto max-h-[350px] overflow-y-auto">
                   <table className="w-full text-left border-collapse">
                     <thead>
-                      <tr className="bg-slate-50 dark:bg-slate-950/80 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 dark:border-slate-800/80 sticky top-0 z-10">
+                      <tr className="bg-slate-50 dark:bg-slate-950/95 backdrop-blur-sm text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 dark:border-slate-800/80 sticky top-0 z-20">
                         <th className="px-4 py-3">Timestamp</th>
                         <th className="px-4 py-3">Action Type</th>
                         <th className="px-4 py-3">Target Entity</th>

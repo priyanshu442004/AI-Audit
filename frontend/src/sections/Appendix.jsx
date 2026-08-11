@@ -138,9 +138,9 @@ export default function Appendix() {
         <div className="px-6 py-4.5 border-b border-slate-100 dark:border-slate-800/80">
           <h3 className="text-sm font-bold text-slate-900 dark:text-white">Glossary of Procurement Terms</h3>
         </div>
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto max-h-[450px] overflow-y-auto">
           <table className="w-full text-left border-collapse">
-            <thead>
+            <thead className="sticky top-0 z-20 bg-slate-50 dark:bg-slate-900 backdrop-blur-sm">
               <tr className="bg-slate-50/50 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800/80">
                 <th className="px-6 py-3 text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider w-40">Acronym / Term</th>
                 <th className="px-6 py-3 text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Operational Definition</th>

@@ -231,9 +231,9 @@ export default function History() {
             No active files found.
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
             <table className="w-full text-left border-collapse">
-              <thead>
+              <thead className="sticky top-0 z-20 bg-slate-50 dark:bg-slate-950 backdrop-blur-sm">
                 <tr className="bg-slate-50 dark:bg-slate-950/80 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 dark:border-slate-800/80">
                   <th className="px-6 py-4 w-12 text-center">
                     <input

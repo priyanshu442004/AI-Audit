@@ -22,7 +22,7 @@ const COL_GROUPS = [
   { label: 'Item', cols: ['Item code', 'Item Description', 'Item Group', 'UOM'] },
   { label: 'Documents', cols: ['GRN No.', 'AP Invoice No.', 'AP Credit Note'] },
   { label: 'Quantities & Value', cols: ['Ordered Qty.', 'Received Qty.', 'Pending Qty.', '%age Received', 'Rate(INR)', 'Line Value(INR)', 'Open Value(INR)', 'Days Open', 'variance>5%', 'Financial difference'] },
-  { label: 'Flags', cols: ['%age Variance', 'Pending Flag', 'Open>90d & No receipt', 'Recv<50%', 'Holiday flag'] },
+  { label: 'Flags', cols: ['%age Variance', 'Pending Flag', 'Open>90d & No receipt', 'Recv<50%', 'Holiday flag', 'Holiday Name'] },
 ]
 
 const ALL_COLS = COL_GROUPS.flatMap(g => g.cols)
@@ -514,6 +514,22 @@ export default function PoStatus({ data }) {
                         <FlagChip val={val} />
                       </td>
                     )
+
+                    if (c === 'Holiday Name') {
+                      const isFlagged = r['Holiday flag'] === 1 || r['Holiday flag'] === '1' || r['Holiday flag'] === true
+                      const holName = isFlagged ? (val && val !== 'none' ? val : (r['Holiday Name'] && r['Holiday Name'] !== 'none' ? r['Holiday Name'] : 'Holiday')) : 'none'
+                      return (
+                        <td key={c} className="px-4 py-2 whitespace-nowrap">
+                          <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-medium ${
+                            isFlagged && holName !== 'none'
+                              ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 font-semibold'
+                              : 'text-slate-400 dark:text-slate-500'
+                          }`}>
+                            {holName}
+                          </span>
+                        </td>
+                      )
+                    }
 
                     if (c === '%age Variance') {
                       const raw = parseFloat(r['variance_pct_raw'] || 0)

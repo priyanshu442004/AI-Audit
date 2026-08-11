@@ -70,17 +70,19 @@ def parse_single_date(val) -> pd.Timestamp | None:
     except:
         return None
 
-# Static list of Indian/corporate public holidays for 2025-2026
-STATIC_HOLIDAYS = {
+# Static list of Indian/corporate public holidays for 2025-2026 with holiday names
+STATIC_HOLIDAYS_MAP = {
     # 2025
-    "2025-01-01", "2025-01-26", "2025-03-14", "2025-03-31", "2025-04-10",
-    "2025-04-18", "2025-05-12", "2025-08-15", "2025-10-02", "2025-10-20",
-    "2025-10-23", "2025-11-05", "2025-12-25",
+    "2025-01-01": "New Year", "2025-01-26": "Republic Day", "2025-03-14": "Holi", "2025-03-31": "Eid-ul-Fitr",
+    "2025-04-10": "Mahavir Jayanti", "2025-04-18": "Good Friday", "2025-05-12": "Buddha Purnima", "2025-08-15": "Independence Day",
+    "2025-10-02": "Gandhi Jayanti", "2025-10-20": "Dussehra", "2025-10-23": "Diwali", "2025-11-05": "Guru Nanak Jayanti", "2025-12-25": "Christmas",
     # 2026
-    "2026-01-01", "2026-01-26", "2026-03-05", "2026-03-26", "2026-04-02",
-    "2026-04-14", "2026-05-01", "2026-08-15", "2026-10-02", "2026-10-18",
-    "2026-10-22", "2026-11-09", "2026-12-25"
+    "2026-01-01": "New Year", "2026-01-26": "Republic Day", "2026-03-04": "Holi", "2026-03-05": "Holi", "2026-03-26": "Ram Navami",
+    "2026-04-02": "Good Friday", "2026-04-14": "Ambedkar Jayanti", "2026-05-01": "May Day", "2026-08-15": "Independence Day",
+    "2026-08-28": "Raksha Bandhan", "2026-10-02": "Gandhi Jayanti", "2026-10-18": "Dussehra", "2026-10-20": "Dussehra",
+    "2026-10-22": "Diwali", "2026-11-09": "Dipavali", "2026-11-10": "Govardhan Puja", "2026-11-11": "Bhai Dooj", "2026-12-25": "Christmas"
 }
+STATIC_HOLIDAYS = set(STATIC_HOLIDAYS_MAP.keys())
 
 def parse_holiday_date(val):
     if pd.isna(val) or val is None:
@@ -103,17 +105,67 @@ def parse_holiday_date(val):
         pass
     return None
 
-def load_holiday_dates(dfs) -> set[str]:
-    holiday_dates = set()
-    if isinstance(dfs, dict) and "holiday" in dfs:
-        df_holiday = dfs["holiday"]
-        if df_holiday is not None and not df_holiday.empty:
-            for col in df_holiday.columns:
-                for val in df_holiday[col].dropna():
-                    dt = parse_holiday_date(val)
-                    if dt is not None:
-                        holiday_dates.add(dt.strftime("%Y-%m-%d"))
-            return holiday_dates
+def load_holiday_map(dfs) -> dict[str, str]:
+    holiday_map = dict(STATIC_HOLIDAYS_MAP)
+
+    def parse_df_or_file(source):
+        dfs_to_process = []
+        if isinstance(source, pd.DataFrame):
+            dfs_to_process = [source]
+        elif isinstance(source, str) and os.path.exists(source):
+            if source.lower().endswith(('.xlsx', '.xls')):
+                try:
+                    xl = pd.ExcelFile(source)
+                    for s in xl.sheet_names:
+                        dfs_to_process.append(pd.read_excel(source, sheet_name=s, header=None))
+                except Exception as e:
+                    print(f"Error reading excel holiday file: {e}")
+            elif source.lower().endswith('.csv'):
+                try:
+                    dfs_to_process.append(pd.read_csv(source, header=None))
+                except Exception as e:
+                    print(f"Error reading csv holiday file: {e}")
+        
+        for df in dfs_to_process:
+            if df is None or df.empty:
+                continue
+            for _, row in df.iterrows():
+                cells = [str(c).strip() for c in row if pd.notna(c)]
+                if not cells:
+                    continue
+                
+                found_dt = None
+                found_name = None
+                
+                for c in cells:
+                    if c.lower() in ('nan', 'none', '') or re.match(r'^\d+(\.\d+)?$', c):
+                        continue
+                    clean = re.sub(r'[\.\,]+', ' ', c)
+                    clean = re.sub(r'\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b', '', clean, flags=re.IGNORECASE)
+                    clean = ' '.join(clean.split())
+                    
+                    dt = None
+                    if len(clean) >= 5:
+                        try:
+                            parsed = pd.to_datetime(clean, errors='coerce')
+                            if pd.notna(parsed) and 2000 <= parsed.year <= 2100:
+                                dt = parsed
+                        except:
+                            pass
+                    
+                    if dt is not None and found_dt is None:
+                        found_dt = dt
+                    elif found_dt is None:
+                        if not re.search(r'\b(20\d\d|19\d\d)\b', c) and c.lower() not in ('national', 'festival', 'festlval', 'restricted', 'holiday type', 'day & date', 'holiday'):
+                            found_name = c
+                
+                if found_dt is not None:
+                    dt_str = found_dt.strftime('%Y-%m-%d')
+                    name = found_name if found_name else 'Public Holiday'
+                    holiday_map[dt_str] = name
+
+    if isinstance(dfs, dict) and "holiday" in dfs and dfs["holiday"] is not None:
+        parse_df_or_file(dfs["holiday"])
 
     try:
         current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -121,20 +173,16 @@ def load_holiday_dates(dfs) -> set[str]:
         if os.path.exists(holidays_dir):
             files = glob.glob(os.path.join(holidays_dir, "*"))
             if files:
-                filepath = files[0]
-                if filepath.lower().endswith(('.xlsx', '.xls', '.csv')):
-                    if filepath.lower().endswith('.csv'):
-                        df_holiday = pd.read_csv(filepath)
-                    else:
-                        df_holiday = pd.read_excel(filepath)
-                    for col in df_holiday.columns:
-                        for val in df_holiday[col].dropna():
-                            dt = parse_holiday_date(val)
-                            if dt is not None:
-                                holiday_dates.add(dt.strftime("%Y-%m-%d"))
+                for f in files:
+                    if f.lower().endswith(('.xlsx', '.xls', '.csv')):
+                        parse_df_or_file(f)
     except Exception as e:
         print(f"Error loading holidays from folder: {e}")
-    return holiday_dates
+
+    return holiday_map
+
+def load_holiday_dates(dfs) -> set[str]:
+    return set(load_holiday_map(dfs).keys())
 
 from app.analysis.calculated_fields import field, same_row
 
@@ -395,9 +443,7 @@ def run(dfs_or_df: dict[str, pd.DataFrame] | pd.DataFrame) -> dict:
                     po_to_ge_dates[po].append(dt_clean)
 
     # Holiday dates parsing
-    holiday_dates = load_holiday_dates(dfs)
-    if not holiday_dates:
-        holiday_dates = STATIC_HOLIDAYS
+    holiday_map = load_holiday_map(dfs)
 
     # ── 7. Process PO Lines ──────────────────────────────────────────────────
     po_records = df_po.to_dict(orient="records")
@@ -564,14 +610,19 @@ def run(dfs_or_df: dict[str, pd.DataFrame] | pd.DataFrame) -> dict:
         # Recv<50%
         recv_lt_50 = 1 if (ordered_qty > 0 and received_qty_row < ordered_qty * 0.5) else 0
 
-        # Holiday flag
+        # Holiday flag & Holiday Name
         holiday_flag = 0
+        holiday_name = "none"
         if post_date and post_date != "—":
             dt_parsed = parse_single_date(post_date)
             if dt_parsed is not None:
                 dt_str = dt_parsed.strftime("%Y-%m-%d")
-                if dt_str in holiday_dates or dt_parsed.dayofweek == 6:
+                if dt_str in holiday_map:
                     holiday_flag = 1
+                    holiday_name = holiday_map[dt_str]
+                elif dt_parsed.dayofweek == 6:
+                    holiday_flag = 1
+                    holiday_name = "Sunday"
 
         # Compute variance>5% and Financial difference
         if received_qty_row > (1.05 * ordered_qty):
@@ -614,7 +665,8 @@ def run(dfs_or_df: dict[str, pd.DataFrame] | pd.DataFrame) -> dict:
             "Pending Flag": pending_flag,
             "Open>90d & No receipt": is_open_90_no_rcpt,
             "Recv<50%": recv_lt_50,
-            "Holiday flag": holiday_flag
+            "Holiday flag": holiday_flag,
+            "Holiday Name": holiday_name
         })
 
 
@@ -828,6 +880,14 @@ def run(dfs_or_df: dict[str, pd.DataFrame] | pd.DataFrame) -> dict:
             "IF(Posting_Date IN Holidays OR DayOfWeek=Sunday, 1, 0)",
             inputs=[
                 {"field": "Posting Date", "source_file": "Purchase Order", "source_record": "PO Number"},
+            ],
+        ),
+        "Holiday Name": field(
+            "Name of holiday if Holiday flag is 1, else 'none'",
+            "IF(Holiday_flag=1, Holiday_Name, 'none')",
+            inputs=[
+                {"field": "Posting Date", "source_file": "Purchase Order", "source_record": "PO Number"},
+                {"field": "Holiday File", "source_file": "Holiday List", "source_record": "Holiday Name"},
             ],
         ),
         "variance>5%": field(

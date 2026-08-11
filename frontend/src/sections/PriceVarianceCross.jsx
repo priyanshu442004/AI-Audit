@@ -366,9 +366,9 @@ export default function PriceVarianceCross() {
         </div>
 
         {/* Responsive Table */}
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto" style={{ maxHeight: '520px', overflowY: 'auto' }}>
           <table className="w-full text-left border-collapse min-w-[2000px]">
-            <thead>
+            <thead className="sticky top-0 z-20 bg-slate-50 dark:bg-slate-800/95 backdrop-blur-sm">
               <tr className="bg-slate-50/50 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800">
                 {visibleCols.map(c => (
                   <th

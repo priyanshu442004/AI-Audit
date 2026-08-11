@@ -17,9 +17,9 @@ export default function RiskTable({ risks = [] }) {
           Top 10 Risks &amp; Recommended Actions
         </h3>
       </div>
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
         <table className="w-full text-sm">
-          <thead className="app-table-head">
+          <thead className="app-table-head sticky top-0 z-20">
             <tr>
               {['ID','Risk','Magnitude','Severity','Action'].map(h => (
                 <th key={h} className="text-left px-4 py-3 app-label">

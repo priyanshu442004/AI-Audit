@@ -22,7 +22,7 @@ const COL_GROUPS = [
   { label: 'GRN Information', cols: ['PO Number', 'AP Invoice No.', 'Vendor Code', 'Vendor Name', 'Vendor Country'] },
   { label: 'Quantities',      cols: ['#Items'] },
   { label: 'Values',          cols: ['GRN Value'] },
-  { label: 'Analysis',        cols: ['Days GE→GRN', 'Within 2-day SLA', 'GRN > 2 days (Breach)', 'Seq Exception (GRN < GE)'] },
+  { label: 'Analysis',        cols: ['Days GE→GRN', 'Within 2-day SLA', 'GRN > 2 days (Breach)'] },
 ]
 
 const ALL_COLS = COL_GROUPS.flatMap(g => g.cols)
@@ -182,7 +182,6 @@ export default function GeToGrn({ data }) {
     // Row 2 — Timing & Exceptions
     { label: 'Avg Days GE→GRN',                  value: k('avg_days_ge_to_grn'),     accent: 'blue',  desc: 'Average elapsed days between Gate Entry and GRN', fmt: fmtOneDP },
     { label: 'Max Days GE→GRN',                  value: k('max_days_ge_to_grn'),     accent: 'blue',  desc: 'Maximum observed GE to GRN duration',             fmt: fmtOneDP },
-    { label: 'Sequence Exceptions (GRN < GE)',    value: k('sequence_exceptions'),    accent: (k('sequence_exceptions') ?? 0) > 0 ? 'rose' : 'blue', desc: 'Cases where GRN date precedes Gate Entry date' },
     { label: 'Unique PO Numbers',                value: k('unique_po_numbers'),      accent: 'blue',  desc: 'Distinct purchase orders analysed' },
     // Row 3 — Unique Counts
     { label: 'Unique GRN (GRPO) Nos',            value: k('unique_grn_nos'),         accent: 'blue',  desc: 'Distinct GRNs processed' },
@@ -463,13 +462,6 @@ export default function GeToGrn({ data }) {
                     // ── GRN > 2 days (Breach): raw value (1 = breach, 0 = no breach) ──
                     if (c === 'GRN > 2 days (Breach)') return (
                       <td key={c} className={`px-4 py-2 font-mono text-center ${val === 1 || val === '1' ? 'bg-amber-50/30 dark:bg-amber-950/10 text-amber-700 dark:text-amber-400' : 'text-slate-700 dark:text-slate-300'}`}>
-                        {val === null || val === undefined || val === '' ? '—' : <TruncatedCell value={val} />}
-                      </td>
-                    )
-
-                    // ── Seq Exception (GRN < GE): raw value (1 = exception, 0 = correct) ──
-                    if (c === 'Seq Exception (GRN < GE)') return (
-                      <td key={c} className={`px-4 py-2 font-mono text-center ${val === 1 || val === '1' ? 'bg-rose-50/30 dark:bg-rose-950/10 text-rose-700 dark:text-rose-400' : 'text-slate-700 dark:text-slate-300'}`}>
                         {val === null || val === undefined || val === '' ? '—' : <TruncatedCell value={val} />}
                       </td>
                     )

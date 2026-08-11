@@ -424,9 +424,9 @@ export default function PaymentAgingDomestic() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="md:col-span-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm">
           <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-3">Top 5 Overdue Domestic Vendors</h3>
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto max-h-[350px] overflow-y-auto">
             <table className="w-full text-left text-xs border-collapse">
-              <thead>
+              <thead className="sticky top-0 z-20 bg-white dark:bg-slate-900">
                 <tr className="border-b border-slate-100 dark:border-slate-800 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                   <th className="py-2">Vendor Code</th>
                   <th className="py-2">Vendor Name</th>
@@ -543,9 +543,9 @@ export default function PaymentAgingDomestic() {
         </div>
 
         {/* Responsive Table */}
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto" style={{ maxHeight: '520px', overflowY: 'auto' }}>
           <table className="w-full text-left border-collapse min-w-[2000px]">
-            <thead>
+            <thead className="sticky top-0 z-20 bg-slate-50 dark:bg-slate-800/95 backdrop-blur-sm">
               <tr className="bg-slate-50/50 dark:bg-slate-800/40 border-b border-slate-100 dark:border-slate-800">
                 {colOrder.map(colId => {
                   const col = colMeta.get(colId)

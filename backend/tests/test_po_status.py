@@ -225,11 +225,14 @@ def test_dynamic_holidays_and_sunday():
     rows = result["tables"][3]["rows"]
 
     assert len(rows) == 3
-    # Row 0: March 1, 2026 (Sunday) -> Holiday flag = 1
+    # Row 0: March 1, 2026 (Sunday) -> Holiday flag = 1, Holiday Name = Sunday
     assert rows[0]["Holiday flag"] == 1
-    # Row 1: March 2, 2026 (Monday, not holiday) -> Holiday flag = 0
+    assert rows[0]["Holiday Name"] == "Sunday"
+    # Row 1: March 2, 2026 (Monday, not holiday) -> Holiday flag = 0, Holiday Name = none
     assert rows[1]["Holiday flag"] == 0
-    # Row 2: March 3, 2026 (Tuesday, holiday) -> Holiday flag = 1
+    assert rows[1]["Holiday Name"] == "none"
+    # Row 2: March 3, 2026 (Tuesday, holiday) -> Holiday flag = 1, Holiday Name = Public Holiday
     assert rows[2]["Holiday flag"] == 1
+    assert rows[2]["Holiday Name"] == "Public Holiday"
 
 
