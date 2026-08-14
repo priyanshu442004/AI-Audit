@@ -1,0 +1,31 @@
+================================================================================
+                       SYSTEM CHANGE LOG & CLIENT NOTES
+================================================================================
+
+--------------------------------------------------------------------------------
+CHANGE #1: Refactoring General Ledger Parser for Aging Analysis Modules
+--------------------------------------------------------------------------------
+1. WHAT IS THE CHANGE:
+   Updated the backend parsing engine across four key financial audit modules:
+   - Payment Aging (Domestic)
+   - Foreign Vendor Aging
+   - MSME Compliance
+   - Related Party Aging
+   
+   The system now automatically detects and processes both legacy sub-header 
+   General Ledger formats and flat-table columnar General Ledger exports.
+
+2. WHY (Client-Facing / Non-Technical Explanation):
+   Our audit system was previously configured to process General Ledger files formatted 
+   with vendor header blocks (as per the earlier dataset format). 
+
+   In the newly provided Q2 dataset files, the General Ledger file structure was 
+   exported in a flat table format where vendor codes are listed directly within 
+   individual transaction rows rather than under header sections. Because of this 
+   format variation between the old and new data exports, the previous logic did 
+   not detect vendor transactions in the new file, causing those four pages to display 
+   no data.
+
+   We updated our system to handle both data export layouts seamlessly. The application 
+   now automatically recognizes flat columnar reports as well as header-based reports, 
+   ensuring complete and accurate data population regardless of which file format is uploaded.

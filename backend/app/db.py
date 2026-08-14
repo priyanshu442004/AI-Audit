@@ -144,6 +144,25 @@ def delete_file(file_id: int):
         cur.close()
         put_connection(conn)
 
+def delete_all_files():
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            UPDATE s3_uploaded_files
+            SET is_deleted = TRUE
+            WHERE is_deleted = FALSE;
+        """)
+        count = cur.rowcount
+        conn.commit()
+        return count
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
+        cur.close()
+        put_connection(conn)
+
 def replace_file(file_id: int, filename: str, s3_key: str, s3_url: str, row_count: int):
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)

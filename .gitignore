@@ -46,3 +46,4 @@ Thumbs.db
 *.sln
 *.swp
 backend/.cache_dfs/
+*.timestamp-*.mjs

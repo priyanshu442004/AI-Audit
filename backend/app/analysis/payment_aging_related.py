@@ -180,57 +180,110 @@ def run_payment_aging_related(dfs: dict[str, pd.DataFrame]) -> dict:
         non_vendor_cats = {'Revenue', 'Asset', 'Equity', 'Expenditure', 'Liability', 'Customer'}
         
         # 1. Find max date in GL for reference
-        dates_in_gl = []
-        for row in gl_rows:
-            if not row:
-                continue
-            val0 = row[0]
-            col0_val = str(val0).strip() if not is_nan_or_none(val0) else ""
-            if col0_val == 'Vendor' or col0_val in non_vendor_cats:
-                continue
-            dt = parse_date(col0_val, date_cache)
-            if dt:
-                dates_in_gl.append(dt)
-        reference_date = max(dates_in_gl) if dates_in_gl else datetime.today()
+        col0_series = df_gl.iloc[:, 0].astype(str).str.strip()
+        has_vendor_headers = (col0_series == 'Vendor').any()
+        
+        date_series = pd.to_datetime(col0_series, format='%d/%m/%y', errors='coerce')
+        if date_series.dropna().empty:
+            date_series = pd.to_datetime(col0_series, errors='coerce')
+        valid_dates = date_series.dropna()
+        reference_date = valid_dates.max().to_pydatetime() if not valid_dates.empty else datetime.today()
         
         # 2. Collect transactions grouped by vendor
         vendor_transactions = {}
         vendor_names = {}
         
-        current_vendor_code = None
-        current_vendor_name = None
+        # Load BP names dictionary
+        bp_names_dict = {}
+        if df_bp is not None and not df_bp.empty:
+            col_bp_c = None
+            for alias in ["bp code", "bp_code", "card code", "cardcode"]:
+                for col in df_bp.columns:
+                    if str(col).lower().strip() == alias:
+                        col_bp_c = col
+                        break
+                if col_bp_c: break
+            col_bp_n = None
+            for alias in ["bp name", "bp_name", "card name", "cardname"]:
+                for col in df_bp.columns:
+                    if str(col).lower().strip() == alias:
+                        col_bp_n = col
+                        break
+                if col_bp_n: break
+            if col_bp_c and col_bp_n:
+                for _, bp_r in df_bp.iterrows():
+                    c_code = normalize_id(bp_r.get(col_bp_c))
+                    c_name = str(bp_r.get(col_bp_n, '')).strip()
+                    if c_code: bp_names_dict[c_code] = c_name
         
-        for row in gl_rows:
-            if not row:
-                continue
-            
-            val0 = row[0]
-            col0_val = str(val0).strip() if not is_nan_or_none(val0) else ""
-            if col0_val == 'Vendor':
-                current_vendor_code = normalize_id(row[1]) if len(row) > 1 else None
-                val9 = row[9] if len(row) > 9 else None
-                current_vendor_name = str(val9).strip() if not is_nan_or_none(val9) else ""
-                if current_vendor_code:
-                    vendor_names[current_vendor_code] = current_vendor_name
-                continue
-            elif col0_val in non_vendor_cats:
-                current_vendor_code = None
-                current_vendor_name = None
-                continue
-                
-            if current_vendor_code is None:
-                continue
-                
-            post_dt = parse_date(col0_val, date_cache)
-            if post_dt is None:
-                continue
-                
-            if not is_related_party(current_vendor_name):
-                continue
-                
-            if current_vendor_code not in vendor_transactions:
-                vendor_transactions[current_vendor_code] = []
-            vendor_transactions[current_vendor_code].append(row)
+        if has_vendor_headers:
+            current_vendor_code = None
+            current_vendor_name = None
+            for row in gl_rows:
+                if not row:
+                    continue
+                val0 = row[0]
+                col0_val = str(val0).strip() if not is_nan_or_none(val0) else ""
+                if col0_val == 'Vendor':
+                    current_vendor_code = normalize_id(row[1]) if len(row) > 1 else None
+                    val9 = row[9] if len(row) > 9 else None
+                    current_vendor_name = str(val9).strip() if not is_nan_or_none(val9) else ""
+                    if current_vendor_code:
+                        vendor_names[current_vendor_code] = current_vendor_name
+                    continue
+                elif col0_val in non_vendor_cats:
+                    current_vendor_code = None
+                    current_vendor_name = None
+                    continue
+                    
+                if current_vendor_code is None:
+                    continue
+                    
+                post_dt = parse_date(col0_val, date_cache)
+                if post_dt is None:
+                    continue
+                    
+                if not is_related_party(current_vendor_name):
+                    continue
+                    
+                if current_vendor_code not in vendor_transactions:
+                    vendor_transactions[current_vendor_code] = []
+                vendor_transactions[current_vendor_code].append(row)
+        else:
+            col_bp_idx = None
+            for idx, col_name in enumerate(df_gl.columns):
+                c_clean = str(col_name).lower().strip()
+                if any(alias in c_clean for alias in ["g/l acct/bp code", "bp code", "card code", "cardcode", "vendor code"]):
+                    col_bp_idx = idx
+                    break
+                    
+            if col_bp_idx is not None:
+                for row in gl_rows:
+                    if not row or len(row) <= col_bp_idx:
+                        continue
+                    code_val = row[col_bp_idx]
+                    if is_nan_or_none(code_val):
+                        continue
+                    c_str = normalize_id(code_val)
+                    if not c_str:
+                        continue
+                        
+                    v_name = bp_names_dict.get(c_str, "")
+                    if not v_name and len(row) > 9 and not is_nan_or_none(row[9]) and str(row[9]).strip() not in ("nan", "None", ""):
+                        v_name = str(row[9]).strip()
+
+                    if not is_related_party(v_name):
+                        continue
+                        
+                    if c_str.upper().startswith("V") or c_str in bp_names_dict or c_str in bp_terms:
+                        val0 = row[0]
+                        col0_val = str(val0).strip() if not is_nan_or_none(val0) else ""
+                        post_dt = parse_date(col0_val, date_cache)
+                        if post_dt is not None:
+                            if c_str not in vendor_transactions:
+                                vendor_transactions[c_str] = []
+                                vendor_names[c_str] = v_name
+                            vendor_transactions[c_str].append(row)
             
         # 3. Process each vendor's transactions using backward allocation
         for vcode, txs in vendor_transactions.items():

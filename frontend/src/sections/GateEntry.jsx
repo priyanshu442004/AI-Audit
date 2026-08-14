@@ -169,7 +169,7 @@ export default function GateEntry({ data }) {
 
   const kpiCards = [
     { label: 'Gate-Entry GRPO Lines', value: kpis.gate_entry_grpo_lines, accent: 'blue', desc: 'Total transaction lines' },
-    { label: 'Total Value(INR)', value: formatCurrency(kpis.total_value_inr), accent: 'blue', desc: 'Sum of matched GRPO values' },
+    { label: 'Total Value(INR)', value: formatCurrency(kpis.total_value_inr), accent: 'blue', desc: 'Sum of matched GRPO & PO values' },
     { label: 'Sequence Exceptions', value: kpis.sequence_exceptions, accent: (kpis.sequence_exceptions ?? 0) > 0 ? 'rose' : 'blue', desc: 'GE > GRPO chronological anomalies' },
     { label: 'Exceeds 3 day window', value: kpis.exceeds_3_day_window, accent: (kpis.exceeds_3_day_window ?? 0) > 0 ? 'amber' : 'blue', desc: 'Lag > 3 days between GE and GRPO' },
     { label: 'Unique PO Numbers', value: kpis.unique_po_numbers, accent: 'blue', desc: 'Distinct purchase orders linked' },

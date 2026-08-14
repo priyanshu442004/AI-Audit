@@ -35,6 +35,10 @@ export default function History() {
       .then((data) => {
         setFiles(data)
         setLoading(false)
+        if (Array.isArray(data) && data.length === 0) {
+          setResults(null)
+          setPage('upload')
+        }
       })
       .catch((err) => {
         setError(err.message || 'Error loading history.')

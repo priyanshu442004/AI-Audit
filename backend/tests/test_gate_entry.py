@@ -123,3 +123,31 @@ def test_gate_entry_reconciliation_details():
     
     # Check AP Invoice matching
     assert row["AP Invoice Number"] == "AP999"
+
+
+def test_gate_entry_currency_and_fallback_sharing():
+    """Verify that foreign currency conversion and fallback PO/GRPO sharing prevent value inflation."""
+    ge = pd.DataFrame({
+        "Gate Entry No": ["GE001", "GE002"],
+        "PO No.":        ["PO_FC", "PO_FC"],
+        "GE Date":       ["01-01-2026", "02-01-2026"],
+    })
+    
+    # 100 Qty @ $50 USD with Doc Rate 80. Line Total is in USD ($5000).
+    grpo = pd.DataFrame({
+        "PO Number": ["PO_FC"],
+        "Quantity": [100],
+        "Price": [50.0],
+        "Document Rate": [80.0],
+        "Line Total": [5000.0], # $5000 USD
+    })
+    
+    dfs = {"gate_entry": ge, "grpo": grpo}
+    result = run(dfs)
+    
+    kpis = result["kpis"]
+    # Total GRPO value in INR = 100 * $50 * 80 = ₹400,000 INR
+    # Since 2 GEs share this unlinked PO via fallback, each gets ₹200,000
+    # Sum of Total Value(INR) across KPI must equal ₹400,000 (not ₹1,000,000 or ₹800,000)
+    assert kpis["total_value_inr"] == 400000.0
+

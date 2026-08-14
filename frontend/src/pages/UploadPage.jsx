@@ -166,6 +166,7 @@ export default function UploadPage() {
       .then(data => {
         setSessionId('combined')
         setResults(data)
+        setShowUploadModal(false)
         setPage('dashboard')
       })
       .catch(err => {
@@ -176,6 +177,7 @@ export default function UploadPage() {
           onProgress: ({ pct, message }) => setProgress({ pct, message }),
           onResult: (result) => {
             setResults(result)
+            setShowUploadModal(false)
             setPage('dashboard')
           },
           onError: (msg) => {
@@ -211,6 +213,7 @@ export default function UploadPage() {
         onProgress: ({ pct, message }) => setProgress({ pct, message }),
         onResult: (result) => {
           setResults(result)
+          setShowUploadModal(false)
           setPage('dashboard')
         },
         onError: (msg) => {

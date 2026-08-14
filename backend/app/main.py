@@ -24,7 +24,7 @@ from app.loaders import load_file
 from app.pipeline import run_pipeline
 from app.insights import generate_section_insight, generate_executive_summary
 from app.config import FILE_ROLES
-from app.db import init_db, add_uploaded_file, get_active_files, delete_file, replace_file, get_file_by_id, add_audit_log, get_audit_logs
+from app.db import init_db, add_uploaded_file, get_active_files, delete_file, delete_all_files, replace_file, get_file_by_id, add_audit_log, get_audit_logs
 from app.s3 import upload_file_to_s3, download_file_from_s3
 
 # Initialize the database on startup
@@ -370,6 +370,23 @@ def list_history():
         ]
     except Exception as e:
         raise HTTPException(500, f"Database error: {str(e)}")
+
+
+@app.delete("/api/history/delete-all")
+def delete_all_history_files():
+    """Soft delete all active files from database and invalidate cached analysis."""
+    try:
+        deleted_count = delete_all_files()
+        
+        # Invalidate combined session cache
+        clear_calculation_caches()
+        
+        # Log deletion
+        add_audit_log("File Deleted", "All Active Files", f"Soft deleted all {deleted_count} active files")
+            
+        return {"status": "success", "message": f"Successfully deleted {deleted_count} files."}
+    except Exception as e:
+        raise HTTPException(500, f"Error deleting all files: {str(e)}")
 
 
 @app.delete("/api/history/{file_id}")

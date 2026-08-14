@@ -80,7 +80,19 @@ export const useStore = create((set, get) => ({
 
   setPage: (page) => set({ page }),
   setSessionId: (id) => set({ sessionId: id }),
-  setResults: (r) => set({ results: r, priceVarianceSame: null, priceVarianceCross: null, paymentAgingDomestic: null, paymentAgingForeign: null, paymentAgingRelated: null, paymentAgingMsme: null, vendorMasterNew: null, threeWayMatching: null, backgroundStates: {} }),
+  setResults: (r) => set((s) => ({
+    results: r,
+    showUploadModal: r ? false : s.showUploadModal,
+    priceVarianceSame: null,
+    priceVarianceCross: null,
+    paymentAgingDomestic: null,
+    paymentAgingForeign: null,
+    paymentAgingRelated: null,
+    paymentAgingMsme: null,
+    vendorMasterNew: null,
+    threeWayMatching: null,
+    backgroundStates: {}
+  })),
   setBackgroundState: (key, state) => set((s) => ({ backgroundStates: { ...s.backgroundStates, [key]: state } })),
   setProgress: (p) => set({ progress: p }),
   setActiveSection: (s) => set({ activeSection: s }),

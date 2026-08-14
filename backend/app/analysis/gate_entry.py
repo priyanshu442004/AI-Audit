@@ -187,40 +187,39 @@ def run(dfs_or_ge: dict[str, pd.DataFrame] | pd.DataFrame, df_grpo_raw: pd.DataF
             df_grpo_raw["parsed_grpo_date"] = pd.NaT
             
         if col_grpo_ge_no:
-            for _, row in df_grpo_raw.iterrows():
+            for idx, row in df_grpo_raw.iterrows():
                 ge_raw = row.get(col_grpo_ge_no)
                 ge_list = [normalize_id(g) for g in str(ge_raw).split(",") if normalize_id(g)] if pd.notna(ge_raw) else []
                 po_raw = row.get(col_grpo_po_no) if col_grpo_po_no else None
                 po_list = [normalize_id(p) for p in str(po_raw).split(",") if normalize_id(p)] if pd.notna(po_raw) else []
                 
                 for ge_val in ge_list:
-                    if not po_list:
-                        key = (ge_val, "")
-                        if key not in grpo_lookup:
-                            grpo_lookup[key] = []
-                        grpo_lookup[key].append(row)
+                    key = (ge_val, "")
+                    if key not in grpo_lookup:
+                        grpo_lookup[key] = []
+                    grpo_lookup[key].append((idx, row))
                     for po_val in po_list:
                         key = (ge_val, po_val)
                         if key not in grpo_lookup:
                             grpo_lookup[key] = []
-                        grpo_lookup[key].append(row)
+                        grpo_lookup[key].append((idx, row))
         
         if col_grpo_no:
-            for _, row in df_grpo_raw.iterrows():
+            for idx, row in df_grpo_raw.iterrows():
                 g_no = normalize_id(row.get(col_grpo_no))
                 if g_no:
                     if g_no not in grpo_by_no:
                         grpo_by_no[g_no] = []
-                    grpo_by_no[g_no].append(row)
+                    grpo_by_no[g_no].append((idx, row))
 
         if col_grpo_po_no:
-            for _, row in df_grpo_raw.iterrows():
+            for idx, row in df_grpo_raw.iterrows():
                 po_raw = row.get(col_grpo_po_no)
                 po_list = [normalize_id(p) for p in str(po_raw).split(",") if normalize_id(p)] if pd.notna(po_raw) else []
                 for p_no in po_list:
                     if p_no not in grpo_by_po:
                         grpo_by_po[p_no] = []
-                    grpo_by_po[p_no].append(row)
+                    grpo_by_po[p_no].append((idx, row))
 
     # ── Pre-aggregate AP Lookup ───────────────────────────────────────────────
     ap_lookup = {}
@@ -300,11 +299,24 @@ def run(dfs_or_ge: dict[str, pd.DataFrame] | pd.DataFrame, df_grpo_raw: pd.DataF
     df_ge_raw["parsed_ge_date"] = pd.to_datetime(df_ge_raw[col_ge_date], errors='coerce', dayfirst=True) if col_ge_date else pd.NaT
     df_ge_raw["parsed_v_bill_date"] = pd.to_datetime(df_ge_raw[col_ge_vendor_bill_date], errors='coerce', dayfirst=True) if col_ge_vendor_bill_date else pd.NaT
 
-    valid_pos = set()
-    if df_po_raw is not None and not df_po_raw.empty:
-        col_po_no = find_col(df_po_raw, ["po no", "po no.", "po number", "purchase order no", "purchase order number"])
-        if col_po_no:
-            valid_pos = {normalize_id(x) for x in df_po_raw[col_po_no].dropna()}
+    # Key count dictionaries to calculate n_shares across all match strategies
+    ge_no_counts = {}
+    ge_grpo_counts = {}
+    ge_po_counts = {}
+
+    if df_ge_raw is not None and not df_ge_raw.empty:
+        for _, row in df_ge_raw.iterrows():
+            ge_no = normalize_id(row.get(col_ge_no))
+            if ge_no:
+                ge_no_counts[ge_no] = ge_no_counts.get(ge_no, 0) + 1
+            if col_ge_grpo_no:
+                ge_grpo_val = normalize_id(row.get(col_ge_grpo_no))
+                if ge_grpo_val:
+                    ge_grpo_counts[ge_grpo_val] = ge_grpo_counts.get(ge_grpo_val, 0) + 1
+            po_no_raw = row.get(col_ge_po_no) if col_ge_po_no else None
+            po_parts_check = [normalize_id(p) for p in str(po_no_raw).split(",") if normalize_id(p)] if po_no_raw and not pd.isna(po_no_raw) else []
+            for p in po_parts_check:
+                ge_po_counts[p] = ge_po_counts.get(p, 0) + 1
 
     for _, row in df_ge_raw.iterrows():
         ge_no_raw = row.get(col_ge_no)
@@ -332,6 +344,8 @@ def run(dfs_or_ge: dict[str, pd.DataFrame] | pd.DataFrame, df_grpo_raw: pd.DataF
             
         # 1. Lookup GRPO
         matched_grpos = []
+        is_fallback_match = False
+        match_strategy = None
         
         # A. Try matching by GRPO Number (col_ge_grpo_no)
         if col_ge_grpo_no:
@@ -339,36 +353,40 @@ def run(dfs_or_ge: dict[str, pd.DataFrame] | pd.DataFrame, df_grpo_raw: pd.DataF
             if ge_grpo_val:
                 candidate_grpos = grpo_by_no.get(ge_grpo_val, [])
                 if po_parts:
-                    matched_grpos = [r for r in candidate_grpos if po_overlap(r.get(col_grpo_po_no), po_no)]
+                    matched_grpos = [item for item in candidate_grpos if po_overlap((item[1] if isinstance(item, tuple) else item).get(col_grpo_po_no), po_no)]
                 if not matched_grpos:
                     matched_grpos = candidate_grpos
+                if matched_grpos:
+                    match_strategy = ("A", ge_grpo_val)
                     
         # B. Try matching by Gate Entry Number in GRPO (col_grpo_ge_no)
-        if not matched_grpos and col_grpo_ge_no:
-            if po_parts:
-                for p in po_parts:
-                    candidates = grpo_lookup.get((ge_no, p))
-                    if candidates:
-                        matched_grpos.extend(candidates)
-            if not matched_grpos:
-                matched_grpos = grpo_lookup.get((ge_no, ""), [])
+        if not matched_grpos and col_grpo_ge_no and ge_no:
+            matched_grpos = grpo_lookup.get((ge_no, ""), [])
+            if matched_grpos:
+                match_strategy = ("B", ge_no)
                 
         # C. Fallback to matching by PO Number only
         if not matched_grpos and po_parts:
+            is_fallback_match = True
             for p in po_parts:
                 candidates = grpo_by_po.get(p)
                 if candidates:
                     matched_grpos.extend(candidates)
+            if matched_grpos:
+                match_strategy = ("C", po_parts[0] if po_parts else "")
+
+        if not match_strategy and po_parts:
+            match_strategy = ("PO", po_parts[0] if po_parts else "")
 
         # Deduplicate matched GRPOs
         if matched_grpos:
-            seen_grpo_ids = set()
+            seen_grpo_idxs = set()
             unique_grpos = []
-            for r in matched_grpos:
-                r_id = id(r)
-                if r_id not in seen_grpo_ids:
-                    seen_grpo_ids.add(r_id)
-                    unique_grpos.append(r)
+            for item in matched_grpos:
+                idx_g, r_g = item if isinstance(item, tuple) else (id(item), item)
+                if idx_g not in seen_grpo_idxs:
+                    seen_grpo_idxs.add(idx_g)
+                    unique_grpos.append(r_g)
             matched_grpos = unique_grpos
         else:
             matched_grpos = []
@@ -426,10 +444,27 @@ def run(dfs_or_ge: dict[str, pd.DataFrame] | pd.DataFrame, df_grpo_raw: pd.DataF
                 grpo_qty = parse_numeric_val(r_grpo.get(col_grpo_qty)) if col_grpo_qty else 0.0
                 grpo_price = parse_numeric_val(r_grpo.get(col_grpo_rate)) if col_grpo_rate else 0.0
                 grpo_rate_mult = parse_numeric_val(r_grpo.get(col_grpo_doc_rate)) if col_grpo_doc_rate else 1.0
+                if grpo_rate_mult <= 0:
+                    grpo_rate_mult = 1.0
                 grpo_rate_inr = grpo_price * grpo_rate_mult
 
                 po_qty_sum += grpo_qty
-                line_val = parse_numeric_val(r_grpo.get(col_grpo_line_total)) if col_grpo_line_total else (grpo_qty * grpo_rate_inr)
+
+                # Line total currency conversion check
+                raw_line_total = parse_numeric_val(r_grpo.get(col_grpo_line_total)) if col_grpo_line_total else 0.0
+                if raw_line_total > 0:
+                    if grpo_rate_mult > 1.0 and grpo_price > 0 and grpo_qty > 0:
+                        calc_fc = grpo_qty * grpo_price
+                        calc_inr = grpo_qty * grpo_rate_inr
+                        if abs(raw_line_total - calc_fc) < abs(raw_line_total - calc_inr):
+                            line_val = raw_line_total * grpo_rate_mult
+                        else:
+                            line_val = raw_line_total
+                    else:
+                        line_val = raw_line_total
+                else:
+                    line_val = grpo_qty * grpo_rate_inr
+
                 po_val_sum += line_val
 
                 if grpo_rate_inr > 0:
@@ -458,15 +493,60 @@ def run(dfs_or_ge: dict[str, pd.DataFrame] | pd.DataFrame, df_grpo_raw: pd.DataF
 
             if not matched_grpos or po_qty_sum == 0.0:
                 po_qty_sum = sum(parse_numeric_val(r_po.get(col_po_qty)) if col_po_qty else 0.0 for r_po in matched_po_lines)
-                po_val_sum = sum(parse_numeric_val(r_po.get(col_po_total)) if col_po_total else (parse_numeric_val(r_po.get(col_po_qty)) * parse_numeric_val(r_po.get(col_po_price)) * parse_numeric_val(r_po.get(col_po_rate))) for r_po in matched_po_lines)
+                
+                calculated_po_val = 0.0
+                for r_po in matched_po_lines:
+                    p_qty = parse_numeric_val(r_po.get(col_po_qty)) if col_po_qty else 0.0
+                    p_price = parse_numeric_val(r_po.get(col_po_price)) if col_po_price else 0.0
+                    p_mult = parse_numeric_val(r_po.get(col_po_rate)) if col_po_rate else 1.0
+                    if p_mult <= 0:
+                        p_mult = 1.0
+                    p_rate_inr = p_price * p_mult
+
+                    raw_po_total = parse_numeric_val(r_po.get(col_po_total)) if col_po_total else 0.0
+                    if raw_po_total > 0:
+                        if p_mult > 1.0 and p_price > 0 and p_qty > 0:
+                            calc_fc = p_qty * p_price
+                            calc_inr = p_qty * p_rate_inr
+                            if abs(raw_po_total - calc_fc) < abs(raw_po_total - calc_inr):
+                                l_val = raw_po_total * p_mult
+                            else:
+                                l_val = raw_po_total
+                        else:
+                            l_val = raw_po_total
+                    else:
+                        l_val = p_qty * p_rate_inr
+                    calculated_po_val += l_val
+                po_val_sum = calculated_po_val
+
                 for r_po in matched_po_lines:
                     p_price = parse_numeric_val(r_po.get(col_po_price)) if col_po_price else 0.0
                     p_mult = parse_numeric_val(r_po.get(col_po_rate)) if col_po_rate else 1.0
+                    if p_mult <= 0:
+                        p_mult = 1.0
                     p_rate = p_price * p_mult
                     if p_rate > 0:
                         p_rate_str = f"{p_rate:.2f}"
                         if p_rate_str not in po_rates:
                             po_rates.append(p_rate_str)
+
+        # Proportional share allocation across matching GEs to prevent value inflation
+        n_shares = 1
+        if match_strategy:
+            stype, sval = match_strategy
+            if stype == "A":
+                n_shares = ge_grpo_counts.get(sval, 1)
+            elif stype == "B":
+                n_shares = ge_no_counts.get(sval, 1)
+            elif stype in ("C", "PO"):
+                if all_po_nums:
+                    n_shares = max((ge_po_counts.get(p, 1) for p in all_po_nums), default=1)
+        if ge_no:
+            n_shares = max(n_shares, ge_no_counts.get(ge_no, 1))
+
+        if n_shares > 1:
+            po_qty_sum = po_qty_sum / n_shares
+            po_val_sum = po_val_sum / n_shares
 
         if po_numbers_from_grpo:
             po_no = ", ".join(po_numbers_from_grpo)
