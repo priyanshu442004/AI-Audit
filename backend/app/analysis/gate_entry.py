@@ -347,8 +347,14 @@ def run(dfs_or_ge: dict[str, pd.DataFrame] | pd.DataFrame, df_grpo_raw: pd.DataF
         is_fallback_match = False
         match_strategy = None
         
-        # A. Try matching by GRPO Number (col_ge_grpo_no)
-        if col_ge_grpo_no:
+        # A. Try matching by Gate Entry Number in GRPO (col_grpo_ge_no)
+        if col_grpo_ge_no and ge_no:
+            matched_grpos = grpo_lookup.get((ge_no, ""), [])
+            if matched_grpos:
+                match_strategy = ("B", ge_no)
+
+        # B. Fallback to matching by GRPO Number (col_ge_grpo_no)
+        if not matched_grpos and col_ge_grpo_no:
             ge_grpo_val = normalize_id(row.get(col_ge_grpo_no))
             if ge_grpo_val:
                 candidate_grpos = grpo_by_no.get(ge_grpo_val, [])
@@ -358,12 +364,6 @@ def run(dfs_or_ge: dict[str, pd.DataFrame] | pd.DataFrame, df_grpo_raw: pd.DataF
                     matched_grpos = candidate_grpos
                 if matched_grpos:
                     match_strategy = ("A", ge_grpo_val)
-                    
-        # B. Try matching by Gate Entry Number in GRPO (col_grpo_ge_no)
-        if not matched_grpos and col_grpo_ge_no and ge_no:
-            matched_grpos = grpo_lookup.get((ge_no, ""), [])
-            if matched_grpos:
-                match_strategy = ("B", ge_no)
                 
         # C. Fallback to matching by PO Number only
         if not matched_grpos and po_parts:
@@ -450,13 +450,13 @@ def run(dfs_or_ge: dict[str, pd.DataFrame] | pd.DataFrame, df_grpo_raw: pd.DataF
 
                 po_qty_sum += grpo_qty
 
-                # Line total currency conversion check
+                # Raw matched line total directly from GRPO report (converted if explicitly in FC)
                 raw_line_total = parse_numeric_val(r_grpo.get(col_grpo_line_total)) if col_grpo_line_total else 0.0
                 if raw_line_total > 0:
                     if grpo_rate_mult > 1.0 and grpo_price > 0 and grpo_qty > 0:
                         calc_fc = grpo_qty * grpo_price
                         calc_inr = grpo_qty * grpo_rate_inr
-                        if abs(raw_line_total - calc_fc) < abs(raw_line_total - calc_inr):
+                        if abs(raw_line_total - calc_fc) < abs(raw_line_total - calc_inr) and raw_line_total < (calc_inr / 2.0):
                             line_val = raw_line_total * grpo_rate_mult
                         else:
                             line_val = raw_line_total
@@ -541,8 +541,6 @@ def run(dfs_or_ge: dict[str, pd.DataFrame] | pd.DataFrame, df_grpo_raw: pd.DataF
             elif stype in ("C", "PO"):
                 if all_po_nums:
                     n_shares = max((ge_po_counts.get(p, 1) for p in all_po_nums), default=1)
-        if ge_no:
-            n_shares = max(n_shares, ge_no_counts.get(ge_no, 1))
 
         if n_shares > 1:
             po_qty_sum = po_qty_sum / n_shares
