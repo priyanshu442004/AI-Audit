@@ -1,13 +1,15 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { useStore } from '../store'
 import { analyzeStream, fetchLogs } from '../api'
 import DonutChart from '../components/DonutChart'
 import BarRow from '../components/BarRow'
 import RiskTable from '../components/RiskTable'
 import AiInsightBox from '../components/AiInsightBox'
-import TruncatedCell from '../components/TruncatedCell'
 import { BAR_COLORS, CHART_COLORS } from '../theme'
 import { calculateConsolidatedMetrics } from '../utils/dashboardConsolidator'
+import PageActionBar from '../components/PageActionBar'
+import ExceptionModal from '../components/ExceptionModal'
+import { AlertTriangle } from 'lucide-react'
 
 const PREFETCH_METADATA = {
   priceVarianceSame: {
@@ -56,11 +58,21 @@ const ROLE_LABELS = {
   item_master: 'Item Master',
 }
 
-function Kpi({ label, value, sub, color, desc, isLoading }) {
+function Kpi({ label, value, sub, color, desc, isLoading, isException, onClick }) {
   return (
-    <div className="group relative overflow-hidden rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 p-5 shadow-sm hover:shadow-md transition-all duration-200">
+    <div 
+      onClick={onClick}
+      className={`group relative overflow-hidden rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 p-5 shadow-sm transition-all duration-200 ${
+        isException ? 'cursor-pointer hover:border-rose-500/50 hover:shadow-md' : 'hover:shadow-md'
+      }`}
+    >
       <div className="flex items-center justify-between mb-3">
         <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">{label}</span>
+        {isException && (
+          <span className="flex items-center gap-0.5 text-[9px] font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 px-1.5 py-0.5 rounded-full border border-rose-200 dark:border-rose-800/40">
+            <AlertTriangle className="w-2.5 h-2.5" /> Exception
+          </span>
+        )}
         {isLoading && (
           <span className="flex h-2 w-2 relative">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
@@ -90,6 +102,9 @@ export default function DashboardSection({ results }) {
   const store = useStore()
   const { setPage, setResults, setProgress, backgroundStates = {} } = store
   const [showHydrationDetails, setShowHydrationDetails] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+  const [showExceptionModal, setShowExceptionModal] = useState(false)
+  const [exceptionTitle, setExceptionTitle] = useState('')
 
   const isModuleLoading = (key) => {
     const status = backgroundStates[key]
@@ -114,7 +129,7 @@ export default function DashboardSection({ results }) {
   const poSegs = poChart.segments || []
   const twSegs = (twChart.segments || []).slice(0, 5)
 
-  // Cover cards (Database source counts)
+  // Cover cards (Database source counts - NO missing bill dates entity)
   const sourceCards = [
     { label: 'Purchase Orders', value: (coverKpis.purchase_orders ?? 0).toLocaleString(), icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2', color: 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300' },
     { label: 'GRPO Documents', value: (coverKpis.grpo_documents ?? 0).toLocaleString(), icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z', color: 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300' },
@@ -135,7 +150,6 @@ export default function DashboardSection({ results }) {
     setLoadingFiles(true)
     setLoadingLogs(true)
     
-    // Fetch files
     fetch('/api/history')
       .then((res) => {
         if (!res.ok) throw new Error('Failed to fetch history')
@@ -154,7 +168,6 @@ export default function DashboardSection({ results }) {
         setLoadingFiles(false)
       })
 
-    // Fetch logs
     fetchLogs(20)
       .then((data) => {
         setLogs(data)
@@ -169,6 +182,22 @@ export default function DashboardSection({ results }) {
   useEffect(() => {
     fetchHistoryAndLogs()
   }, [])
+
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    fetchHistoryAndLogs()
+    try {
+      const res = await fetch('/api/result/combined')
+      if (res.ok) {
+        const data = await res.json()
+        setResults(data)
+      }
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setRefreshing(false)
+    }
+  }
 
   const handleDelete = async (id, filename) => {
     if (!window.confirm(`Are you sure you want to delete "${filename}"? This will exclude it from future audit runs.`)) {
@@ -248,6 +277,26 @@ export default function DashboardSection({ results }) {
     })
   }
 
+  // Dashboard Exception rows calculation
+  const exceptionRows = useMemo(() => {
+    const allRisks = risks.map(r => ({
+      Category: r.category || 'Risk Exception',
+      Title: r.title || r.issue || 'Exception',
+      Description: r.description || r.detail || 'Audit Finding',
+      Severity: r.severity || 'HIGH',
+      Impact: r.impact || 'Financial Leakage',
+      exception: 1
+    }))
+    return allRisks
+  }, [risks])
+
+  const openExceptionModal = (titleStr) => {
+    setExceptionTitle(titleStr)
+    setShowExceptionModal(true)
+  }
+
+  const exportCols = ['Category', 'Title', 'Description', 'Severity', 'Impact']
+
   return (
     <div className="space-y-8 pb-16">
       <input
@@ -258,11 +307,21 @@ export default function DashboardSection({ results }) {
         accept=".csv,.xlsx,.xls"
       />
 
+      {/* Page Action Bar */}
+      <PageActionBar
+        title="Executive Audit Dashboard"
+        subtitle="High-level P2P audit overview, compliance risk metrics, and database source counts."
+        badgeText="FY 2026-27 Complete"
+        onRefresh={handleRefresh}
+        refreshing={refreshing}
+        columns={exportCols}
+        data={exceptionRows}
+        filenamePrefix="Executive_Audit_Summary"
+      />
+
       {/* ── Welcome Hero Banner ── */}
       <div className="relative overflow-hidden rounded-xl bg-slate-900 border border-slate-800 text-white p-8 sm:p-10 shadow-lg">
-        {/* Subtle grid pattern */}
         <div className="absolute inset-0 bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:24px_24px] opacity-20"></div>
-        
         <div className="relative z-10 max-w-3xl space-y-3">
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold bg-blue-500/20 text-blue-300 border border-blue-500/30">
             System Status: Audit Complete
@@ -499,6 +558,8 @@ export default function DashboardSection({ results }) {
             sub="Violations of 45-Day Payment Rule" 
             color="text-rose-600 dark:text-rose-400"
             desc="Strict regulatory compliance check" 
+            isException={true}
+            onClick={() => openExceptionModal('MSME 45-Day Rule Breaches')}
             isLoading={isModuleLoading('paymentAgingMsme')}
           />
           <Kpi 
@@ -507,6 +568,8 @@ export default function DashboardSection({ results }) {
             sub={recoveriesSubtext} 
             color="text-emerald-600 dark:text-emerald-400"
             desc="Immediate savings opportunity" 
+            isException={true}
+            onClick={() => openExceptionModal('Price Variance & Potential Recoveries')}
             isLoading={isModuleLoading('priceVarianceSame') || isModuleLoading('priceVarianceCross')}
           />
           <Kpi 
@@ -515,6 +578,8 @@ export default function DashboardSection({ results }) {
             sub={overdueSubtext} 
             color="text-amber-600 dark:text-amber-500"
             desc="Aging ledger exceptions" 
+            isException={true}
+            onClick={() => openExceptionModal('Overdue AP Invoices')}
             isLoading={isModuleLoading('paymentAgingDomestic') || isModuleLoading('paymentAgingForeign') || isModuleLoading('paymentAgingRelated') || isModuleLoading('paymentAgingMsme')}
           />
           <Kpi 
@@ -523,6 +588,8 @@ export default function DashboardSection({ results }) {
             sub="Over 5% tolerance threshold" 
             color="text-rose-600 dark:text-rose-400"
             desc="GRPO vs PO quantity checks" 
+            isException={true}
+            onClick={() => openExceptionModal('GRPO Quantity Deviations > 5%')}
             isLoading={isModuleLoading('threeWayMatching')}
           />
           <Kpi 
@@ -538,6 +605,8 @@ export default function DashboardSection({ results }) {
             sub={`${execKpis.duplicates ?? 0} Dup + ${execKpis.missing_gstin ?? 0} Missing Tax IDs`} 
             color="text-amber-600 dark:text-amber-500"
             desc="BP Registry anomalies" 
+            isException={true}
+            onClick={() => openExceptionModal('Vendor Master Data Exceptions')}
             isLoading={isModuleLoading('vendorMasterNew')}
           />
         </div>
@@ -699,29 +768,31 @@ export default function DashboardSection({ results }) {
                           <td className="px-4 py-3 font-semibold text-slate-900 dark:text-white truncate max-w-[120px]">
                             {ROLE_LABELS[file.role] || file.role}
                           </td>
-                          <td className="px-4 py-3 text-slate-600 dark:text-slate-300 font-mono truncate max-w-[150px]" title={file.filename}>
-                            <a href={file.s3Url || file.s3_url} target="_blank" rel="noopener noreferrer" className="hover:underline hover:text-blue-500">
-                              {file.filename}
-                            </a>
+                          <td className="px-4 py-3 text-slate-600 dark:text-slate-300 font-mono text-[11px] truncate max-w-[180px]" title={file.original_name}>
+                            {file.original_name}
                           </td>
-                          <td className="px-4 py-3 text-right font-semibold text-slate-900 dark:text-white">
-                            {(file.rowCount ?? file.row_count ?? 0).toLocaleString()}
+                          <td className="px-4 py-3 text-right font-mono text-slate-600 dark:text-slate-400">
+                            {(file.row_count || 0).toLocaleString()}
                           </td>
                           <td className="px-4 py-3 text-center">
-                            <div className="flex items-center justify-center gap-1.5">
+                            <div className="flex items-center justify-center gap-2">
                               <button
                                 onClick={() => handleReplaceClick(file.id)}
-                                className="flex items-center gap-0.5 px-2 py-1 rounded border border-slate-200 dark:border-slate-800 hover:border-blue-500 hover:bg-blue-500/5 text-slate-700 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 transition-all"
+                                className="p-1 rounded text-blue-600 hover:bg-blue-50 dark:text-blue-400 dark:hover:bg-blue-950/40 transition"
                                 title="Replace file"
                               >
-                                Replace
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 7.89M21 3v5h-5" />
+                                </svg>
                               </button>
                               <button
-                                onClick={() => handleDelete(file.id, file.filename)}
-                                className="flex items-center gap-0.5 px-2 py-1 rounded border border-slate-200 dark:border-slate-800 hover:border-rose-500 hover:bg-rose-500/5 text-slate-700 dark:text-slate-300 hover:text-rose-600 dark:hover:text-rose-400 transition-all"
+                                onClick={() => handleDelete(file.id, file.original_name)}
+                                className="p-1 rounded text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40 transition"
                                 title="Delete file"
                               >
-                                Delete
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
                               </button>
                             </div>
                           </td>
@@ -737,64 +808,45 @@ export default function DashboardSection({ results }) {
           {/* Audit Logs */}
           <div className="space-y-4">
             <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">
-              System Audit Trails (Live Actions)
+              Recent System Logs
             </h3>
-            
-            <div className="overflow-hidden rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800/80 shadow-sm">
+            <div className="overflow-hidden rounded-xl bg-slate-950 border border-slate-800 p-4 font-mono text-xs text-slate-300 shadow-sm max-h-[350px] overflow-y-auto">
               {loadingLogs ? (
-                <div className="py-12 text-center text-slate-400">
-                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mx-auto mb-2" />
-                  Loading execution logs...
-                </div>
+                <div className="py-12 text-center text-slate-500">Loading system logs...</div>
               ) : logs.length === 0 ? (
-                <div className="py-12 text-center text-slate-400">No logs generated yet.</div>
+                <div className="py-12 text-center text-slate-500">No recent logs recorded.</div>
               ) : (
-                <div className="overflow-x-auto max-h-[350px] overflow-y-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="bg-slate-50 dark:bg-slate-950/95 backdrop-blur-sm text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 dark:border-slate-800/80 sticky top-0 z-20">
-                        <th className="px-4 py-3">Timestamp</th>
-                        <th className="px-4 py-3">Action Type</th>
-                        <th className="px-4 py-3">Target Entity</th>
-                        <th className="px-4 py-3">Details</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80 text-xs">
-                      {logs.map((log) => {
-                        let actionBadgeColor = 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
-                        if (log.action === 'File Uploaded') actionBadgeColor = 'bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400'
-                        if (log.action === 'File Replaced') actionBadgeColor = 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-400'
-                        if (log.action === 'File Deleted') actionBadgeColor = 'bg-rose-50 text-rose-700 dark:bg-rose-900/20 dark:text-rose-400'
-                        if (log.action === 'Pipeline Run') actionBadgeColor = 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400'
-                        if (log.action === 'Dashboard Fetched') actionBadgeColor = 'bg-teal-50 text-teal-700 dark:bg-teal-900/20 dark:text-teal-400'
-
-                        return (
-                          <tr key={log.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-900/30 transition-colors">
-                            <td className="px-4 py-3 text-slate-500 dark:text-slate-400">
-                              <TruncatedCell value={new Date(log.timestamp).toLocaleString()} />
-                            </td>
-                            <td className="px-4 py-3 font-semibold">
-                              <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide ${actionBadgeColor}`}>
-                                {log.action}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3 text-slate-900 dark:text-white font-mono">
-                              <TruncatedCell value={log.filename || '—'} />
-                            </td>
-                            <td className="px-4 py-3 text-slate-600 dark:text-slate-300">
-                              <TruncatedCell value={log.user_action || '—'} />
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
+                <div className="space-y-2">
+                  {logs.map((log, index) => (
+                    <div key={index} className="flex items-start gap-2 border-b border-slate-900 pb-1.5 last:border-0">
+                      <span className="text-slate-500 text-[10px] whitespace-nowrap">{log.timestamp}</span>
+                      <span className={`px-1.5 py-0.2 text-[9px] font-bold rounded uppercase ${
+                        log.level === 'ERROR' ? 'bg-rose-950 text-rose-400 border border-rose-800' :
+                        log.level === 'WARN' ? 'bg-amber-950 text-amber-400 border border-amber-800' :
+                        'bg-blue-950 text-blue-400 border border-blue-800'
+                      }`}>
+                        {log.level}
+                      </span>
+                      <span className="text-slate-300 break-all">{log.message}</span>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
           </div>
         </div>
       </div>
+
+      {/* Exception Modal */}
+      <ExceptionModal
+        isOpen={showExceptionModal}
+        onClose={() => setShowExceptionModal(false)}
+        title={exceptionTitle}
+        subtitle="Executive high-risk exception items flagged during compliance audit"
+        columns={exportCols}
+        rows={exceptionRows}
+        filenamePrefix="Executive_Exceptions"
+      />
     </div>
   )
 }

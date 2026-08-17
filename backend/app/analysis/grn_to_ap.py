@@ -132,19 +132,22 @@ def _seq_exception(raw_grn, raw_inv) -> int | None:
         return None
 
 
-def _calc_days(raw_from, raw_to) -> int | None:
-    """Return absolute integer calendar days between two raw date values.
-    Both inputs are raw cell values; returns None if either is missing or invalid."""
+from app.analysis.holiday_utils import load_holiday_map, calc_business_days
+
+
+def _calc_days(raw_from, raw_to, date_cache=None, holiday_set=None) -> int | None:
+    """Return integer business working days lag (raw_to − raw_from).
+    Excludes Sundays and holidays. Returns None if either date is invalid."""
     if raw_from is None or raw_to is None:
         return None
-    try:
-        d_from = pd.to_datetime(raw_from, errors="coerce", dayfirst=True)
-        d_to   = pd.to_datetime(raw_to,   errors="coerce", dayfirst=True)
-        if pd.isna(d_from) or pd.isna(d_to):
-            return None
-        return abs(int((d_to - d_from).days))
-    except Exception:
-        return None
+    key = (str(raw_from).strip(), str(raw_to).strip())
+    if date_cache is not None and key in date_cache:
+        return date_cache[key]
+    
+    res = calc_business_days(raw_from, raw_to, holiday_set)
+    if date_cache is not None:
+        date_cache[key] = res
+    return res
 
 
 def run(dfs: dict) -> dict:
@@ -153,12 +156,11 @@ def run(dfs: dict) -> dict:
     if df_grpo is None or df_grpo.empty:
         return _EMPTY_RESULT
 
+    holiday_map = load_holiday_map(dfs)
+    holiday_set = set(holiday_map.keys())
+    date_cache = {}
+
     # ── Detect source columns from the GRPO Report ───────────────────────────
-    # grpo_no:      "GRPO No", "GRPO No.", "Receipt No", "Goods Receipt No", …
-    # posting_date: "Document Date", "Posting Date", "Doc Date", "Date", …
-    # po_no:        "PO Number", "PO No", "Purchase Order No", …
-    # vendor_code:  "Vendor Code", "BP Code", "Supplier Code", …
-    # vendor_name:  "Vendor Name", "BP Name", "Supplier Name", …
     grpo_map      = detect_columns(df_grpo)
     col_grn       = grpo_map.get("grpo_no")
     col_grn_date  = grpo_map.get("posting_date") or grpo_map.get("grpo_date")
@@ -176,12 +178,6 @@ def run(dfs: dict) -> dict:
     )
 
     # ── Build AP Invoice lookup: GRPO Number → first matching invoice record ──
-    # Prefer the dedicated AP Invoice Report; fall back to Purchase Register.
-    # Join key: GRPO's GRPO No. ↔ AP Invoice Report's GRPO Number column.
-    # "AP Invoice No." → invoice_no canonical
-    # "Document Date"  → posting_date canonical (fallback: invoice_date)
-    #
-    # inv_lookup: { normalized_grpo_no: {"invoice_no": str|None, "invoice_date": str|None} }
     inv_lookup: dict[str, dict] = {}
     df_ap = dfs.get("ap_invoice_report")
     if df_ap is None:
@@ -191,9 +187,6 @@ def run(dfs: dict) -> dict:
         col_ap_grpo   = ap_map.get("grpo_no")
         col_ap_inv    = ap_map.get("invoice_no")
         col_ap_lt     = ap_map.get("line_total")
-        # Invoice Date must come from "Document Date" when that column exists.
-        # posting_date alias list checks "posting date" before "document date",
-        # so we check the exact header first to avoid picking the wrong column.
         _ap_doc_date = next(
             (c for c in df_ap.columns if c.strip().lower() == "document date"),
             None,
@@ -203,7 +196,7 @@ def run(dfs: dict) -> dict:
         if col_ap_grpo and col_ap_inv:
             for _, ap_row in df_ap.iterrows():
                 grpo_key = _normalize_id(ap_row[col_ap_grpo])
-                if grpo_key and grpo_key not in inv_lookup:  # first invoice per GRPO No. wins
+                if grpo_key and grpo_key not in inv_lookup:
                     inv_lookup[grpo_key] = {
                         "invoice_no":       _safe_str(ap_row[col_ap_inv]),
                         "invoice_date":     _fmt_date(ap_row[col_ap_date]) if col_ap_date else None,
@@ -218,7 +211,7 @@ def run(dfs: dict) -> dict:
         inv_info        = inv_lookup.get(grpo_key, {})
         grn_date_raw    = grpo_row[col_grn_date] if col_grn_date else None
         inv_date_raw    = inv_info.get("invoice_date_raw")
-        days_grn_inv    = _calc_days(grn_date_raw, inv_date_raw)
+        days_grn_inv    = _calc_days(grn_date_raw, inv_date_raw, date_cache, holiday_set)
         seq_exception   = _seq_exception(grn_date_raw, inv_date_raw)
 
         rows.append({

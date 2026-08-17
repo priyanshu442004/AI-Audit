@@ -431,7 +431,7 @@ def run_variance_analysis(dfs: dict[str, pd.DataFrame], mode: str) -> dict:
         out_rows.sort(key=lambda x: (x["item_description"].strip().upper(), x["item_code"].strip().upper()))
 
     # Calculate KPIs
-    vendor_items = len(out_rows)
+    vendor_items = len(vendor_item_stats) if mode == "same" else len(out_rows)
     # Count of vendors with inconsistent UOM
     if mode == "same":
         uom_inconsistent_count = sum(1 for vc, inc in vendor_uoms_consistent.items() if inc == 0)

@@ -462,9 +462,21 @@ def run_payment_aging_foreign(dfs: dict[str, pd.DataFrame]) -> dict:
                     "aging_category": aging_cat
                 })
 
-    out_rows.sort(key=lambda x: (x["vendor_code"], x["posting_date"]))
+    total_lines = len(out_rows)
+    unique_vendors = len({r["vendor_code"] for r in out_rows if r.get("vendor_code")})
+    total_paid = sum(r.get("actual_paid", 0.0) for r in out_rows)
+    total_outstanding = sum(r.get("outstanding", 0.0) for r in out_rows)
+    overdue_amount = sum(r.get("outstanding", 0.0) for r in out_rows if r.get("days_late", 0) > 0)
+
+    kpis = {
+        "total_lines": total_lines,
+        "unique_vendors": unique_vendors,
+        "total_paid": round(total_paid, 2),
+        "total_outstanding": round(total_outstanding, 2),
+        "overdue_amount": round(overdue_amount, 2)
+    }
 
     return {
         "rows": out_rows,
-        "kpis": {}
+        "kpis": kpis
     }

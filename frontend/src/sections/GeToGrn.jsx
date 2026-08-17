@@ -2,6 +2,9 @@ import React, { useState, useMemo } from 'react'
 import AiInsightBox from '../components/AiInsightBox'
 import TruncatedCell from '../components/TruncatedCell'
 import useColumnOrder from '../hooks/useColumnOrder'
+import PageActionBar from '../components/PageActionBar'
+import ExceptionModal from '../components/ExceptionModal'
+import { AlertTriangle } from 'lucide-react'
 
 const formatCurrency = (val) => {
   if (val === null || val === undefined) return '—'
@@ -12,11 +15,6 @@ const formatCurrency = (val) => {
   return `₹${num.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
 }
 
-// ---------------------------------------------------------------------------
-// Column configuration — each group maps to a tab in the toolbar.
-// ALL_COLS (flat) defines the "All" column order; matches the exact spec order.
-// To add/rename columns when backend is connected: update COL_GROUPS only.
-// ---------------------------------------------------------------------------
 const COL_GROUPS = [
   { label: 'GE Information',  cols: ['GRN No.', 'Gate Entry No.', 'Gate Entry Date', 'GRN Date'] },
   { label: 'GRN Information', cols: ['PO Number', 'AP Invoice No.', 'Vendor Code', 'Vendor Name', 'Vendor Country'] },
@@ -26,10 +24,7 @@ const COL_GROUPS = [
 ]
 
 const ALL_COLS = COL_GROUPS.flatMap(g => g.cols)
-
-const CURRENCY_COLS = []
-// Integer columns rendered with toLocaleString (no decimals)
-const INT_COLS      = ['#Items']
+const INT_COLS = ['#Items']
 
 function SortIcon({ dir }) {
   if (!dir) return (
@@ -43,19 +38,6 @@ function SortIcon({ dir }) {
         ? <path strokeLinecap="round" strokeLinejoin="round" d="M5 15l7-7 7 7" />
         : <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />}
     </svg>
-  )
-}
-
-function FlagChip({ val }) {
-  const flagged = val === 1 || val === '1' || val === true
-  return (
-    <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
-      flagged
-        ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400'
-        : 'bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-600'
-    }`}>
-      {flagged ? '1' : '0'}
-    </span>
   )
 }
 
@@ -80,7 +62,6 @@ const parseDate = (dateStr) => {
 
 export default function GeToGrn({ data }) {
   const kpis   = data?.kpis   || {}
-  const charts = data?.charts || {}
   const tables = data?.tables || []
 
   const mainTable = tables.find(t => t.title === 'GE to GRN Full Reconciliation List')
@@ -95,6 +76,11 @@ export default function GeToGrn({ data }) {
   const [colFilters, setColFilters]         = useState({})
   const [startDate, setStartDate]           = useState('')
   const [endDate, setEndDate]               = useState('')
+  const [refreshing, setRefreshing]         = useState(false)
+  const [showExceptionModal, setShowExceptionModal] = useState(false)
+  const [exceptionTitle, setExceptionTitle] = useState('')
+  const [exceptionModalRows, setExceptionModalRows] = useState([])
+
   const ITEMS_PER_PAGE = 25
 
   const { order: colOrder, moveColumn } = useColumnOrder('ge-to-grn', ALL_COLS)
@@ -123,6 +109,12 @@ export default function GeToGrn({ data }) {
   }
 
   const handleSearch = (e) => { setSearchTerm(e.target.value); setCurrentPage(1) }
+
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    await new Promise(r => setTimeout(r, 600))
+    setRefreshing(false)
+  }
 
   const filtered = useMemo(() => {
     const term = searchTerm.trim().toLowerCase()
@@ -162,34 +154,75 @@ export default function GeToGrn({ data }) {
     return out
   }, [rows, searchTerm, colFilters, sortCol, sortDir, startDate, endDate])
 
+  const openExceptionModal = (titleStr, filterFn, dedupeKey) => {
+    setExceptionTitle(titleStr)
+    let res = rows.filter(filterFn)
+    if (dedupeKey) {
+      const seen = new Set()
+      res = res.filter(r => {
+        const kVal = r[dedupeKey]
+        if (!kVal || kVal === '—' || seen.has(kVal)) return false
+        seen.add(kVal)
+        return true
+      })
+    }
+    setExceptionModalRows(res)
+    setShowExceptionModal(true)
+  }
+
   const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE))
   const paginated  = filtered.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE)
   const startRec   = filtered.length === 0 ? 0 : (currentPage - 1) * ITEMS_PER_PAGE + 1
   const endRec     = Math.min(currentPage * ITEMS_PER_PAGE, filtered.length)
 
-  // k(key) — reads live backend value
   const k = (key) => kpis[key]
-
-  // fmt helpers — used by cards that need specific decimal precision
   const fmtOneDP  = (v) => (v != null && !isNaN(v)) ? Number(v).toFixed(1) : '—'
 
   const kpiCards = [
-    // Row 1 — Volume & SLA
     { label: 'GRNs with Gate Entry',             value: k('grns_with_gate_entry'),   accent: 'blue',  desc: 'GRNs successfully linked with a Gate Entry' },
     { label: 'Within 2-Day SLA',                 value: k('within_2_day_sla'),       accent: 'blue',  desc: 'GRN completed within 2 days of Gate Entry' },
-    { label: 'Breach > 2 Days',                  value: k('breach_gt_2_days'),       accent: (k('breach_gt_2_days') ?? 0) > 0 ? 'amber' : 'blue', desc: 'GRNs exceeding the 2-day SLA' },
+    { 
+      label: 'Breach > 2 Days',                  
+      value: k('breach_gt_2_days'),       
+      accent: (k('breach_gt_2_days') ?? 0) > 0 ? 'amber' : 'blue', 
+      desc: 'GRNs exceeding the 2-day SLA', 
+      isException: true,
+      onCardClick: () => openExceptionModal(
+        'GRN > 2 Days SLA Breach',
+        r => r['GRN > 2 days (Breach)'] === 1 || r['GRN > 2 days (Breach)'] === '1' || parseInt(r['Days GE→GRN']) > 2
+      )
+    },
     { label: 'SLA Compliance %',                 value: k('sla_compliance_pct'),     accent: 'blue',  desc: 'GRNs processed within SLA' },
-    // Row 2 — Timing & Exceptions
     { label: 'Avg Days GE→GRN',                  value: k('avg_days_ge_to_grn'),     accent: 'blue',  desc: 'Average elapsed days between Gate Entry and GRN', fmt: fmtOneDP },
     { label: 'Max Days GE→GRN',                  value: k('max_days_ge_to_grn'),     accent: 'blue',  desc: 'Maximum observed GE to GRN duration',             fmt: fmtOneDP },
     { label: 'Unique PO Numbers',                value: k('unique_po_numbers'),      accent: 'blue',  desc: 'Distinct purchase orders analysed' },
-    // Row 3 — Unique Counts
     { label: 'Unique GRN (GRPO) Nos',            value: k('unique_grn_nos'),         accent: 'blue',  desc: 'Distinct GRNs processed' },
     { label: 'Unique AP Invoices',               value: k('unique_ap_invoices'),     accent: 'blue',  desc: 'Distinct AP invoices linked' },
     { label: 'Unique AP Credit Notes',           value: k('unique_ap_credit_notes'), accent: 'blue',  desc: 'Distinct AP credit notes identified' },
-    { label: 'Unique POs Flagged (Red/Amber)',   value: k('unique_pos_flagged'),     accent: (k('unique_pos_flagged') ?? 0) > 0 ? 'rose' : 'blue', desc: 'Purchase orders containing SLA exceptions' },
-    // Row 4 — Flagged GRNs
-    { label: 'Unique GRNs Flagged (Red/Amber)',  value: k('unique_grns_flagged'),    accent: (k('unique_grns_flagged') ?? 0) > 0 ? 'rose' : 'blue', desc: 'Distinct GRNs with SLA or sequence exceptions' },
+    { 
+      label: 'Unique POs Flagged (Red/Amber)',   
+      value: k('unique_pos_flagged'),     
+      accent: (k('unique_pos_flagged') ?? 0) > 0 ? 'rose' : 'blue', 
+      desc: 'Purchase orders containing SLA exceptions', 
+      isException: true,
+      onCardClick: () => openExceptionModal(
+        'Unique POs Flagged (Red/Amber Exceptions)',
+        r => (r['GRN > 2 days (Breach)'] === 1 || parseInt(r['Days GE→GRN']) < 0 || parseInt(r['Days GE→GRN']) > 2) && r['PO Number'] && r['PO Number'] !== '—',
+        'PO Number'
+      )
+    },
+    { 
+      label: 'Unique GRNs Flagged (Red/Amber)',  
+      value: k('unique_grns_flagged'),    
+      accent: (k('unique_grns_flagged') ?? 0) > 0 ? 'rose' : 'blue', 
+      desc: 'Distinct GRNs with SLA or sequence exceptions', 
+      isException: true,
+      onCardClick: () => openExceptionModal(
+        'Unique GRNs Flagged (Red/Amber Exceptions)',
+        r => (r['GRN > 2 days (Breach)'] === 1 || parseInt(r['Days GE→GRN']) < 0 || parseInt(r['Days GE→GRN']) > 2) && r['GRN No.'] && r['GRN No.'] !== '—',
+        'GRN No.'
+      )
+    },
   ]
 
   const accentMap = {
@@ -201,21 +234,17 @@ export default function GeToGrn({ data }) {
 
   return (
     <div className="space-y-6">
-      {/* Page Header */}
-      <div className="flex items-start justify-between">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-            GE to GRN Check
-          </h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-            Reconciliation of Gate Entry records against Goods Receipt Notes — identifying unmatched entries, quantity discrepancies, and timing gaps between physical receipt and system acknowledgement
-          </p>
-        </div>
-        <span className="hidden md:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-100 dark:bg-slate-800 text-[11px] font-semibold text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-700">
-          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          Live Audit
-        </span>
-      </div>
+      {/* Action Bar Header */}
+      <PageActionBar
+        title="GE to GRN Check"
+        subtitle="Reconciliation of Gate Entry records against Goods Receipt Notes — identifying unmatched entries, quantity discrepancies, and SLA timing gaps."
+        badgeText="Live Audit"
+        onRefresh={handleRefresh}
+        refreshing={refreshing}
+        columns={ALL_COLS}
+        data={rows}
+        filenamePrefix="GE_to_GRN_Reconciliation"
+      />
 
       <AiInsightBox section="getogrn" kpis={kpis} />
 
@@ -224,13 +253,25 @@ export default function GeToGrn({ data }) {
         {kpiCards.map((k) => {
           const ac = accentMap[k.accent] || accentMap.blue
           return (
-            <div key={k.label}
-              className="relative bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm hover:shadow-md transition-shadow duration-200 overflow-hidden flex flex-col justify-between">
+            <div 
+              key={k.label}
+              onClick={k.onCardClick}
+              className={`relative bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm transition-all duration-200 overflow-hidden flex flex-col justify-between ${
+                k.isException ? 'cursor-pointer hover:border-rose-500/50 hover:shadow-md' : 'hover:shadow-md'
+              }`}
+            >
               <div className={`absolute top-0 left-0 right-0 h-0.5 ${ac.bar}`} />
               <div>
-                <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-widest leading-tight mb-2">
-                  {k.label}
-                </p>
+                <div className="flex items-center justify-between gap-1 mb-2">
+                  <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-widest leading-tight">
+                    {k.label}
+                  </p>
+                  {k.isException && (
+                    <span className="flex items-center gap-0.5 text-[9px] font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 px-1.5 py-0.5 rounded-full border border-rose-200 dark:border-rose-800/40">
+                      <AlertTriangle className="w-2.5 h-2.5" /> Exception
+                    </span>
+                  )}
+                </div>
                 <p className={`text-lg font-black tracking-tight leading-none ${ac.text}`}>
                   {k.fmt
                     ? k.fmt(k.value)
@@ -247,7 +288,6 @@ export default function GeToGrn({ data }) {
 
       {/* Details Table */}
       <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-        {/* Table toolbar */}
         <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex flex-col gap-3">
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div>
@@ -255,7 +295,6 @@ export default function GeToGrn({ data }) {
               <p className="text-xs text-slate-400 mt-0.5">Cross-file match status · timing analysis · SLA compliance</p>
             </div>
             <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
-              {/* Global search */}
               <div className="relative">
                 <svg className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none"
                   fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
@@ -270,7 +309,6 @@ export default function GeToGrn({ data }) {
                 />
               </div>
 
-              {/* Date Range Filter */}
               <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800/60 p-1.5 rounded-lg border border-slate-200 dark:border-slate-700">
                 <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 px-1 flex items-center gap-1">
                   <svg className="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
@@ -304,7 +342,6 @@ export default function GeToGrn({ data }) {
                 )}
               </div>
 
-              {/* Column filters toggle */}
               <button
                 onClick={() => setShowColFilters(v => !v)}
                 className={`relative inline-flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold rounded-lg border transition-all duration-150 ${
@@ -334,7 +371,6 @@ export default function GeToGrn({ data }) {
             </div>
           </div>
 
-          {/* Column group tabs */}
           <div className="flex items-center gap-1.5 flex-wrap">
             {['All', ...COL_GROUPS.map(g => g.label)].map(g => (
               <button
@@ -355,7 +391,6 @@ export default function GeToGrn({ data }) {
           </div>
         </div>
 
-        {/* Table */}
         <div className="overflow-x-auto" style={{ maxHeight: '520px', overflowY: 'auto' }}>
           <table className="w-full text-left border-collapse text-xs">
             <thead className="sticky top-0 z-20 bg-slate-50 dark:bg-slate-800/95 backdrop-blur-sm">
@@ -414,7 +449,6 @@ export default function GeToGrn({ data }) {
                   {visibleCols.map(c => {
                     const val = r[c]
 
-                    // ── GRN Value: raw numeric, no symbol, no abbreviation ──
                     if (c === 'GRN Value') return (
                       <td key={c} className="px-4 py-2 whitespace-nowrap font-mono text-slate-700 dark:text-slate-300 text-right">
                         {val === null || val === undefined || val === ''
@@ -423,18 +457,16 @@ export default function GeToGrn({ data }) {
                       </td>
                     )
 
-                    // ── Integer / count columns ─────────────────────────────
                     if (INT_COLS.includes(c)) return (
                       <td key={c} className="px-4 py-2 whitespace-nowrap font-mono text-slate-700 dark:text-slate-300 text-right">
                         {typeof val === 'number' ? val.toLocaleString() : String(val ?? '—')}
                       </td>
                     )
 
-                    // ── Days GE→GRN: colour-coded numeric ──────────────────
                     if (c === 'Days GE→GRN') {
                       const num = parseInt(val)
-                      const isSeq    = !isNaN(num) && num < 0   // sequence exception
-                      const isBreach = !isNaN(num) && num > 2   // exceeds 2-day SLA
+                      const isSeq    = !isNaN(num) && num < 0
+                      const isBreach = !isNaN(num) && num > 2
                       return (
                         <td key={c} className={`px-4 py-2 font-mono text-center ${
                           isSeq    ? 'bg-rose-50/30 dark:bg-rose-950/10'
@@ -452,21 +484,18 @@ export default function GeToGrn({ data }) {
                       )
                     }
 
-                    // ── Within 2-day SLA: raw value (0 = met, blank = not applicable) ──
                     if (c === 'Within 2-day SLA') return (
                       <td key={c} className="px-4 py-2 font-mono text-slate-700 dark:text-slate-300 text-center">
                         {val === null || val === undefined || val === '' ? '—' : <TruncatedCell value={val} />}
                       </td>
                     )
 
-                    // ── GRN > 2 days (Breach): raw value (1 = breach, 0 = no breach) ──
                     if (c === 'GRN > 2 days (Breach)') return (
                       <td key={c} className={`px-4 py-2 font-mono text-center ${val === 1 || val === '1' ? 'bg-amber-50/30 dark:bg-amber-950/10 text-amber-700 dark:text-amber-400' : 'text-slate-700 dark:text-slate-300'}`}>
                         {val === null || val === undefined || val === '' ? '—' : <TruncatedCell value={val} />}
                       </td>
                     )
 
-                    // ── Default: plain text (IDs, names, dates, countries) ──
                     return (
                       <td key={c} className="px-4 py-2 text-slate-700 dark:text-slate-300">
                         {val === null || val === undefined || val === '' ? '—' : <TruncatedCell value={val} />}
@@ -479,7 +508,6 @@ export default function GeToGrn({ data }) {
           </table>
         </div>
 
-        {/* Pagination */}
         <div className="px-5 py-3.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/20 flex items-center justify-between gap-4 flex-wrap">
           <span className="text-xs text-slate-500 dark:text-slate-400">
             Showing <span className="font-semibold text-slate-800 dark:text-white">{startRec}</span>–<span className="font-semibold text-slate-800 dark:text-white">{endRec}</span> of <span className="font-semibold text-slate-800 dark:text-white">{filtered.length.toLocaleString()}</span> lines
@@ -511,6 +539,17 @@ export default function GeToGrn({ data }) {
           </div>
         </div>
       </div>
+
+      {/* Exception Modal */}
+      <ExceptionModal
+        isOpen={showExceptionModal}
+        onClose={() => setShowExceptionModal(false)}
+        title={exceptionTitle}
+        subtitle="Gate Entry to GRN line items matching selected exception criteria"
+        columns={ALL_COLS}
+        rows={exceptionModalRows}
+        filenamePrefix="GE_to_GRN_Exceptions"
+      />
     </div>
   )
 }

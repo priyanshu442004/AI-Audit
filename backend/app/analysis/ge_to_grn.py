@@ -131,19 +131,22 @@ def _safe_num(val) -> float | None:
         return None
 
 
-def _calc_days(raw_from, raw_to) -> int | None:
-    """Return integer calendar days (raw_to − raw_from) using datetime objects.
-    Both inputs are raw cell values; returns None if either is missing or invalid."""
+from app.analysis.holiday_utils import load_holiday_map, calc_business_days
+
+
+def _calc_days(raw_from, raw_to, date_cache=None, holiday_set=None) -> int | None:
+    """Return integer business working days lag (raw_to − raw_from).
+    Excludes Sundays and holidays. Returns None if either date is invalid."""
     if raw_from is None or raw_to is None:
         return None
-    try:
-        d_from = pd.to_datetime(raw_from, errors="coerce", dayfirst=True)
-        d_to   = pd.to_datetime(raw_to,   errors="coerce", dayfirst=True)
-        if pd.isna(d_from) or pd.isna(d_to):
-            return None
-        return abs(int((d_to - d_from).days))
-    except Exception:
-        return None
+    key = (str(raw_from).strip(), str(raw_to).strip())
+    if date_cache is not None and key in date_cache:
+        return date_cache[key]
+    
+    res = calc_business_days(raw_from, raw_to, holiday_set)
+    if date_cache is not None:
+        date_cache[key] = res
+    return res
 
 
 def run(dfs: dict) -> dict:
@@ -152,24 +155,17 @@ def run(dfs: dict) -> dict:
     if df_grpo is None or df_grpo.empty:
         return _EMPTY_RESULT
 
+    holiday_map = load_holiday_map(dfs)
+    holiday_set = set(holiday_map.keys())
+    date_cache = {}
+
     # ── GRPO Report column detection ─────────────────────────────────────────
-    # detect_columns resolves headers case-insensitively via config.py aliases.
-    #   grpo_no      → "GRPO No", "Receipt No", "GRN No", …
-    #   ge_no        → "Gate Entry No", "GE No", "Security Entry No", …
-    #   po_no        → "PO Number", "PO No", "Purchase Order No", …
-    #   vendor_code  → "Vendor Code", "BP Code", "Supplier Code", …
-    #   vendor_name  → "Vendor Name", "BP Name", "Supplier Name", …
-    #   posting_date → "Document Date", "Posting Date", "Doc Date", …  (GRN Date)
-    #   grpo_date    → "GRPO Date", "Receipt Date", …                  (GRN Date fallback)
     grpo_map        = detect_columns(df_grpo)
     col_grn         = grpo_map.get("grpo_no")
     col_ge          = grpo_map.get("ge_no")
     col_po          = grpo_map.get("po_no")
     col_vendor_code = grpo_map.get("vendor_code")
     col_vendor_name = grpo_map.get("vendor_name")
-    # GRN Date must come from "Document Date" when that column exists.
-    # detect_columns resolves posting_date to "Posting Date" before "Document Date"
-    # (alias order in config.py), so we check for the exact header first.
     _doc_date_col = next(
         (c for c in df_grpo.columns if c.strip().lower() == "document date"),
         None,
@@ -184,8 +180,6 @@ def run(dfs: dict) -> dict:
     )
 
     # ── AP Invoice Report: build GRPO No. → AP Invoice No. lookup ────────────
-    # Join key: GRPO's GRPO No. ↔ AP Invoice Report's GRPO Number column.
-    # inv_no_lookup: { normalized_grpo_no: ap_invoice_no_str | None }
     inv_no_lookup: dict[str, str | None] = {}
     df_ap = dfs.get("ap_invoice_report")
     if df_ap is None:
@@ -197,37 +191,33 @@ def run(dfs: dict) -> dict:
         if col_ap_grpo and col_ap_inv:
             for _, ap_row in df_ap.iterrows():
                 grpo_key = _normalize_id(ap_row[col_ap_grpo])
-                if grpo_key and grpo_key not in inv_no_lookup:  # first match per GRPO No. wins
+                if grpo_key and grpo_key not in inv_no_lookup:
                     inv_no_lookup[grpo_key] = _safe_str(ap_row[col_ap_inv])
 
     # ── Gate Entry Report: build GE No. → GE Date lookup ─────────────────────
-    # Gate Entry Date lives in the Gate Entry Report, not in the GRPO Report.
-    # We join on Gate Entry No. (already present in each GRPO row).
     ge_date_lookup: dict[str, str | None] = {}
-    ge_raw_lookup:  dict[str, object]     = {}   # raw cell value for datetime arithmetic
+    ge_raw_lookup:  dict[str, object]     = {}
     df_ge = dfs.get("gate_entry")
     if df_ge is not None and not df_ge.empty:
         ge_map          = detect_columns(df_ge)
-        col_ge_rep_no   = ge_map.get("ge_no")    # "Gate Entry No" in GE Report
-        col_ge_rep_date = ge_map.get("ge_date")  # "Gate Entry Date" / "GE Date"
+        col_ge_rep_no   = ge_map.get("ge_no")
+        col_ge_rep_date = ge_map.get("ge_date")
         if col_ge_rep_no and col_ge_rep_date:
             for _, ge_row in df_ge.iterrows():
                 key = _normalize_id(ge_row[col_ge_rep_no])
-                if key and key not in ge_date_lookup:   # keep first match per GE No.
+                if key and key not in ge_date_lookup:
                     ge_date_lookup[key] = _fmt_date(ge_row[col_ge_rep_date])
                     ge_raw_lookup[key]  = ge_row[col_ge_rep_date]
 
     # ── Build one output row per GRPO Report row ──────────────────────────────
     rows = []
     for _, grpo_row in df_grpo.iterrows():
-        # Gate Entry Date lookup: normalize the GE No. from this GRPO row,
-        # then find the corresponding date in the Gate Entry Report.
         grn_key    = _normalize_id(grpo_row[col_grn]) if col_grn else ""
         ge_no_key  = _normalize_id(grpo_row[col_ge]) if col_ge else ""
-        ge_date    = ge_date_lookup.get(ge_no_key)   # None when no match
-        ge_raw     = ge_raw_lookup.get(ge_no_key)    # raw value for day calculation
+        ge_date    = ge_date_lookup.get(ge_no_key)
+        ge_raw     = ge_raw_lookup.get(ge_no_key)
         grn_raw    = grpo_row[col_grpo_date] if col_grpo_date else None
-        days_ge_grn = _calc_days(ge_raw, grn_raw)
+        days_ge_grn = _calc_days(ge_raw, grn_raw, date_cache, holiday_set)
 
         rows.append({
             "GRN No.":               _safe_str(grpo_row[col_grn])         if col_grn         else None,
