@@ -11,7 +11,7 @@ from typing import AsyncGenerator, Callable, Any
 from app.loaders import load_file
 from app.session import Session
 from app.analysis import (
-    po_status, gate_entry, ge_to_grn, grn_to_ap, qty_variance, price_variance,
+    po_status, gate_entry, grn_to_ap, qty_variance, price_variance,
     gl_balances, payment_aging, msme, vendor_master, item_master,
     grpo_exceptions, three_way, executive,
 )
@@ -89,14 +89,6 @@ async def run_pipeline(
             results["gateentry"] = gate_entry.run(dfs)
         except Exception as e:
             results["gateentry"] = {"error": str(e), "kpis": {}, "charts": {}, "tables": []}
-
-    # ── GE to GRN Check ──────────────────────────────────────────────────────
-    await emit("ge_to_grn", 33, "Building GE to GRN reconciliation table…")
-    if "grpo" in dfs:
-        try:
-            results["getogrn"] = ge_to_grn.run(dfs)
-        except Exception as e:
-            results["getogrn"] = {"error": str(e), "kpis": {}, "charts": {}, "tables": []}
 
     # ── GRN to AP Invoice Check ──────────────────────────────────────────────
     await emit("grn_to_ap", 36, "Building GRN to AP Invoice reconciliation table…")

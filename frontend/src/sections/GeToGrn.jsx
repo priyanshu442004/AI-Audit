@@ -17,7 +17,7 @@ const formatCurrency = (val) => {
 
 const COL_GROUPS = [
   { label: 'GE Information',  cols: ['GRN No.', 'Gate Entry No.', 'Gate Entry Date', 'GRN Date'] },
-  { label: 'GRN Information', cols: ['PO Number', 'AP Invoice No.', 'Vendor Code', 'Vendor Name', 'Vendor Country'] },
+  { label: 'GRN Information', cols: ['PO Number', 'AP Invoice No.', 'AP Credit Note', 'Remarks', 'Vendor Code', 'Vendor Name', 'Vendor Country'] },
   { label: 'Quantities',      cols: ['#Items'] },
   { label: 'Values',          cols: ['GRN Value'] },
   { label: 'Analysis',        cols: ['Days GE→GRN', 'Within 2-day SLA', 'GRN > 2 days (Breach)'] },
@@ -80,6 +80,7 @@ export default function GeToGrn({ data }) {
   const [showExceptionModal, setShowExceptionModal] = useState(false)
   const [exceptionTitle, setExceptionTitle] = useState('')
   const [exceptionModalRows, setExceptionModalRows] = useState([])
+  const [isModalException, setIsModalException] = useState(true)
 
   const ITEMS_PER_PAGE = 25
 
@@ -154,8 +155,9 @@ export default function GeToGrn({ data }) {
     return out
   }, [rows, searchTerm, colFilters, sortCol, sortDir, startDate, endDate])
 
-  const openExceptionModal = (titleStr, filterFn, dedupeKey) => {
+  const openExceptionModal = (titleStr, filterFn, dedupeKey, isExc = true) => {
     setExceptionTitle(titleStr)
+    setIsModalException(isExc)
     let res = rows.filter(filterFn)
     if (dedupeKey) {
       const seen = new Set()
@@ -179,8 +181,22 @@ export default function GeToGrn({ data }) {
   const fmtOneDP  = (v) => (v != null && !isNaN(v)) ? Number(v).toFixed(1) : '—'
 
   const kpiCards = [
-    { label: 'GRNs with Gate Entry',             value: k('grns_with_gate_entry'),   accent: 'blue',  desc: 'GRNs successfully linked with a Gate Entry' },
-    { label: 'Within 2-Day SLA',                 value: k('within_2_day_sla'),       accent: 'blue',  desc: 'GRN completed within 2 days of Gate Entry' },
+    { 
+      label: 'GRNs with Gate Entry', 
+      value: k('grns_with_gate_entry'), 
+      accent: 'blue', 
+      desc: 'GRNs successfully linked with a Gate Entry',
+      isException: false,
+      onCardClick: () => openExceptionModal('GRNs with Gate Entry', r => r['GRN No.'] && r['GRN No.'] !== '—', null, false)
+    },
+    { 
+      label: 'Within 2-Day SLA', 
+      value: k('within_2_day_sla'), 
+      accent: 'blue', 
+      desc: 'GRN completed within 2 days of Gate Entry',
+      isException: false,
+      onCardClick: () => openExceptionModal('GRNs Within 2-Day SLA', r => r['Within 2-day SLA'] === 1 || r['Within 2-day SLA'] === '1', null, false)
+    },
     { 
       label: 'Breach > 2 Days',                  
       value: k('breach_gt_2_days'),       
@@ -189,16 +205,69 @@ export default function GeToGrn({ data }) {
       isException: true,
       onCardClick: () => openExceptionModal(
         'GRN > 2 Days SLA Breach',
-        r => r['GRN > 2 days (Breach)'] === 1 || r['GRN > 2 days (Breach)'] === '1' || parseInt(r['Days GE→GRN']) > 2
+        r => r['GRN > 2 days (Breach)'] === 1 || r['GRN > 2 days (Breach)'] === '1' || parseInt(r['Days GE→GRN']) > 2,
+        null,
+        true
       )
     },
-    { label: 'SLA Compliance %',                 value: k('sla_compliance_pct'),     accent: 'blue',  desc: 'GRNs processed within SLA' },
-    { label: 'Avg Days GE→GRN',                  value: k('avg_days_ge_to_grn'),     accent: 'blue',  desc: 'Average elapsed days between Gate Entry and GRN', fmt: fmtOneDP },
-    { label: 'Max Days GE→GRN',                  value: k('max_days_ge_to_grn'),     accent: 'blue',  desc: 'Maximum observed GE to GRN duration',             fmt: fmtOneDP },
-    { label: 'Unique PO Numbers',                value: k('unique_po_numbers'),      accent: 'blue',  desc: 'Distinct purchase orders analysed' },
-    { label: 'Unique GRN (GRPO) Nos',            value: k('unique_grn_nos'),         accent: 'blue',  desc: 'Distinct GRNs processed' },
-    { label: 'Unique AP Invoices',               value: k('unique_ap_invoices'),     accent: 'blue',  desc: 'Distinct AP invoices linked' },
-    { label: 'Unique AP Credit Notes',           value: k('unique_ap_credit_notes'), accent: 'blue',  desc: 'Distinct AP credit notes identified' },
+    { 
+      label: 'SLA Compliance %', 
+      value: k('sla_compliance_pct'), 
+      accent: 'blue', 
+      desc: 'GRNs processed within SLA',
+      isException: false,
+      onCardClick: () => openExceptionModal('GRNs Processed Within SLA', r => r['Within 2-day SLA'] === 1 || r['Within 2-day SLA'] === '1', null, false)
+    },
+    { 
+      label: 'Avg Days GE→GRN', 
+      value: k('avg_days_ge_to_grn'), 
+      accent: 'blue', 
+      desc: 'Average elapsed days between Gate Entry and GRN', 
+      fmt: fmtOneDP,
+      isException: false,
+      onCardClick: () => openExceptionModal('All GE to GRN Records', r => true, null, false)
+    },
+    { 
+      label: 'Max Days GE→GRN', 
+      value: k('max_days_ge_to_grn'), 
+      accent: 'blue', 
+      desc: 'Maximum observed GE to GRN duration', 
+      fmt: fmtOneDP,
+      isException: false,
+      onCardClick: () => openExceptionModal('All GE to GRN Records', r => true, null, false)
+    },
+    { 
+      label: 'Unique PO Numbers', 
+      value: k('unique_po_numbers'), 
+      accent: 'blue', 
+      desc: 'Distinct purchase orders analysed',
+      isException: false,
+      onCardClick: () => openExceptionModal('Unique Purchase Orders', r => r['PO Number'] && r['PO Number'] !== '—', 'PO Number', false)
+    },
+    { 
+      label: 'Unique GRN (GRPO) Nos', 
+      value: k('unique_grn_nos'), 
+      accent: 'blue', 
+      desc: 'Distinct GRNs processed',
+      isException: false,
+      onCardClick: () => openExceptionModal('Unique Goods Receipts (GRN)', r => r['GRN No.'] && r['GRN No.'] !== '—', 'GRN No.', false)
+    },
+    { 
+      label: 'Unique AP Invoices', 
+      value: k('unique_ap_invoices'), 
+      accent: 'blue', 
+      desc: 'Distinct AP invoices linked',
+      isException: false,
+      onCardClick: () => openExceptionModal('Unique AP Invoices', r => r['AP Invoice No.'] && r['AP Invoice No.'] !== '—', 'AP Invoice No.', false)
+    },
+    { 
+      label: 'Unique AP Credit Notes', 
+      value: k('unique_ap_credit_notes'), 
+      accent: 'blue', 
+      desc: 'Distinct AP credit notes identified',
+      isException: false,
+      onCardClick: () => openExceptionModal('Unique AP Credit Notes', r => r['AP Credit Note'] && r['AP Credit Note'] !== '—', 'AP Credit Note', false)
+    },
     { 
       label: 'Unique POs Flagged (Red/Amber)',   
       value: k('unique_pos_flagged'),     
@@ -208,7 +277,8 @@ export default function GeToGrn({ data }) {
       onCardClick: () => openExceptionModal(
         'Unique POs Flagged (Red/Amber Exceptions)',
         r => (r['GRN > 2 days (Breach)'] === 1 || parseInt(r['Days GE→GRN']) < 0 || parseInt(r['Days GE→GRN']) > 2) && r['PO Number'] && r['PO Number'] !== '—',
-        'PO Number'
+        'PO Number',
+        true
       )
     },
     { 
@@ -220,7 +290,8 @@ export default function GeToGrn({ data }) {
       onCardClick: () => openExceptionModal(
         'Unique GRNs Flagged (Red/Amber Exceptions)',
         r => (r['GRN > 2 days (Breach)'] === 1 || parseInt(r['Days GE→GRN']) < 0 || parseInt(r['Days GE→GRN']) > 2) && r['GRN No.'] && r['GRN No.'] !== '—',
-        'GRN No.'
+        'GRN No.',
+        true
       )
     },
   ]
@@ -256,8 +327,8 @@ export default function GeToGrn({ data }) {
             <div 
               key={k.label}
               onClick={k.onCardClick}
-              className={`relative bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm transition-all duration-200 overflow-hidden flex flex-col justify-between ${
-                k.isException ? 'cursor-pointer hover:border-rose-500/50 hover:shadow-md' : 'hover:shadow-md'
+              className={`relative bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm transition-all duration-200 overflow-hidden flex flex-col justify-between cursor-pointer hover:shadow-md active:scale-[0.98] ${
+                k.isException ? 'hover:border-rose-500/50' : 'hover:border-blue-500/50'
               }`}
             >
               <div className={`absolute top-0 left-0 right-0 h-0.5 ${ac.bar}`} />
@@ -545,10 +616,11 @@ export default function GeToGrn({ data }) {
         isOpen={showExceptionModal}
         onClose={() => setShowExceptionModal(false)}
         title={exceptionTitle}
-        subtitle="Gate Entry to GRN line items matching selected exception criteria"
+        subtitle="Gate Entry to GRN line items matching selected audit criteria"
         columns={ALL_COLS}
         rows={exceptionModalRows}
-        filenamePrefix="GE_to_GRN_Exceptions"
+        filenamePrefix="GE_to_GRN_Records"
+        isException={isModalException}
       />
     </div>
   )

@@ -394,10 +394,7 @@ export default function PaymentAgingForeign() {
       {/* Page Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-            Foreign Vendor Aging
-          </h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+          <p className="text-sm text-slate-500 dark:text-slate-400">
             Audit foreign vendor payment patterns (non-INR currency vendors), tracking credit limits, delays, and outstanding liabilities.
           </p>
         </div>

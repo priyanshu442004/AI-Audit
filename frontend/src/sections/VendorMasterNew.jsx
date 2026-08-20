@@ -336,10 +336,7 @@ export default function VendorMasterNew() {
       {/* Page Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-            Vendor Master Validation
-          </h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+          <p className="text-sm text-slate-500 dark:text-slate-400">
             Audit register consistency of Business Partners, highlighting GSTIN duplicates, missing tax details, and related party mappings.
           </p>
         </div>

@@ -3,6 +3,7 @@ import { useStore } from '../store'
 import { fetchThreeWayMatching } from '../api'
 import TruncatedCell from '../components/TruncatedCell'
 import useColumnOrder from '../hooks/useColumnOrder'
+import ExceptionModal from '../components/ExceptionModal'
 
 const COLUMNS = [
   { id: 'grn_number',         label: 'GRN Number',        align: 'left',   sortable: true  },
@@ -13,6 +14,7 @@ const COLUMNS = [
   { id: 'invoice_date',       label: 'Invoice Date',      align: 'left',   sortable: false },
   { id: 'ap_invoice_number',  label: 'AP Invoice Number', align: 'left',   sortable: false },
   { id: 'ap_credit_note',     label: 'AP Credit Note',    align: 'left',   sortable: false },
+  { id: 'remarks',            label: 'Remarks',           align: 'left',   sortable: false },
   { id: 'vendor_code',        label: 'Vendo Code',        align: 'left',   sortable: false },
   { id: 'vendor_name',        label: 'Vendo Name',        align: 'left',   sortable: true  },
   { id: 'vendor_country',     label: 'Vendor Country',    align: 'left',   sortable: false },
@@ -38,6 +40,12 @@ export default function ThreeWayMatching() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
+  // Modal State
+  const [showExceptionModal, setShowExceptionModal] = useState(false)
+  const [exceptionTitle, setExceptionTitle] = useState('')
+  const [exceptionModalRows, setExceptionModalRows] = useState([])
+  const [isModalException, setIsModalException] = useState(true)
+
   // Filters & Search State
   const [searchQuery, setSearchQuery] = useState('')
   const [matchStatusFilter, setMatchStatusFilter] = useState('ALL') // 'ALL' | 'Perfect match' | 'Variance'
@@ -56,6 +64,23 @@ export default function ThreeWayMatching() {
   const [dragCol, setDragCol]     = useState(null)
   const [dragOverCol, setDragOverCol] = useState(null)
   const visibleCols = colOrder
+
+  const openExceptionModal = (titleStr, filterFn, dedupeKey, isExc = true) => {
+    setExceptionTitle(titleStr)
+    setIsModalException(isExc)
+    let res = rows.filter(filterFn)
+    if (dedupeKey) {
+      const seen = new Set()
+      res = res.filter(r => {
+        const kVal = r[dedupeKey]
+        if (!kVal || kVal === '—' || seen.has(kVal)) return false
+        seen.add(kVal)
+        return true
+      })
+    }
+    setExceptionModalRows(res)
+    setShowExceptionModal(true)
+  }
 
   // Load data if not cached
   useEffect(() => {
@@ -239,8 +264,7 @@ export default function ThreeWayMatching() {
       {/* Title block */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">3-Way Matching Dashboard</h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+          <p className="text-sm text-slate-500 dark:text-slate-400">
             Comprehensive audit comparing Purchase Orders (PO), Goods Receipts (GRPO), and AP Invoices to verify rate and quantity integrity.
           </p>
         </div>
@@ -258,37 +282,58 @@ export default function ThreeWayMatching() {
 
       {/* KPI Cards Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-4">
-        <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm flex flex-col justify-between">
+        <div 
+          onClick={() => openExceptionModal('Total GRPO Lines', r => true, null, false)}
+          className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm flex flex-col justify-between cursor-pointer hover:border-blue-500/50 hover:shadow-md active:scale-[0.98] transition-all"
+        >
           <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider leading-none">Total GRPO Lines</span>
           <span className="text-xl font-extrabold text-slate-950 dark:text-white mt-2">{formatNumber(kpis.total_grpo_lines)}</span>
         </div>
         
-        <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm flex flex-col justify-between">
+        <div 
+          onClick={() => openExceptionModal('Perfect Match Lines', r => r.match_status === 'Perfect match' || r.match_status === 'Matched', null, false)}
+          className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm flex flex-col justify-between cursor-pointer hover:border-emerald-500/50 hover:shadow-md active:scale-[0.98] transition-all"
+        >
           <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider leading-none">Perfect Match QTY</span>
           <span className="text-xl font-extrabold text-emerald-600 dark:text-emerald-400 mt-2">{formatNumber(kpis.perfect_match_qty, 2)}</span>
         </div>
 
-        <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm flex flex-col justify-between">
+        <div 
+          onClick={() => openExceptionModal('Unique Purchase Orders', r => r.po_number && r.po_number !== '—', 'po_number', false)}
+          className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm flex flex-col justify-between cursor-pointer hover:border-blue-500/50 hover:shadow-md active:scale-[0.98] transition-all"
+        >
           <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider leading-none">Unique POs</span>
           <span className="text-xl font-extrabold text-slate-950 dark:text-white mt-2">{formatNumber(kpis.unique_po_numbers)}</span>
         </div>
 
-        <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm flex flex-col justify-between">
+        <div 
+          onClick={() => openExceptionModal('Unique Goods Receipts (GRPO)', r => r.grn_number && r.grn_number !== '—', 'grn_number', false)}
+          className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm flex flex-col justify-between cursor-pointer hover:border-blue-500/50 hover:shadow-md active:scale-[0.98] transition-all"
+        >
           <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider leading-none">Unique GRNs</span>
           <span className="text-xl font-extrabold text-slate-950 dark:text-white mt-2">{formatNumber(kpis.unique_grpo_numbers)}</span>
         </div>
 
-        <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm flex flex-col justify-between">
+        <div 
+          onClick={() => openExceptionModal('AP Credit Notes', r => r.ap_credit_note && r.ap_credit_note !== '—', 'ap_credit_note', false)}
+          className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm flex flex-col justify-between cursor-pointer hover:border-blue-500/50 hover:shadow-md active:scale-[0.98] transition-all"
+        >
           <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider leading-none">AP Credit Notes</span>
           <span className="text-xl font-extrabold text-slate-950 dark:text-white mt-2">{formatNumber(kpis.unique_credit_notes)}</span>
         </div>
 
-        <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm flex flex-col justify-between">
+        <div 
+          onClick={() => openExceptionModal('Unique POs with Matching Variances', r => r.qty_po_gt_grpo === 1 || r.qty_grpo_gt_inv === 1 || r.excess_over_5 === 1 || r.match_status === 'Variance', 'po_number', true)}
+          className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm flex flex-col justify-between cursor-pointer hover:border-rose-500/50 hover:shadow-md active:scale-[0.98] transition-all"
+        >
           <span className="text-[11px] font-bold text-rose-500 dark:text-rose-400 uppercase tracking-wider leading-none">Unique PO Flagged</span>
           <span className="text-xl font-extrabold text-rose-600 dark:text-rose-400 mt-2">{formatNumber(kpis.unique_po_flagged)}</span>
         </div>
 
-        <div className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm flex flex-col justify-between">
+        <div 
+          onClick={() => openExceptionModal('Unique GRNs with Matching Variances', r => r.qty_po_gt_grpo === 1 || r.qty_grpo_gt_inv === 1 || r.excess_over_5 === 1 || r.match_status === 'Variance', 'grn_number', true)}
+          className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200/80 dark:border-slate-800 shadow-sm flex flex-col justify-between cursor-pointer hover:border-rose-500/50 hover:shadow-md active:scale-[0.98] transition-all"
+        >
           <span className="text-[11px] font-bold text-rose-500 dark:text-rose-400 uppercase tracking-wider leading-none">Unique GRN Flagged</span>
           <span className="text-xl font-extrabold text-rose-600 dark:text-rose-400 mt-2">{formatNumber(kpis.unique_grn_flagged)}</span>
         </div>
@@ -632,6 +677,18 @@ export default function ThreeWayMatching() {
           </div>
         )}
       </div>
+
+      {/* Exception Modal */}
+      <ExceptionModal
+        isOpen={showExceptionModal}
+        onClose={() => setShowExceptionModal(false)}
+        title={exceptionTitle}
+        subtitle="Detailed 3-Way Matching records for selected metric"
+        columns={ALL_COLS}
+        rows={exceptionModalRows}
+        filenamePrefix="Three_Way_Matching_Records"
+        isException={isModalException}
+      />
     </div>
   )
 }

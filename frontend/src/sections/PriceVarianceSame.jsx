@@ -4,6 +4,7 @@ import AiInsightBox from '../components/AiInsightBox'
 import { useStore } from '../store'
 import TruncatedCell from '../components/TruncatedCell'
 import useColumnOrder from '../hooks/useColumnOrder'
+import ExceptionModal from '../components/ExceptionModal'
 
 const formatCurrency = (val) => {
   if (val === null || val === undefined) return '—'
@@ -95,6 +96,29 @@ export default function PriceVarianceSame() {
   const [dragCol, setDragCol]     = useState(null)
   const [dragOverCol, setDragOverCol] = useState(null)
   const visibleCols = colOrder
+
+  // Modal State
+  const [showExceptionModal, setShowExceptionModal] = useState(false)
+  const [exceptionTitle, setExceptionTitle] = useState('')
+  const [exceptionModalRows, setExceptionModalRows] = useState([])
+  const [isModalException, setIsModalException] = useState(true)
+
+  const openExceptionModal = (titleStr, filterFn, dedupeKey, isExc = true) => {
+    setExceptionTitle(titleStr)
+    setIsModalException(isExc)
+    let res = (priceVarianceSame?.rows || []).filter(filterFn)
+    if (dedupeKey) {
+      const seen = new Set()
+      res = res.filter(r => {
+        const kVal = r[dedupeKey]
+        if (!kVal || kVal === '—' || seen.has(kVal)) return false
+        seen.add(kVal)
+        return true
+      })
+    }
+    setExceptionModalRows(res)
+    setShowExceptionModal(true)
+  }
 
   useEffect(() => {
     if (priceVarianceSame) {
@@ -256,10 +280,7 @@ export default function PriceVarianceSame() {
       {/* Page Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-            Price Variance (Same Vendor)
-          </h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+          <p className="text-sm text-slate-500 dark:text-slate-400">
             Compare unit rates of the same item within individual vendors to check for pricing inconsistencies.
           </p>
         </div>
@@ -281,11 +302,46 @@ export default function PriceVarianceSame() {
       {/* KPI Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         {[
-          { label: 'Vendor Items Evaluated', value: metrics.totalItems, accent: 'blue', desc: 'Total line items evaluated' },
-          { label: 'Unique GRN(GRPO) Nos.', value: metrics.uniqueGrns, accent: 'blue', desc: 'Distinct goods receipt files matched' },
-          { label: 'Total Variance Lines', value: metrics.varianceCount, accent: metrics.varianceCount > 0 ? 'rose' : 'blue', desc: 'Lines with pricing variance > 5%' },
-          { label: 'Rate Increased >5%', value: metrics.rateIncreasedGt5, accent: metrics.rateIncreasedGt5 > 0 ? 'rose' : 'blue', desc: 'Vendors with >5% rate increase' },
-          { label: 'Vendors with Inconsistent UOM', value: metrics.uomInconsistent, accent: metrics.uomInconsistent > 0 ? 'amber' : 'blue', desc: 'Vendors with non-uniform UOMs' }
+          { 
+            label: 'Vendor Items Evaluated', 
+            value: metrics.totalItems, 
+            accent: 'blue', 
+            desc: 'Total line items evaluated',
+            isException: false,
+            onCardClick: () => openExceptionModal('Vendor Items Evaluated', r => true, null, false)
+          },
+          { 
+            label: 'Unique GRN(GRPO) Nos.', 
+            value: metrics.uniqueGrns, 
+            accent: 'blue', 
+            desc: 'Distinct goods receipt files matched',
+            isException: false,
+            onCardClick: () => openExceptionModal('Unique Goods Receipts (GRPO)', r => r.grn_number && r.grn_number !== '—', 'grn_number', false)
+          },
+          { 
+            label: 'Total Variance Lines', 
+            value: metrics.varianceCount, 
+            accent: metrics.varianceCount > 0 ? 'rose' : 'blue', 
+            desc: 'Lines with pricing variance > 5%',
+            isException: true,
+            onCardClick: () => openExceptionModal('High Price Variance Lines (> 5%)', r => r.variance_flag === 1 || r.variance_flag === '1', null, true)
+          },
+          { 
+            label: 'Rate Increased >5%', 
+            value: metrics.rateIncreasedGt5, 
+            accent: metrics.rateIncreasedGt5 > 0 ? 'rose' : 'blue', 
+            desc: 'Vendors with >5% rate increase',
+            isException: true,
+            onCardClick: () => openExceptionModal('Rate Increased > 5% on Same Item', r => r.spread_gt_5 === 1 || r.spread_gt_5 === '1', 'vendor_code', true)
+          },
+          { 
+            label: 'Vendors with Inconsistent UOM', 
+            value: metrics.uomInconsistent, 
+            accent: metrics.uomInconsistent > 0 ? 'amber' : 'blue', 
+            desc: 'Vendors with non-uniform UOMs',
+            isException: true,
+            onCardClick: () => openExceptionModal('Vendors with Inconsistent UOM', r => r.uom_consistent === 0 || r.uom_consistent === '0', 'vendor_code', true)
+          }
         ].map(card => {
           const isRose = card.accent === 'rose'
           const isAmber = card.accent === 'amber'
@@ -293,7 +349,13 @@ export default function PriceVarianceSame() {
           const textColor = isRose ? 'text-rose-600 dark:text-rose-400' : (isAmber ? 'text-amber-600 dark:text-amber-400' : 'text-blue-600 dark:text-blue-400')
           
           return (
-            <div key={card.label} className="relative bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm hover:shadow-md transition-shadow duration-200 overflow-hidden">
+            <div 
+              key={card.label} 
+              onClick={card.onCardClick}
+              className={`relative bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm transition-all duration-200 overflow-hidden cursor-pointer hover:shadow-md active:scale-[0.98] ${
+                card.isException ? 'hover:border-rose-500/50' : 'hover:border-blue-500/50'
+              }`}
+            >
               <div className={`absolute top-0 left-0 right-0 h-0.5 ${barColor}`} />
               <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-widest leading-tight mb-2">
                 {card.label}
@@ -560,6 +622,18 @@ export default function PriceVarianceSame() {
           </div>
         </div>
       </div>
+
+      {/* Exception Modal */}
+      <ExceptionModal
+        isOpen={showExceptionModal}
+        onClose={() => setShowExceptionModal(false)}
+        title={exceptionTitle}
+        subtitle="Detailed same-vendor price variance records for selected metric"
+        columns={ALL_COLS}
+        rows={exceptionModalRows}
+        filenamePrefix="Price_Variance_Same_Vendor_Records"
+        isException={isModalException}
+      />
     </div>
   )
 }

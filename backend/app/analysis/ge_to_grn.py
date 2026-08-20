@@ -30,6 +30,8 @@ _TABLE_COLUMNS = [
     "GRN Date",
     "PO Number",
     "AP Invoice No.",
+    "AP Credit Note",
+    "Remarks",
     "Vendor Code",
     "Vendor Name",
     "Vendor Country",
@@ -194,6 +196,23 @@ def run(dfs: dict) -> dict:
                 if grpo_key and grpo_key not in inv_no_lookup:
                     inv_no_lookup[grpo_key] = _safe_str(ap_row[col_ap_inv])
 
+    # ── AP Credit Note Report: build AP Invoice No. → AP Credit Note / Remarks lookup ──
+    cn_no_lookup: dict[str, str] = {}
+    cn_remarks_lookup: dict[str, str] = {}
+    df_cn = dfs.get("ap_credit_note")
+    if df_cn is not None and not df_cn.empty:
+        cn_map = detect_columns(df_cn)
+        col_cn_ap_no = cn_map.get("ap_invoice_no") or cn_map.get("invoice_no")
+        col_cn_no = cn_map.get("credit_note_no") or cn_map.get("doc_num")
+        col_cn_rem = cn_map.get("remarks")
+        if col_cn_ap_no and col_cn_no:
+            for _, cn_row in df_cn.iterrows():
+                ap_k = _normalize_id(cn_row[col_cn_ap_no])
+                if ap_k and ap_k not in cn_no_lookup:
+                    cn_no_lookup[ap_k] = _safe_str(cn_row[col_cn_no]) or ""
+                    if col_cn_rem:
+                        cn_remarks_lookup[ap_k] = _safe_str(cn_row[col_cn_rem]) or ""
+
     # ── Gate Entry Report: build GE No. → GE Date lookup ─────────────────────
     ge_date_lookup: dict[str, str | None] = {}
     ge_raw_lookup:  dict[str, object]     = {}
@@ -218,6 +237,11 @@ def run(dfs: dict) -> dict:
         ge_raw     = ge_raw_lookup.get(ge_no_key)
         grn_raw    = grpo_row[col_grpo_date] if col_grpo_date else None
         days_ge_grn = _calc_days(ge_raw, grn_raw, date_cache, holiday_set)
+        
+        inv_no = inv_no_lookup.get(grn_key)
+        inv_key = _normalize_id(inv_no) if inv_no else ""
+        cn_no = cn_no_lookup.get(inv_key) if inv_key else None
+        cn_remarks = cn_remarks_lookup.get(inv_key) if inv_key else None
 
         rows.append({
             "GRN No.":               _safe_str(grpo_row[col_grn])         if col_grn         else None,
@@ -225,7 +249,9 @@ def run(dfs: dict) -> dict:
             "Gate Entry Date":       ge_date,
             "GRN Date":              _fmt_date(grpo_row[col_grpo_date])   if col_grpo_date   else None,
             "PO Number":             _safe_str(grpo_row[col_po])          if col_po          else None,
-            "AP Invoice No.":        inv_no_lookup.get(grn_key),
+            "AP Invoice No.":        inv_no,
+            "AP Credit Note":        cn_no,
+            "Remarks":               cn_remarks,
             "Vendor Code":           _safe_str(grpo_row[col_vendor_code]) if col_vendor_code else None,
             "Vendor Name":           _safe_str(grpo_row[col_vendor_name]) if col_vendor_name else None,
             "Vendor Country":        "India" if col_doc_currency and str(grpo_row[col_doc_currency]).strip().upper() == "INR" else ("USA" if col_doc_currency else None),
@@ -264,7 +290,7 @@ def run(dfs: dict) -> dict:
         "unique_po_numbers":      len({r["PO Number"]    for r in rows if r.get("PO Number")    not in (None, "")}),
         "unique_grn_nos":         len({r["GRN No."]      for r in rows if r.get("GRN No.")      not in (None, "")}),
         "unique_ap_invoices":     len({r["AP Invoice No."] for r in rows if r.get("AP Invoice No.") not in (None, "")}),
-        "unique_ap_credit_notes": 0,
+        "unique_ap_credit_notes": len({r["AP Credit Note"] for r in rows if r.get("AP Credit Note") not in (None, "", "—")}),
         "unique_pos_flagged":     len({r["PO Number"] for r in flagged if r.get("PO Number") not in (None, "")}),
         "unique_grns_flagged":    len({r["GRN No."]   for r in flagged if r.get("GRN No.")   not in (None, "")}),
     }

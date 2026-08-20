@@ -358,10 +358,7 @@ export default function PaymentAgingDomestic() {
       {/* Page Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-            Payment Aging (Domestic)
-          </h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+          <p className="text-sm text-slate-500 dark:text-slate-400">
             Audit domestic payment patterns (INR currency vendors), tracking credit limits, delays, and outstanding liabilities.
           </p>
         </div>

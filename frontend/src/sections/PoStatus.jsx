@@ -21,7 +21,7 @@ const COL_GROUPS = [
   { label: 'Item Details',  cols: ['Item Code', 'Item Description', 'Item Group'] },
   { label: 'Quantities',    cols: ['Ordered Qty', 'Open Qty', 'GRPO Qty', 'AP Inv Qty'] },
   { label: 'Values (INR)',  cols: ['Doc Currency', 'Doc Rate', 'Price', 'Line Total (INR)', 'Open PO Value'] },
-  { label: 'Receipt Info',  cols: ['GRN Number', 'GRPO Date', 'AP Invoice Number', 'AP Posting Date'] },
+  { label: 'Receipt Info',  cols: ['GRN Number', 'GRPO Date', 'AP Invoice Number', 'AP Posting Date', 'AP Credit Note', 'Remarks'] },
   { label: 'Audit Flags',   cols: ['Pending Flag', 'Open>90d & No receipt', 'Recv<50%', 'Holiday flag', 'variance>5%'] },
 ]
 
@@ -66,7 +66,7 @@ export default function PoStatus({ data }) {
   const kpis   = data?.kpis   || {}
   const tables = data?.tables || []
 
-  const mainTable = tables.find(t => t.title === 'Purchase Order Status — Full Audit Detail')
+  const mainTable = tables.find(t => t.title === 'Purchase Order Line Status Analysis') || tables.find(t => t.title === 'Purchase Order Status — Full Audit Detail') || tables[3] || tables[0]
   const rows = mainTable?.rows || []
 
   const [searchTerm, setSearchTerm]         = useState('')
@@ -79,10 +79,10 @@ export default function PoStatus({ data }) {
   const [startDate, setStartDate]           = useState('')
   const [endDate, setEndDate]               = useState('')
   const [refreshing, setRefreshing]         = useState(false)
-  const [showExportModal, setShowExportModal] = useState(false)
   const [showExceptionModal, setShowExceptionModal] = useState(false)
   const [exceptionTitle, setExceptionTitle] = useState('')
   const [exceptionModalRows, setExceptionModalRows] = useState([])
+  const [isModalException, setIsModalException] = useState(true)
 
   const ITEMS_PER_PAGE = 25
 
@@ -160,8 +160,9 @@ export default function PoStatus({ data }) {
     return out
   }, [rows, searchTerm, colFilters, sortCol, sortDir, startDate, endDate])
 
-  const openExceptionModal = (titleStr, filterFn, dedupeKey) => {
+  const openExceptionModal = (titleStr, filterFn, dedupeKey, isExc = true) => {
     setExceptionTitle(titleStr)
+    setIsModalException(isExc)
     let res = rows.filter(filterFn)
     if (dedupeKey) {
       const seen = new Set()
@@ -182,8 +183,22 @@ export default function PoStatus({ data }) {
   const endRec      = Math.min(currentPage * ITEMS_PER_PAGE, filtered.length)
 
   const kpiCards = [
-    { label: 'Unique POs',            value: kpis.unique_pos,         fmt: 'int',      accent: 'blue'   },
-    { label: 'PO Lines',              value: kpis.po_lines,           fmt: 'int',      accent: 'blue'   },
+    { 
+      label: 'Unique POs',            
+      value: kpis.unique_pos,         
+      fmt: 'int',      
+      accent: 'blue',
+      isException: false,
+      onCardClick: () => openExceptionModal('Unique Purchase Orders', r => r['PO Number'] && r['PO Number'] !== '—', 'PO Number', false)
+    },
+    { 
+      label: 'PO Lines',              
+      value: kpis.po_lines,           
+      fmt: 'int',      
+      accent: 'blue',
+      isException: false,
+      onCardClick: () => openExceptionModal('All Purchase Order Lines', r => true, null, false)
+    },
     { 
       label: 'Open Lines',            
       value: kpis.open_lines_pending, 
@@ -192,12 +207,35 @@ export default function PoStatus({ data }) {
       isException: true,
       onCardClick: () => openExceptionModal(
         'Open / Pending PO Lines',
-        r => r['Doc Status'] === 'Open' || r['Pending Flag'] === 1
+        r => r['Doc Status'] === 'Open' || r['Pending Flag'] === 1,
+        null,
+        true
       )
     },
-    { label: 'PO Value – India',      value: kpis.po_value_india,     fmt: 'currency', accent: 'blue'   },
-    { label: 'PO Value – Foreign',    value: kpis.po_value_foreign,   fmt: 'currency', accent: 'blue'   },
-    { label: 'Open PO Value',         value: kpis.open_po_value,      fmt: 'currency', accent: 'amber'  },
+    { 
+      label: 'PO Value – India',      
+      value: kpis.po_value_india,     
+      fmt: 'currency', 
+      accent: 'blue',
+      isException: false,
+      onCardClick: () => openExceptionModal('PO Lines – India Vendors', r => String(r['Vendor Country'] || '').toLowerCase().includes('india') || !r['Vendor Country'], null, false)
+    },
+    { 
+      label: 'PO Value – Foreign',    
+      value: kpis.po_value_foreign,   
+      fmt: 'currency', 
+      accent: 'blue',
+      isException: false,
+      onCardClick: () => openExceptionModal('PO Lines – Foreign Vendors', r => r['Vendor Country'] && !String(r['Vendor Country']).toLowerCase().includes('india'), null, false)
+    },
+    { 
+      label: 'Open PO Value',         
+      value: kpis.open_po_value,      
+      fmt: 'currency', 
+      accent: 'amber',
+      isException: false,
+      onCardClick: () => openExceptionModal('Open PO Value Lines', r => (parseFloat(r['Open PO Value']) > 0 || r['Doc Status'] === 'Open'), null, false)
+    },
     { 
       label: 'Recv < 50%',            
       value: kpis.recv_lt_50,         
@@ -206,11 +244,27 @@ export default function PoStatus({ data }) {
       isException: true,
       onCardClick: () => openExceptionModal(
         'PO Lines Received < 50%',
-        r => r['Recv<50%'] === 1 || r['Recv<50%'] === '1'
+        r => r['Recv<50%'] === 1 || r['Recv<50%'] === '1',
+        null,
+        true
       )
     },
-    { label: 'Unique GRN Nos.',       value: kpis.unique_grn_nos,     fmt: 'int',      accent: 'blue'   },
-    { label: 'Unique AP Invoices',    value: kpis.unique_ap_invoices, fmt: 'int',      accent: 'blue'   },
+    { 
+      label: 'Unique GRN Nos.',       
+      value: kpis.unique_grn_nos,     
+      fmt: 'int',      
+      accent: 'blue',
+      isException: false,
+      onCardClick: () => openExceptionModal('Unique Goods Receipts (GRN)', r => r['GRN Number'] && r['GRN Number'] !== '—', 'GRN Number', false)
+    },
+    { 
+      label: 'Unique AP Invoices',    
+      value: kpis.unique_ap_invoices, 
+      fmt: 'int',      
+      accent: 'blue',
+      isException: false,
+      onCardClick: () => openExceptionModal('Unique AP Invoices', r => r['AP Invoice Number'] && r['AP Invoice Number'] !== '—', 'AP Invoice Number', false)
+    },
     { 
       label: 'Flagged POs',           
       value: kpis.unique_pos_flagged, 
@@ -220,7 +274,8 @@ export default function PoStatus({ data }) {
       onCardClick: () => openExceptionModal(
         'Unique Flagged Purchase Orders',
         r => r['Pending Flag'] === 1 || r['Open>90d & No receipt'] === 1 || r['Recv<50%'] === 1 || r['Holiday flag'] === 1 || r['variance>5%'] === 1 || r.is_flagged === 1,
-        'PO Number'
+        'PO Number',
+        true
       )
     },
   ]
@@ -243,10 +298,7 @@ export default function PoStatus({ data }) {
       {/* Header with Refresh + Export Action Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-slate-200/60 dark:border-slate-800/60">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-            Purchase Order Status
-          </h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+          <p className="text-sm text-slate-500 dark:text-slate-400">
             Full lifecycle analysis of Purchase Orders — open status, quantity fulfilment rates, GRPO linkages, and AP Invoicing match.
           </p>
         </div>
@@ -282,8 +334,8 @@ export default function PoStatus({ data }) {
             <div 
               key={k.label}
               onClick={k.onCardClick}
-              className={`relative bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm transition-all duration-200 overflow-hidden flex flex-col justify-between ${
-                k.isException ? 'cursor-pointer hover:border-rose-500/50 hover:shadow-md' : 'hover:shadow-md'
+              className={`relative bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm transition-all duration-200 overflow-hidden flex flex-col justify-between cursor-pointer hover:shadow-md active:scale-[0.98] ${
+                k.isException ? 'hover:border-rose-500/50' : 'hover:border-blue-500/50'
               }`}
             >
               <div className={`absolute top-0 left-0 right-0 h-0.5 ${ac.bar}`} />
@@ -559,10 +611,11 @@ export default function PoStatus({ data }) {
         isOpen={showExceptionModal}
         onClose={() => setShowExceptionModal(false)}
         title={exceptionTitle}
-        subtitle="Purchase Order line items matching selected exception criteria"
+        subtitle="Purchase Order line items matching selected audit criteria"
         columns={ALL_COLS}
         rows={exceptionModalRows}
-        filenamePrefix="PO_Status_Exceptions"
+        filenamePrefix="PO_Status_Records"
+        isException={isModalException}
       />
     </div>
   )

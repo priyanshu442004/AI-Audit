@@ -412,10 +412,7 @@ export default function PaymentAgingRelated() {
       {/* Page Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-            Related Party Aging
-          </h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+          <p className="text-sm text-slate-500 dark:text-slate-400">
             Audit related party payment patterns (group entities), tracking credit limits, delays, and outstanding liabilities.
           </p>
         </div>

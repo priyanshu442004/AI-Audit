@@ -27,27 +27,77 @@ export async function uploadFiles(items) {
  * Returns a cleanup function to close the EventSource.
  */
 export function analyzeStream(sessionId, { onProgress, onResult, onError }) {
+  let isDone = false
   const es = new EventSource(`${BASE}/analyze/${sessionId}`)
 
+  const fetchFinalResult = async (retries = 5) => {
+    if (isDone) return
+    try { es.close() } catch (_) {}
+
+    for (let attempt = 0; attempt < retries; attempt++) {
+      try {
+        const res = await fetch(`${BASE}/result/${sessionId}`, {})
+        if (res.ok) {
+          const data = await res.json()
+          if (data && typeof data === 'object' && Object.keys(data).length > 0) {
+            isDone = true
+            onResult(data)
+            return
+          }
+        }
+      } catch (e) {
+        console.error(`Attempt ${attempt + 1} error fetching final result:`, e)
+      }
+      if (attempt < retries - 1) {
+        await new Promise(r => setTimeout(r, 600))
+      }
+    }
+    isDone = true
+    onError('Analysis completed, but failed to load results. Please refresh.')
+  }
+
   es.onmessage = (e) => {
-    const data = JSON.parse(e.data)
-    if (data.stage === 'result') {
-      es.close()
-      onResult(data.result)
-    } else if (data.stage === 'error') {
-      es.close()
-      onError(data.message || 'Analysis failed')
-    } else {
-      onProgress({ stage: data.stage, pct: data.pct, message: data.message })
+    if (isDone) return
+    try {
+      const data = JSON.parse(e.data)
+      if (data.stage === 'result') {
+        isDone = true
+        try { es.close() } catch (_) {}
+        if (data.result) {
+          onResult(data.result)
+        } else {
+          fetchFinalResult()
+        }
+      } else if (data.stage === 'error') {
+        isDone = true
+        try { es.close() } catch (_) {}
+        onError(data.message || 'Analysis failed')
+      } else {
+        if (data.pct !== undefined || data.message) {
+          onProgress({ stage: data.stage || '', pct: data.pct || 0, message: data.message || '' })
+        }
+        if (data.pct === 100 && data.stage === 'done') {
+          setTimeout(() => {
+            if (!isDone) fetchFinalResult()
+          }, 500)
+        }
+      }
+    } catch (err) {
+      console.warn('SSE message parse error:', err)
+      fetchFinalResult()
     }
   }
 
-  es.onerror = () => {
-    es.close()
-    onError('Connection to server lost.')
+  es.onerror = (e) => {
+    if (isDone) return
+    console.warn('SSE connection error/closed, attempting result fallback...', e)
+    fetchFinalResult()
   }
 
-  return () => es.close()
+  return () => {
+    isDone = true
+    try { es.close() } catch (_) {}
+  }
 }
 
 /**
@@ -73,7 +123,7 @@ export async function fetchInsight(section, kpis, topRisks = []) {
  * @returns {Promise<{rows: Array, kpis: object}>}
  */
 export async function fetchPriceVarianceSame() {
-  const res = await fetch(`${BASE}/analysis/price-variance-same`)
+  const res = await fetch(`${BASE}/analysis/price-variance-same`, {})
   if (!res.ok) throw new Error('Failed to load same-vendor price variance')
   return res.json()
 }
@@ -83,7 +133,7 @@ export async function fetchPriceVarianceSame() {
  * @returns {Promise<{rows: Array, kpis: object}>}
  */
 export async function fetchPriceVarianceCross() {
-  const res = await fetch(`${BASE}/analysis/price-variance-cross`)
+  const res = await fetch(`${BASE}/analysis/price-variance-cross`, {})
   if (!res.ok) throw new Error('Failed to load cross-vendor price variance')
   return res.json()
 }
@@ -93,7 +143,7 @@ export async function fetchPriceVarianceCross() {
  * @returns {Promise<{rows: Array, kpis: object}>}
  */
 export async function fetchPaymentAgingDomestic() {
-  const res = await fetch(`${BASE}/analysis/payment-aging-domestic`)
+  const res = await fetch(`${BASE}/analysis/payment-aging-domestic`, {})
   if (!res.ok) throw new Error('Failed to load payment aging (domestic) analysis')
   return res.json()
 }
@@ -103,7 +153,7 @@ export async function fetchPaymentAgingDomestic() {
  * @returns {Promise<{rows: Array, kpis: object}>}
  */
 export async function fetchPaymentAgingForeign() {
-  const res = await fetch(`${BASE}/analysis/payment-aging-foreign`)
+  const res = await fetch(`${BASE}/analysis/payment-aging-foreign`, {})
   if (!res.ok) throw new Error('Failed to load payment aging (foreign) analysis')
   return res.json()
 }
@@ -113,7 +163,7 @@ export async function fetchPaymentAgingForeign() {
  * @returns {Promise<{rows: Array, kpis: object}>}
  */
 export async function fetchPaymentAgingMsme() {
-  const res = await fetch(`${BASE}/analysis/payment-aging-msme`)
+  const res = await fetch(`${BASE}/analysis/payment-aging-msme`, {})
   if (!res.ok) throw new Error('Failed to load payment aging (msme) analysis')
   return res.json()
 }
@@ -123,7 +173,7 @@ export async function fetchPaymentAgingMsme() {
  * @returns {Promise<{rows: Array, kpis: object}>}
  */
 export async function fetchPaymentAgingRelated() {
-  const res = await fetch(`${BASE}/analysis/payment-aging-related`)
+  const res = await fetch(`${BASE}/analysis/payment-aging-related`, {})
   if (!res.ok) throw new Error('Failed to load payment aging (related) analysis')
   return res.json()
 }
@@ -133,7 +183,7 @@ export async function fetchPaymentAgingRelated() {
  * @returns {Promise<{rows: Array, kpis: object}>}
  */
 export async function fetchVendorMasterNew() {
-  const res = await fetch(`${BASE}/analysis/vendor-master-new`)
+  const res = await fetch(`${BASE}/analysis/vendor-master-new`, {})
   if (!res.ok) throw new Error('Failed to load vendor master new analysis')
   return res.json()
 }
@@ -143,7 +193,7 @@ export async function fetchVendorMasterNew() {
  * @returns {Promise<{rows: Array, kpis: object}>}
  */
 export async function fetchThreeWayMatching() {
-  const res = await fetch(`${BASE}/analysis/three-way-matching`)
+  const res = await fetch(`${BASE}/analysis/three-way-matching`, {})
   if (!res.ok) throw new Error('Failed to load three-way matching analysis')
   return res.json()
 }/**
@@ -152,7 +202,7 @@ export async function fetchThreeWayMatching() {
  * @returns {Promise<Array>}
  */
 export async function fetchLogs(limit = 100) {
-  const res = await fetch(`${BASE}/logs?limit=${limit}`)
+  const res = await fetch(`${BASE}/logs?limit=${limit}`, {})
   if (!res.ok) throw new Error('Failed to load logs')
   return res.json()
 }
@@ -163,7 +213,7 @@ export async function fetchLogs(limit = 100) {
  * @returns {Promise<object>}
  */
 export async function searchAuditTrace(query) {
-  const res = await fetch(`${BASE}/audit-trace/search?query=${encodeURIComponent(query)}`)
+  const res = await fetch(`${BASE}/audit-trace/search?query=${encodeURIComponent(query)}`, {})
   if (!res.ok) throw new Error('Failed to search audit trace raw files')
   return res.json()
 }

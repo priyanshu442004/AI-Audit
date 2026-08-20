@@ -108,7 +108,19 @@ export default function UploadModal() {
           setResults(result)
           setPage('dashboard')
         },
-        onError: (msg) => {
+        onError: async (msg) => {
+          try {
+            const res = await fetch('/api/result/combined')
+            if (res.ok) {
+              const data = await res.json()
+              if (data && typeof data === 'object' && Object.keys(data).length > 0) {
+                setResults(data)
+                setPage('dashboard')
+                setShowUploadModal(false)
+                return
+              }
+            }
+          } catch (_) {}
           setError(msg)
           setPage('dashboard')
           setShowUploadModal(true)
@@ -132,7 +144,19 @@ export default function UploadModal() {
         setResults(result)
         setPage('dashboard')
       },
-      onError: (msg) => {
+      onError: async (msg) => {
+        try {
+          const res = await fetch('/api/result/combined')
+          if (res.ok) {
+            const data = await res.json()
+            if (data && typeof data === 'object' && Object.keys(data).length > 0) {
+              setResults(data)
+              setPage('dashboard')
+              setShowUploadModal(false)
+              return
+            }
+          }
+        } catch (_) {}
         setError(msg)
         setPage('dashboard')
         setShowUploadModal(true)

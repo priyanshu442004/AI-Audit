@@ -160,14 +160,18 @@ def run_three_way_matching(dfs: dict[str, pd.DataFrame]) -> dict:
 
     # 4. Column lookups for AP Credit Note
     credit_notes = {}
+    credit_note_remarks = {}
     if df_credit_note is not None and not df_credit_note.empty:
         col_cn_ap_no = find_col(df_credit_note, ["AP Invoice Number", "AP Invoice No", "Invoice No", "Invoice Number"])
         col_cn_no = find_col(df_credit_note, ["AP Credit Note No", "AP Credit Note Number", "Credit Note No", "DocNum"])
+        col_cn_remarks = find_col(df_credit_note, ["Remarks", "Remark", "Comments", "Narration"])
 
         if col_cn_ap_no in df_credit_note.columns and col_cn_no in df_credit_note.columns:
             df_cn = df_credit_note.copy()
             df_cn["clean_ap_invoice_no"] = df_cn[col_cn_ap_no].apply(normalize_id)
             credit_notes = df_cn[df_cn["clean_ap_invoice_no"] != ""].drop_duplicates(subset=["clean_ap_invoice_no"]).set_index("clean_ap_invoice_no")[col_cn_no].to_dict()
+            if col_cn_remarks and col_cn_remarks in df_cn.columns:
+                credit_note_remarks = df_cn[df_cn["clean_ap_invoice_no"] != ""].drop_duplicates(subset=["clean_ap_invoice_no"]).set_index("clean_ap_invoice_no")[col_cn_remarks].to_dict()
 
     # Process base lines (either AP Invoice or GRPO)
     df_base = None
@@ -296,6 +300,8 @@ def run_three_way_matching(dfs: dict[str, pd.DataFrame]) -> dict:
         # Credit Note lookup
         credit_note_val = credit_notes.get(clean_ap, "")
         credit_note_str = str(credit_note_val) if credit_note_val else ""
+        remarks_val = credit_note_remarks.get(clean_ap, "")
+        remarks_str = str(remarks_val) if not is_nan_or_none(remarks_val) else ""
 
         # Tracking sets
         if clean_po:
@@ -324,6 +330,7 @@ def run_three_way_matching(dfs: dict[str, pd.DataFrame]) -> dict:
             "invoice_date": str(invoice_date_val) if not is_nan_or_none(invoice_date_val) else "",
             "ap_invoice_number": safe_get(row, col_ap_invoice_no, default=clean_ap),
             "ap_credit_note": credit_note_str,
+            "remarks": remarks_str,
             "vendor_code": vendor_code,
             "vendor_name": vendor_name,
             "vendor_country": vendor_country,

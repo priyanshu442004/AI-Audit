@@ -8,7 +8,6 @@ import PoStatus             from '../sections/PoStatus'
 import GateEntry            from '../sections/GateEntry'
 import PriceVarianceSame    from '../sections/PriceVarianceSame'
 import PriceVarianceCross   from '../sections/PriceVarianceCross'
-import GeToGrn              from '../sections/GeToGrn'
 import GrnToAp              from '../sections/GrnToAp'
 import PaymentAgingDomestic from '../sections/PaymentAgingDomestic'
 import PaymentAgingForeign  from '../sections/PaymentAgingForeign'
@@ -29,7 +28,6 @@ const SECTIONS = {
   gateentry:            GateEntry,
   pricevariancesame:    PriceVarianceSame,
   pricevariancecross:   PriceVarianceCross,
-  getogrn:              GeToGrn,
   grntoap:              GrnToAp,
   paymentagingdomestic: PaymentAgingDomestic,
   paymentagingforeign:  PaymentAgingForeign,

@@ -6,7 +6,7 @@ const SECTION_TITLES = {
   cover:        'Cover',
   executive:    'Executive Dashboard',
   postatus:     'PO Status Analysis',
-  gateentry:    'Gate Entry Date Check',
+  gateentry:    'Gate Entry Check',
   qtyvariance:  'Quantity Variance',
   pricevariance:'Price Variance & Savings',
   pricevariancesame: 'Same-Vendor Price Variance',
@@ -88,16 +88,16 @@ export default function Header({ onMenuClick }) {
               <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16"/>
             </svg>
           </button>
-          <div className="flex flex-col">
-            <div className="app-label mb-0.5">
-              IKIO Technologies Limited
-            </div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-lg font-semibold tracking-tight app-title">
-                {title}
-              </h1>
-              <span className="app-faint hidden sm:block">|</span>
-              <span className="text-sm font-medium app-muted hidden sm:block">
+          <div className="flex items-center gap-3">
+            <h1 className="text-lg font-bold text-slate-900 dark:text-white tracking-tight">
+              {title}
+            </h1>
+            <span className="text-slate-300 dark:text-slate-700 hidden sm:inline">|</span>
+            <div className="flex flex-col hidden sm:flex">
+              <div className="app-label mb-0.5">
+                IKIO Technologies Limited
+              </div>
+              <span className="text-xs font-medium app-muted">
                 P2P Audit Report • FY 2026-27
               </span>
             </div>

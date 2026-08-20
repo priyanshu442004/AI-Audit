@@ -16,7 +16,7 @@ const FILE_SLOTS = [
 ]
 
 export default function UploadPage() {
-  const { setPage, setSessionId, setResults, setProgress } = useStore()
+  const { setPage, setSessionId, setResults, setProgress, setShowUploadModal } = useStore()
   const [uploaded, setUploaded] = useState({})  // role → File
   const [error, setError] = useState('')
   const [dragActive, setDragActive] = useState({}) // role → boolean
@@ -34,7 +34,7 @@ export default function UploadPage() {
 
   const fetchHolidaysInfo = async () => {
     try {
-      const res = await fetch('/api/holidays-info')
+      const res = await fetch('/api/holidays-info', {})
       if (res.ok) {
         const data = await res.json()
         if (data.has_file) {
@@ -51,7 +51,7 @@ export default function UploadPage() {
   }
 
   useEffect(() => {
-    fetch('/api/history')
+    fetch('/api/history', {})
       .then(res => res.json())
       .then(data => {
         if (Array.isArray(data) && data.length > 0) {
@@ -155,7 +155,7 @@ export default function UploadPage() {
     setProgress({ pct: 15, message: 'Retrieving cached audit results...' })
     
     // Check if combined results are already computed
-    fetch('/api/result/combined')
+    fetch('/api/result/combined', {})
       .then(async res => {
         if (!res.ok) {
           const body = await res.json().catch(() => ({}))
@@ -180,7 +180,19 @@ export default function UploadPage() {
             setShowUploadModal(false)
             setPage('dashboard')
           },
-          onError: (msg) => {
+          onError: async (msg) => {
+            try {
+              const res = await fetch('/api/result/combined', {})
+              if (res.ok) {
+                const data = await res.json()
+                if (data && typeof data === 'object' && Object.keys(data).length > 0) {
+                  setResults(data)
+                  setShowUploadModal(false)
+                  setPage('dashboard')
+                  return
+                }
+              }
+            } catch (_) {}
             setError(msg)
             setPage('upload')
           },
@@ -216,7 +228,19 @@ export default function UploadPage() {
           setShowUploadModal(false)
           setPage('dashboard')
         },
-        onError: (msg) => {
+        onError: async (msg) => {
+          try {
+            const res = await fetch('/api/result/combined', {})
+            if (res.ok) {
+              const data = await res.json()
+              if (data && typeof data === 'object' && Object.keys(data).length > 0) {
+                setResults(data)
+                setShowUploadModal(false)
+                setPage('dashboard')
+                return
+              }
+            }
+          } catch (_) {}
           setError(msg)
           setPage('upload')
         },

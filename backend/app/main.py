@@ -494,8 +494,10 @@ async def analyze(session_id: str):
                 sess.result = result
                 
                 async def cached_event_generator():
+                    sanitized_res = sanitize_for_json(result)
                     yield {"data": json.dumps({"stage": "loading", "pct": 100, "message": "Loading from cache..."})}
-                    yield {"data": json.dumps({"stage": "result", "pct": 100, "result": result}, cls=SafeJSONEncoder)}
+                    await asyncio.sleep(0.05)
+                    yield {"data": json.dumps({"stage": "result", "pct": 100, "result": sanitized_res}, default=str)}
                 
                 add_audit_log("Dashboard Fetched", "N/A", "Loaded dashboard values from disk cache")
                 return EventSourceResponse(cached_event_generator())

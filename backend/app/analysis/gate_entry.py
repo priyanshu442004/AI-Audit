@@ -583,6 +583,7 @@ def run(dfs_or_ge: dict[str, pd.DataFrame] | pd.DataFrame, df_grpo_raw: pd.DataF
                 if not currency and col_grpo_currency:
                     currency = str(r_grpo.get(col_grpo_currency, "")).strip()
 
+            valid_grpo_dates = []
             for r_grpo in matched_grpos:
                 grpo_date_val = r_grpo.get("parsed_grpo_date")
                 grpo_date = grpo_date_val if pd.notna(grpo_date_val) else None
@@ -590,14 +591,17 @@ def run(dfs_or_ge: dict[str, pd.DataFrame] | pd.DataFrame, df_grpo_raw: pd.DataF
                     grpo_date_str = fmt_dt(grpo_date)
                     if grpo_date_str not in unique_grpo_dts:
                         unique_grpo_dts.append(grpo_date_str)
-                        
-                    if ge_date:
-                        days_val = int((grpo_date - ge_date).days)
-                        days_vals.append(str(days_val))
-                        if days_val < 0:
-                            is_exc = 1
-                        if days_val > 3:
-                            exceeds_3 = 1
+                    valid_grpo_dates.append(grpo_date)
+                    
+            if ge_date and valid_grpo_dates:
+                # Option B: Use earliest GRPO date for whole-row comparison
+                earliest_grpo_dt = min(valid_grpo_dates)
+                days_val = int((earliest_grpo_dt - ge_date).days)
+                days_vals.append(str(days_val))
+                if days_val < 0:
+                    is_exc = 1
+                elif days_val > 3:
+                    exceeds_3 = 1
 
             if is_exc == 1:
                 ge_gt_grpo_cnt += 1
@@ -679,18 +683,45 @@ def run(dfs_or_ge: dict[str, pd.DataFrame] | pd.DataFrame, df_grpo_raw: pd.DataF
     # Calculations for KPIs & Charts
     total_lines = len(records)
     total_val = sum(r["Value(INR)"] for r in records)
-    # Ensure raw matched GRPO sum evaluates to exact 640,323,942.68 INR (₹64.03 Cr)
-    if total_val > 600000000:
-        total_val = 640323942.68
     seq_exceptions = sum(1 for r in records if r["Seq Exception(GE>GRPO)"] == 1)
     exceeds_3_days = sum(1 for r in records if r["Exceeds 3 days"] == 1)
     
     unique_pos = len(set(r["PO Number"] for r in records if r["PO Number"] and r["PO Number"] != "—"))
     unique_grns = len(set(r["GRN Number"] for r in records if r["GRN Number"] and r["GRN Number"] != "—"))
-    unique_aps = len(set(r["AP Invoice Number"] for r in records if r["AP Invoice Number"] and r["AP Invoice Number"] != "—"))
     
-    unique_po_flagged = len(set(r["PO Number"] for r in records if r["Seq Exception(GE>GRPO)"] == 1 and r["PO Number"] and r["PO Number"] != "—"))
-    unique_grn_flagged = len(set(r["GRN Number"] for r in records if r["Seq Exception(GE>GRPO)"] == 1 and r["GRN Number"] and r["GRN Number"] != "—"))
+    missing_po_grns = set()
+    for r in records:
+        po_val = str(r.get("PO Number", "")).strip()
+        if not po_val or po_val.upper() in ("—", "-", "NONE", "NAN", "NA", "N/A", "NULL"):
+            grn_val = str(r.get("GRN Number", "")).strip()
+            if grn_val and grn_val != "—":
+                for g in grn_val.split(","):
+                    g_clean = g.strip()
+                    if g_clean and g_clean != "—":
+                        missing_po_grns.add(g_clean)
+    missing_po_count = len(missing_po_grns) if missing_po_grns else sum(
+        1 for r in records
+        if not r.get("PO Number") or str(r.get("PO Number")).strip().upper() in ("", "—", "-", "NONE", "NAN", "NA", "N/A", "NULL")
+    )
+
+    exceeded_days_list = []
+    for r in records:
+        if r.get("Exceeds 3 days") == 1 or str(r.get("Exceeds 3 days")) == "1":
+            d_str = str(r.get("Days(GRPO-GE)", "")).strip()
+            if d_str and d_str != "—":
+                for p in d_str.split(","):
+                    p_clean = p.strip()
+                    try:
+                        val = float(p_clean)
+                        if val > 3:
+                            exceeded_days_list.append(val)
+                    except ValueError:
+                        pass
+    if exceeded_days_list:
+        avg_val = sum(exceeded_days_list) / len(exceeded_days_list)
+        avg_grn_days = int(round(avg_val)) if (avg_val % 1 == 0) else round(avg_val, 1)
+    else:
+        avg_grn_days = 0
 
     pass_count = total_lines - seq_exceptions
     integrity_pct = round(pass_count / total_lines * 100, 2) if total_lines else 0.0
@@ -708,15 +739,16 @@ def run(dfs_or_ge: dict[str, pd.DataFrame] | pd.DataFrame, df_grpo_raw: pd.DataF
             "total_value_inr": total_val,
             "sequence_exceptions": seq_exceptions,
             "exceeds_3_day_window": exceeds_3_days,
+            "missing_po_count": missing_po_count,
+            "avg_grn_days": avg_grn_days,
             "unique_po_numbers": unique_pos,
             "unique_grn_numbers": unique_grns,
-            "unique_ap_invoices": unique_aps,
-            "unique_po_flagged": unique_po_flagged,
-            "unique_grn_flagged": unique_grn_flagged,
             "integrity_pct": integrity_pct,
             "exceptions": seq_exceptions,
             "missing_grpo_date": missing_grpo_date_cnt,
-            "missing_bill_date": missing_bill_date_cnt,
+            "ge_eq_grpo": ge_eq_grpo_cnt,
+            "ge_lt_grpo": ge_lt_grpo_cnt,
+            "ge_gt_grpo": ge_gt_grpo_cnt,
         },
         "charts": {
             "pass_vs_exception": {
@@ -728,12 +760,12 @@ def run(dfs_or_ge: dict[str, pd.DataFrame] | pd.DataFrame, df_grpo_raw: pd.DataF
                 ],
             },
             "detailed_checks": [
-                {"label": "Total",             "value": total_lines,         "pct": 100},
-                {"label": "GE = GRPO (same)",  "value": ge_eq_grpo_cnt,       "pct": round(ge_eq_grpo_cnt / total_lines * 100, 1) if total_lines else 0},
-                {"label": "GE < GRPO (normal)","value": ge_lt_grpo_cnt,       "pct": round(ge_lt_grpo_cnt / total_lines * 100, 1) if total_lines else 0},
-                {"label": "GE > GRPO (error)", "value": ge_gt_grpo_cnt,       "pct": round(ge_gt_grpo_cnt / total_lines * 100, 1) if total_lines else 0},
-                {"label": "Missing GRPO Date", "value": missing_grpo_date_cnt,"pct": round(missing_grpo_date_cnt / total_lines * 100, 1) if total_lines else 0},
-                {"label": "Missing Bill Date", "value": missing_bill_date_cnt,"pct": round(missing_bill_date_cnt / total_lines * 100, 1) if total_lines else 0},
+                {"label": "Total",                   "value": total_lines,            "pct": 100},
+                {"label": "GE = GRPO (same)",        "value": ge_eq_grpo_cnt,          "pct": round(ge_eq_grpo_cnt / total_lines * 100, 1) if total_lines else 0},
+                {"label": "GE < GRPO (normal)",      "value": ge_lt_grpo_cnt,          "pct": round(ge_lt_grpo_cnt / total_lines * 100, 1) if total_lines else 0},
+                {"label": "GE > GRPO (error)",       "value": ge_gt_grpo_cnt,          "pct": round(ge_gt_grpo_cnt / total_lines * 100, 1) if total_lines else 0},
+                {"label": "GRN date exceeds 3 days", "value": exceeds_3_days,          "pct": round(exceeds_3_days / total_lines * 100, 1) if total_lines else 0},
+                {"label": "GRN not done yet",        "value": missing_grpo_date_cnt,   "pct": round(missing_grpo_date_cnt / total_lines * 100, 1) if total_lines else 0},
             ],
         },
         "tables": [

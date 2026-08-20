@@ -36,10 +36,7 @@ export default function Executive({ data }) {
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white sm:text-3xl">
-            Executive Summary
-          </h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+          <p className="text-sm text-slate-500 dark:text-slate-400">
             High-level audit findings, financial risk metrics, and key performance graphs.
           </p>
         </div>

@@ -257,6 +257,7 @@ def run(dfs_or_df: dict[str, pd.DataFrame] | pd.DataFrame) -> dict:
     col_cn_vendor_code = None
     col_cn_item_code = None
     col_cn_qty = None
+    col_cn_remarks = None
     if df_cn is not None and not df_cn.empty:
         col_cn_ap_inv_no = find_col(df_cn, ["ap invoice number", "ap invoice no", "invoice number", "invoice no", "ap_invoice_no"])
         col_cn_no = find_col(df_cn, ["ap credit note no", "ap credit note number", "credit note no", "ap_credit_note_no"])
@@ -264,6 +265,7 @@ def run(dfs_or_df: dict[str, pd.DataFrame] | pd.DataFrame) -> dict:
         col_cn_vendor_code = find_col(df_cn, ["vendor code", "bp code", "supplier code", "vendorcode", "bpcode", "account code", "vendor"])
         col_cn_item_code = find_col(df_cn, ["item code", "item_code", "item no", "item no.", "itemno"])
         col_cn_qty = find_col(df_cn, ["credit note qty", "qty", "quantity", "credit note quantity", "quantity in doc", "quantity in document"])
+        col_cn_remarks = find_col(df_cn, ["remarks", "remark", "comments", "narration"])
 
     # ── 5. Column Detection in Gate Entry Sheet ──────────────────────────────
     col_ge_po_no = None
@@ -354,6 +356,7 @@ def run(dfs_or_df: dict[str, pd.DataFrame] | pd.DataFrame) -> dict:
         ap_by_po = {k: list(v) for k, v in ap_by_po.items()}
 
     cn_lookup = {}
+    cn_to_remarks = {}
     cn_fallback_by_qty = {}
     cn_fallback_by_item = {}
     ap_ref_to_inv = {}
@@ -374,6 +377,13 @@ def run(dfs_or_df: dict[str, pd.DataFrame] | pd.DataFrame) -> dict:
             cn = normalize_id(row.get(col_cn_no))
             if not cn or cn.lower() in ("nan", "none", ""):
                 continue
+
+            if col_cn_remarks:
+                rem_raw = row.get(col_cn_remarks)
+                if pd.notna(rem_raw):
+                    rem_str = str(rem_raw).strip()
+                    if rem_str.lower() not in ("nan", "none", "null", ""):
+                        cn_to_remarks[cn] = rem_str
                 
             invoices = set()
             if col_cn_ap_inv_no:
@@ -564,10 +574,16 @@ def run(dfs_or_df: dict[str, pd.DataFrame] | pd.DataFrame) -> dict:
                 for cn in fallback_cns:
                     if cn and cn != "—" and cn not in unique_cns:
                         unique_cns.append(cn)
+        unique_remarks = []
+        for cn in unique_cns:
+            rem = cn_to_remarks.get(cn, "")
+            if rem and rem not in unique_remarks:
+                unique_remarks.append(rem)
                 
         grn_str = ", ".join(unique_grns) if unique_grns else "—"
         ap_inv_str = ", ".join(unique_ap_invs) if unique_ap_invs else "—"
         cn_str = ", ".join(unique_cns) if unique_cns else "—"
+        remarks_str = ", ".join(unique_remarks) if unique_remarks else "—"
         ge_dt_str = unique_ge_dts[0] if unique_ge_dts else "—"
 
         pending_qty_row = ordered_qty - received_qty_row
@@ -649,6 +665,7 @@ def run(dfs_or_df: dict[str, pd.DataFrame] | pd.DataFrame) -> dict:
             "GRN No.": grn_str,
             "AP Invoice No.": ap_inv_str,
             "AP Credit Note": cn_str,
+            "Remarks": remarks_str,
             "Ordered Qty.": ordered_qty,
             "Received Qty.": received_qty_row,
             "Pending Qty.": pending_qty_row,

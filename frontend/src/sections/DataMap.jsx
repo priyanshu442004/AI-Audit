@@ -1,7 +1,7 @@
 import React from 'react'
 
 const SOURCE_FILES = [
-  { file: 'AP Credit Note.csv',     purpose: 'AP Credit Notes booked',    records: '1,250',  keys: 'DocEntry, CardCode, ItemCode, Quantity, Price' },
+  { file: 'AP Credit Note.csv',     purpose: 'AP Credit Notes booked',    records: '1,250',  keys: 'DocEntry, CardCode, ItemCode, Quantity, Price, Remarks' },
   { file: 'AP Invoice Report.csv',  purpose: 'AP invoices booked (purchase register)', records: '9,997',  keys: 'DocEntry, CardCode, ItemCode, Quantity, Price, DocDate' },
   { file: 'BP Master.csv',          purpose: 'Business Partner registry', records: '1,498',  keys: 'CardCode, CardName, MSMEStatus, GSTRegNum' },
   { file: 'Gate Entry Report.csv',  purpose: 'Security vehicle gate logs', records: '2,323',  keys: 'GateEntryNo, InvoiceNo, InvoiceDate, LinkedGRPO' },

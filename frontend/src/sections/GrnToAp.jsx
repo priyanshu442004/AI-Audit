@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react'
 import AiInsightBox from '../components/AiInsightBox'
 import TruncatedCell from '../components/TruncatedCell'
 import useColumnOrder from '../hooks/useColumnOrder'
+import ExceptionModal from '../components/ExceptionModal'
 
 const formatCurrency = (val) => {
   if (val === null || val === undefined) return '—'
@@ -19,7 +20,7 @@ const formatCurrency = (val) => {
 // ---------------------------------------------------------------------------
 const COL_GROUPS = [
   { label: 'GRN Information',   cols: ['GRN No.', 'GRN Date'] },
-  { label: 'Invoice Information', cols: ['AP Invoice No.', 'Invoice Date'] },
+  { label: 'Invoice Information', cols: ['AP Invoice No.', 'Invoice Date', 'AP Credit Note', 'Remarks'] },
   { label: 'Vendor Details',    cols: ['PO Number', 'Vendor Code', 'Vendor Name', 'Vendor Country'] },
   { label: 'Value',             cols: ['PO Qty', 'PO Price', 'Invoice Value (INR)'] },
   { label: 'Analysis',          cols: ['Days GRN→Inv', 'Within 7-day SLA', 'Invoice > 7 days (Breach)', 'Seq Exception (Inv<GRN)'] },
@@ -82,11 +83,35 @@ export default function GrnToAp({ data }) {
   const [colFilters, setColFilters]         = useState({})
   const [startDate, setStartDate]           = useState('')
   const [endDate, setEndDate]               = useState('')
+
+  // Modal State
+  const [showExceptionModal, setShowExceptionModal] = useState(false)
+  const [exceptionTitle, setExceptionTitle] = useState('')
+  const [exceptionModalRows, setExceptionModalRows] = useState([])
+  const [isModalException, setIsModalException] = useState(true)
+
   const ITEMS_PER_PAGE = 25
 
   const { order: colOrder, moveColumn } = useColumnOrder('grn-to-ap', ALL_COLS)
   const [dragCol, setDragCol]     = useState(null)
   const [dragOverCol, setDragOverCol] = useState(null)
+
+  const openExceptionModal = (titleStr, filterFn, dedupeKey, isExc = true) => {
+    setExceptionTitle(titleStr)
+    setIsModalException(isExc)
+    let res = rows.filter(filterFn)
+    if (dedupeKey) {
+      const seen = new Set()
+      res = res.filter(r => {
+        const kVal = r[dedupeKey]
+        if (!kVal || kVal === '—' || seen.has(kVal)) return false
+        seen.add(kVal)
+        return true
+      })
+    }
+    setExceptionModalRows(res)
+    setShowExceptionModal(true)
+  }
 
   const handleColFilter = (col, val) => {
     setColFilters(prev => ({ ...prev, [col]: val }))
@@ -160,21 +185,107 @@ export default function GrnToAp({ data }) {
 
   const kpiCards = [
     // Row 1 — Volume & SLA
-    { label: 'Invoices Linked to GRN',          value: k('invoices_linked_to_grn'), accent: 'blue',  desc: 'AP invoices successfully linked to a Goods Receipt Note' },
-    { label: 'Within 7-Day SLA',                value: k('within_7_day_sla'),       accent: 'blue',  desc: 'Invoices received within 7 days of the GRN date' },
-    { label: 'Breach > 7 Days',                 value: k('breach_gt_7_days'),       accent: (k('breach_gt_7_days') ?? 0) > 0 ? 'amber' : 'blue', desc: 'Invoices exceeding the 7-day GRN-to-invoice SLA' },
-    { label: 'SLA Compliance %',                value: k('sla_compliance_pct'),     accent: 'blue',  desc: 'Invoices processed within the 7-day SLA window' },
+    { 
+      label: 'Invoices Linked to GRN',          
+      value: k('invoices_linked_to_grn'), 
+      accent: 'blue',  
+      desc: 'AP invoices successfully linked to a Goods Receipt Note',
+      isException: false,
+      onCardClick: () => openExceptionModal('Invoices Linked to GRN', r => r['AP Invoice No.'] && r['AP Invoice No.'] !== '—', null, false)
+    },
+    { 
+      label: 'Within 7-Day SLA',                
+      value: k('within_7_day_sla'),       
+      accent: 'blue',  
+      desc: 'Invoices received within 7 days of the GRN date',
+      isException: false,
+      onCardClick: () => openExceptionModal('Invoices Within 7-Day SLA', r => r['Within 7-day SLA'] === 1 || r['Within 7-day SLA'] === '1', null, false)
+    },
+    { 
+      label: 'Breach > 7 Days',                 
+      value: k('breach_gt_7_days'),       
+      accent: (k('breach_gt_7_days') ?? 0) > 0 ? 'amber' : 'blue', 
+      desc: 'Invoices exceeding the 7-day GRN-to-invoice SLA',
+      isException: true,
+      onCardClick: () => openExceptionModal('GRN-to-AP SLA Breach (> 7 Days)', r => r['Invoice > 7 days (Breach)'] === 1 || r['Invoice > 7 days (Breach)'] === '1', null, true)
+    },
+    { 
+      label: 'SLA Compliance %',                
+      value: k('sla_compliance_pct'),     
+      accent: 'blue',  
+      desc: 'Invoices processed within the 7-day SLA window',
+      isException: false,
+      onCardClick: () => openExceptionModal('Invoices Within 7-Day SLA', r => r['Within 7-day SLA'] === 1 || r['Within 7-day SLA'] === '1', null, false)
+    },
     // Row 2 — Timing & Exceptions
-    { label: 'Avg Days GRN→Inv',                value: k('avg_days_grn_to_inv'),    accent: 'blue',  desc: 'Average elapsed days between GRN date and AP invoice receipt', fmt: fmtOneDP },
-    { label: 'Max Days GRN→Inv',                value: k('max_days_grn_to_inv'),    accent: 'blue',  desc: 'Maximum observed GRN-to-invoice gap in the period',           fmt: fmtOneDP },
-    { label: 'Sequence Exceptions (Inv<GRN)',   value: k('sequence_exceptions'),    accent: (k('sequence_exceptions') ?? 0) > 0 ? 'rose' : 'blue', desc: 'Cases where the AP invoice date precedes the GRN date' },
-    { label: 'Unique PO Numbers',               value: k('unique_po_numbers'),      accent: 'blue',  desc: 'Distinct purchase orders included in this analysis' },
+    { 
+      label: 'Avg Days GRN→Inv',                
+      value: k('avg_days_grn_to_inv'),    
+      accent: 'blue',  
+      desc: 'Average elapsed days between GRN date and AP invoice receipt', 
+      fmt: fmtOneDP,
+      isException: true,
+      onCardClick: () => openExceptionModal('GRN-to-AP SLA Breach (> 7 Days)', r => r['Invoice > 7 days (Breach)'] === 1 || r['Invoice > 7 days (Breach)'] === '1', null, true)
+    },
+    { 
+      label: 'Max Days GRN→Inv',                
+      value: k('max_days_grn_to_inv'),    
+      accent: 'blue',  
+      desc: 'Maximum observed GRN-to-invoice gap in the period',           
+      fmt: fmtOneDP,
+      isException: true,
+      onCardClick: () => openExceptionModal('GRN-to-AP SLA Breach (> 7 Days)', r => r['Invoice > 7 days (Breach)'] === 1 || r['Invoice > 7 days (Breach)'] === '1', null, true)
+    },
+    { 
+      label: 'Sequence Exceptions (Inv<GRN)',   
+      value: k('sequence_exceptions'),    
+      accent: (k('sequence_exceptions') ?? 0) > 0 ? 'rose' : 'blue', 
+      desc: 'Cases where the AP invoice date precedes the GRN date',
+      isException: true,
+      onCardClick: () => openExceptionModal('Sequence Exceptions (Invoice < GRN Date)', r => r['Seq Exception (Inv<GRN)'] === 1 || r['Seq Exception (Inv<GRN)'] === '1', null, true)
+    },
+    { 
+      label: 'Unique PO Numbers',               
+      value: k('unique_po_numbers'),      
+      accent: 'blue',  
+      desc: 'Distinct purchase orders included in this analysis',
+      isException: false,
+      onCardClick: () => openExceptionModal('Unique PO Numbers', r => r['PO Number'] && r['PO Number'] !== '—', 'PO Number', false)
+    },
     // Row 3 — Unique Counts
-    { label: 'Unique GRN (GRPO) Nos.',          value: k('unique_grn_nos'),         accent: 'blue',  desc: 'Distinct GRNs processed in the audit period' },
-    { label: 'Unique AP Invoices',              value: k('unique_ap_invoices'),     accent: 'blue',  desc: 'Distinct AP invoices included in the reconciliation' },
-    { label: 'Unique POs Flagged (Red/Amber)',  value: k('unique_pos_flagged'),     accent: (k('unique_pos_flagged') ?? 0) > 0 ? 'rose' : 'blue', desc: 'Purchase orders containing SLA or sequence exceptions' },
+    { 
+      label: 'Unique GRN (GRPO) Nos.',          
+      value: k('unique_grn_nos'),         
+      accent: 'blue',  
+      desc: 'Distinct GRNs processed in the audit period',
+      isException: false,
+      onCardClick: () => openExceptionModal('Unique Goods Receipt Notes (GRN)', r => r['GRN No.'] && r['GRN No.'] !== '—', 'GRN No.', false)
+    },
+    { 
+      label: 'Unique AP Invoices',              
+      value: k('unique_ap_invoices'),     
+      accent: 'blue',  
+      desc: 'Distinct AP invoices included in the reconciliation',
+      isException: false,
+      onCardClick: () => openExceptionModal('Unique AP Invoices', r => r['AP Invoice No.'] && r['AP Invoice No.'] !== '—', 'AP Invoice No.', false)
+    },
+    { 
+      label: 'Unique POs Flagged (Red/Amber)',  
+      value: k('unique_pos_flagged'),     
+      accent: (k('unique_pos_flagged') ?? 0) > 0 ? 'rose' : 'blue', 
+      desc: 'Purchase orders containing SLA or sequence exceptions',
+      isException: true,
+      onCardClick: () => openExceptionModal('Unique Flagged POs (SLA Breach / Sequence Anomaly)', r => r['Invoice > 7 days (Breach)'] === 1 || r['Seq Exception (Inv<GRN)'] === 1, 'PO Number', true)
+    },
     // Row 4 — Flagged GRNs
-    { label: 'Unique GRNs Flagged (Red/Amber)', value: k('unique_grns_flagged'),    accent: (k('unique_grns_flagged') ?? 0) > 0 ? 'rose' : 'blue', desc: 'Distinct GRNs with SLA breaches or sequence exceptions' },
+    { 
+      label: 'Unique GRNs Flagged (Red/Amber)', 
+      value: k('unique_grns_flagged'),    
+      accent: (k('unique_grns_flagged') ?? 0) > 0 ? 'rose' : 'blue', 
+      desc: 'Distinct GRNs with SLA breaches or sequence exceptions',
+      isException: true,
+      onCardClick: () => openExceptionModal('Unique Flagged GRNs (SLA Breach / Sequence Anomaly)', r => r['Invoice > 7 days (Breach)'] === 1 || r['Seq Exception (Inv<GRN)'] === 1, 'GRN No.', true)
+    },
   ]
 
   const accentMap = {
@@ -189,10 +300,7 @@ export default function GrnToAp({ data }) {
       {/* Page Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-            GRN to AP Invoice Check
-          </h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+          <p className="text-sm text-slate-500 dark:text-slate-400">
             Reconciliation of Goods Receipt Notes against AP Invoice records — identifying unmatched invoices, sequence exceptions where invoices predate goods receipt, and timing gaps between GRN and invoice processing
           </p>
         </div>
@@ -209,8 +317,13 @@ export default function GrnToAp({ data }) {
         {kpiCards.map((k) => {
           const ac = accentMap[k.accent] || accentMap.blue
           return (
-            <div key={k.label}
-              className="relative bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm hover:shadow-md transition-shadow duration-200 overflow-hidden flex flex-col justify-between">
+            <div 
+              key={k.label}
+              onClick={k.onCardClick}
+              className={`relative bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm transition-all duration-200 overflow-hidden flex flex-col justify-between cursor-pointer hover:shadow-md active:scale-[0.98] ${
+                k.isException ? 'hover:border-rose-500/50' : 'hover:border-blue-500/50'
+              }`}
+            >
               <div className={`absolute top-0 left-0 right-0 h-0.5 ${ac.bar}`} />
               <div>
                 <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-widest leading-tight mb-2">
@@ -503,6 +616,18 @@ export default function GrnToAp({ data }) {
           </div>
         </div>
       </div>
+
+      {/* Exception Modal */}
+      <ExceptionModal
+        isOpen={showExceptionModal}
+        onClose={() => setShowExceptionModal(false)}
+        title={exceptionTitle}
+        subtitle="Detailed GRN-to-AP records for selected metric"
+        columns={ALL_COLS}
+        rows={exceptionModalRows}
+        filenamePrefix="GRN_to_AP_Records"
+        isException={isModalException}
+      />
     </div>
   )
 }

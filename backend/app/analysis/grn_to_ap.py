@@ -30,6 +30,8 @@ _TABLE_COLUMNS = [
     "GRN Date",
     "AP Invoice No.",
     "Invoice Date",
+    "AP Credit Note",
+    "Remarks",
     "PO Number",
     "Vendor Code",
     "Vendor Name",
@@ -204,6 +206,23 @@ def run(dfs: dict) -> dict:
                         "invoice_value":    _safe_num(ap_row[col_ap_lt]) if col_ap_lt else None,
                     }
 
+    # ── AP Credit Note Report: build AP Invoice No. → AP Credit Note / Remarks lookup ──
+    cn_no_lookup: dict[str, str] = {}
+    cn_remarks_lookup: dict[str, str] = {}
+    df_cn = dfs.get("ap_credit_note")
+    if df_cn is not None and not df_cn.empty:
+        cn_map = detect_columns(df_cn)
+        col_cn_ap_no = cn_map.get("ap_invoice_no") or cn_map.get("invoice_no")
+        col_cn_no = cn_map.get("credit_note_no") or cn_map.get("doc_num")
+        col_cn_rem = cn_map.get("remarks")
+        if col_cn_ap_no and col_cn_no:
+            for _, cn_row in df_cn.iterrows():
+                ap_k = _normalize_id(cn_row[col_cn_ap_no])
+                if ap_k and ap_k not in cn_no_lookup:
+                    cn_no_lookup[ap_k] = _safe_str(cn_row[col_cn_no]) or ""
+                    if col_cn_rem:
+                        cn_remarks_lookup[ap_k] = _safe_str(cn_row[col_cn_rem]) or ""
+
     # ── Build one output row per GRPO Report row ──────────────────────────────
     rows = []
     for _, grpo_row in df_grpo.iterrows():
@@ -214,11 +233,18 @@ def run(dfs: dict) -> dict:
         days_grn_inv    = _calc_days(grn_date_raw, inv_date_raw, date_cache, holiday_set)
         seq_exception   = _seq_exception(grn_date_raw, inv_date_raw)
 
+        inv_no = inv_info.get("invoice_no")
+        inv_key = _normalize_id(inv_no) if inv_no else ""
+        cn_no = cn_no_lookup.get(inv_key) if inv_key else None
+        cn_remarks = cn_remarks_lookup.get(inv_key) if inv_key else None
+
         rows.append({
             "GRN No.":                    _safe_str(grpo_row[col_grn])           if col_grn      else None,
             "GRN Date":                   _fmt_date(grpo_row[col_grn_date])      if col_grn_date else None,
-            "AP Invoice No.":             inv_info.get("invoice_no"),
+            "AP Invoice No.":             inv_no,
             "Invoice Date":               inv_info.get("invoice_date"),
+            "AP Credit Note":             cn_no,
+            "Remarks":                    cn_remarks,
             "PO Number":                  _safe_str(grpo_row[col_po])       if col_po       else None,
             "Vendor Code":                _safe_str(grpo_row[col_ven_code]) if col_ven_code else None,
             "Vendor Name":                _safe_str(grpo_row[col_ven_name]) if col_ven_name else None,

@@ -259,10 +259,7 @@ export default function PriceVarianceCross() {
       {/* Page Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-            Price Variance (Cross Vendor)
-          </h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+          <p className="text-sm text-slate-500 dark:text-slate-400">
             Compare unit rates of the same item across different vendors to check for pricing inconsistencies.
           </p>
         </div>

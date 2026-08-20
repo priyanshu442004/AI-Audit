@@ -5,7 +5,6 @@ export const SECTION_LABELS = {
   gateentry: 'Gate Entry',
   pricevariancesame: 'Price Variance (Same Vendor)',
   pricevariancecross: 'Price Variance (Cross Vendor)',
-  getogrn: 'Gate Entry to GRN',
   grntoap: 'GRN to AP Invoice',
   glbalances: 'GL Balances',
   paymentaging: 'Payment Aging',
@@ -44,7 +43,7 @@ export function getCrossReferences(value, storeState) {
 
   const results = {}
   const sectionsToScan = [
-    'postatus', 'gateentry', 'getogrn', 'grntoap', 'pricevariancesame', 
+    'postatus', 'gateentry', 'grntoap', 'pricevariancesame', 
     'pricevariancecross', 'glbalances', 'paymentaging', 'paymentagingdomestic', 
     'paymentagingforeign', 'paymentagingrelated', 'paymentagingmsme', 
     'vendormasternew', 'threewaymatching', 'msme', 'vendormaster', 'itemmaster'
