@@ -23,14 +23,14 @@ import app.session as session_store
 from app.loaders import load_file
 from app.pipeline import run_pipeline
 from app.insights import generate_section_insight, generate_executive_summary
-from app.config import FILE_ROLES
+from app.config import FILE_ROLES, get_file_slots, get_file_roles_dict
 from app.db import init_db, add_uploaded_file, get_active_files, delete_file, delete_all_files, replace_file, get_file_by_id, add_audit_log, get_audit_logs
 from app.s3 import upload_file_to_s3, download_file_from_s3
 
 # Initialize the database on startup
 init_db()
 
-cached_dfs: dict[str, pd.DataFrame] | None = None
+cached_dfs_dict: dict[tuple[str, str], dict[str, pd.DataFrame]] = {}
 cached_aging_domestic: dict | None = None
 cached_aging_foreign: dict | None = None
 cached_aging_related: dict | None = None
@@ -40,9 +40,12 @@ cached_three_way_matching: dict | None = None
 cached_price_variance_same: dict | None = None
 cached_price_variance_cross: dict | None = None
 
-def clear_calculation_caches():
-    global cached_dfs, cached_aging_domestic, cached_aging_foreign, cached_aging_related, cached_aging_msme, cached_vendor_master_new, cached_three_way_matching, cached_price_variance_same, cached_price_variance_cross
-    cached_dfs = None
+def clear_calculation_caches(entity: str = "ITL", process: str = "P2P"):
+    global cached_dfs_dict, cached_aging_domestic, cached_aging_foreign, cached_aging_related, cached_aging_msme, cached_vendor_master_new, cached_three_way_matching, cached_price_variance_same, cached_price_variance_cross
+    key = (entity.upper(), process.upper())
+    if key in cached_dfs_dict:
+        del cached_dfs_dict[key]
+    
     cached_aging_domestic = None
     cached_aging_foreign = None
     cached_aging_related = None
@@ -60,6 +63,7 @@ def clear_calculation_caches():
     # Delete calculated cache files on disk
     calc_files = [
         "pipeline_result.pkl",
+        f"pipeline_result_{entity.upper()}_{process.upper()}.pkl",
         "aging_domestic.pkl",
         "aging_foreign.pkl",
         "aging_related.pkl",
@@ -77,11 +81,12 @@ def clear_calculation_caches():
             except Exception as e:
                 print(f"Failed to remove cache file {fn}: {e}")
 
-def get_cached_dfs_or_load() -> dict[str, pd.DataFrame]:
-    global cached_dfs
-    if cached_dfs is None:
-        cached_dfs = load_combined_dfs()
-    return cached_dfs
+def get_cached_dfs_or_load(entity: str = "ITL", process: str = "P2P") -> dict[str, pd.DataFrame]:
+    global cached_dfs_dict
+    key = (entity.upper(), process.upper())
+    if key not in cached_dfs_dict:
+        cached_dfs_dict[key] = load_combined_dfs(entity=entity, process=process)
+    return cached_dfs_dict[key]
 
 
 
@@ -126,13 +131,13 @@ def get_cache_path(s3_key: str) -> str:
     key_hash = hashlib.md5(s3_key.encode()).hexdigest()
     return os.path.join(CACHE_DIR, f"{key_hash}.pkl")
 
-def load_combined_dfs(on_progress=None) -> dict[str, pd.DataFrame]:
+def load_combined_dfs(entity: str = "ITL", process: str = "P2P", on_progress=None) -> dict[str, pd.DataFrame]:
     """
-    Load all active S3 files concurrently, group them by role,
+    Load all active S3 files for given entity & process concurrently, group them by role,
     and concatenate them into a combined dictionary of DataFrames.
     Uses a local pickle cache to speed up loads.
     """
-    active_files = get_active_files()
+    active_files = get_active_files(entity=entity, process=process)
     
     files_by_role = {}
     for f in active_files:
@@ -240,26 +245,39 @@ app.add_middleware(
 )
 
 
+@app.get("/api/file-slots")
+def get_slots(entity: str = "ITL", process: str = "P2P"):
+    """Returns valid file slots based on current entity and process selection."""
+    return {
+        "entity": entity,
+        "process": process,
+        "slots": get_file_slots(entity, process)
+    }
+
+
 # ── Upload ────────────────────────────────────────────────────────────────────
 @app.post("/api/upload")
 async def upload_files(
     files: list[UploadFile] = File(...),
     roles: list[str] = Form(...),
+    entity: str = Form("ITL"),
+    process: str = Form("P2P"),
 ):
     """
-    Upload files concurrently, save to S3, record in database,
-    and invalidate the combined analysis cache.
+    Upload files concurrently, save to S3, record in database with entity and process metadata,
+    and invalidate the analysis cache.
     """
     if len(files) != len(roles):
         raise HTTPException(400, "files and roles must have equal length.")
 
-    valid_roles = set(FILE_ROLES.keys())
+    valid_roles_dict = get_file_roles_dict(entity, process)
+    valid_roles = set(valid_roles_dict.keys())
     for r in roles:
         if r not in valid_roles:
-            raise HTTPException(400, f"Unknown role '{r}'. Valid: {list(valid_roles)}")
+            raise HTTPException(400, f"Unknown role '{r}' for entity={entity}, process={process}. Valid: {list(valid_roles)}")
 
-    # Invalidate combined result cache
-    clear_calculation_caches()
+    # Invalidate combined result cache for entity & process
+    clear_calculation_caches(entity=entity, process=process)
 
     loop = asyncio.get_running_loop()
 
@@ -271,10 +289,10 @@ async def upload_files(
             # 2. Add to Database (blocking, run in thread pool)
             db_res = await loop.run_in_executor(
                 None, 
-                lambda: add_uploaded_file(r, uf.filename, s3_res["s3_key"], s3_res["s3_url"], s3_res["row_count"])
+                lambda: add_uploaded_file(r, uf.filename, s3_res["s3_key"], s3_res["s3_url"], s3_res["row_count"], entity=entity, process=process)
             )
             # Log the upload
-            await loop.run_in_executor(None, lambda: add_audit_log("File Uploaded", uf.filename, f"Uploaded under role {r}"))
+            await loop.run_in_executor(None, lambda: add_audit_log("File Uploaded", uf.filename, f"Uploaded under role {r} [{entity}/{process}]"))
             return {
                 "id": db_res["id"],
                 "role": db_res["role"],
@@ -282,6 +300,8 @@ async def upload_files(
                 "s3Key": db_res["s3_key"],
                 "s3Url": db_res["s3_url"],
                 "rowCount": db_res["row_count"],
+                "entity": db_res.get("entity", entity),
+                "process": db_res.get("process", process),
                 "uploadedAt": str(db_res["uploaded_at"]),
             }
         except Exception as exc:
@@ -352,10 +372,10 @@ def get_holidays_info():
 
 # ── Audit History Management ──────────────────────────────────────────────────
 @app.get("/api/history")
-def list_history():
-    """List all active uploaded files. Runs in standard threadpool."""
+def list_history(entity: str = "ITL", process: str = "P2P"):
+    """List all active uploaded files for specified entity and process. Runs in standard threadpool."""
     try:
-        files = get_active_files()
+        files = get_active_files(entity=entity, process=process)
         return [
             {
                 "id": f["id"],
@@ -364,6 +384,8 @@ def list_history():
                 "s3Key": f["s3_key"],
                 "s3Url": f["s3_url"],
                 "rowCount": f["row_count"],
+                "entity": f.get("entity", entity),
+                "process": f.get("process", process),
                 "uploadedAt": str(f["uploaded_at"]),
             }
             for f in files
@@ -373,16 +395,16 @@ def list_history():
 
 
 @app.delete("/api/history/delete-all")
-def delete_all_history_files():
-    """Soft delete all active files from database and invalidate cached analysis."""
+def delete_all_history_files(entity: str = "ITL", process: str = "P2P"):
+    """Soft delete all active files from database for specified entity/process and invalidate cached analysis."""
     try:
-        deleted_count = delete_all_files()
+        deleted_count = delete_all_files(entity=entity, process=process)
         
         # Invalidate combined session cache
-        clear_calculation_caches()
+        clear_calculation_caches(entity=entity, process=process)
         
         # Log deletion
-        add_audit_log("File Deleted", "All Active Files", f"Soft deleted all {deleted_count} active files")
+        add_audit_log("File Deleted", "All Active Files", f"Soft deleted all {deleted_count} active files [{entity}/{process}]")
             
         return {"status": "success", "message": f"Successfully deleted {deleted_count} files."}
     except Exception as e:
@@ -408,10 +430,12 @@ def delete_history_file(file_id: int):
                 print(f"Failed to remove cache file: {e}")
         
         # Invalidate combined session cache
-        clear_calculation_caches()
+        ent = file_info.get("entity", "ITL")
+        prc = file_info.get("process", "P2P")
+        clear_calculation_caches(entity=ent, process=prc)
         
         # Log deletion
-        add_audit_log("File Deleted", file_info['filename'], f"Soft deleted file with ID {file_id} under role {file_info['role']}")
+        add_audit_log("File Deleted", file_info['filename'], f"Soft deleted file with ID {file_id} under role {file_info['role']} [{ent}/{prc}]")
             
         return {"status": "success", "message": f"File '{file_info['filename']}' deleted successfully."}
     except HTTPException as he:
@@ -430,6 +454,8 @@ async def replace_history_file(file_id: int, file: UploadFile = File(...)):
             raise HTTPException(404, "File not found.")
             
         role = file_info['role']
+        ent = file_info.get("entity", "ITL")
+        prc = file_info.get("process", "P2P")
         data = await file.read()
         
         # Remove old cache file
@@ -450,10 +476,10 @@ async def replace_history_file(file_id: int, file: UploadFile = File(...)):
         )
         
         # Invalidate combined session cache
-        clear_calculation_caches()
+        clear_calculation_caches(entity=ent, process=prc)
         
         # Log the file replacement
-        await loop.run_in_executor(None, lambda: add_audit_log("File Replaced", file.filename, f"Replaced file with ID {file_id} under role {role}"))
+        await loop.run_in_executor(None, lambda: add_audit_log("File Replaced", file.filename, f"Replaced file with ID {file_id} under role {role} [{ent}/{prc}]"))
             
         return {
             "status": "success",
@@ -464,6 +490,8 @@ async def replace_history_file(file_id: int, file: UploadFile = File(...)):
                 "s3Key": updated["s3_key"],
                 "s3Url": updated["s3_url"],
                 "rowCount": updated["row_count"],
+                "entity": ent,
+                "process": prc,
                 "uploadedAt": str(updated["uploaded_at"]),
             }
         }
@@ -475,17 +503,20 @@ async def replace_history_file(file_id: int, file: UploadFile = File(...)):
 
 # ── Analyze (SSE) ─────────────────────────────────────────────────────────────
 @app.get("/api/analyze/{session_id}")
-async def analyze(session_id: str):
+async def analyze(session_id: str, entity: str = "ITL", process: str = "P2P"):
     """
     SSE stream: emits progress events then a final 'result' event.
     Supports session-based runs or 'combined' run on S3 sheets.
     """
     if session_id == "combined":
-        active_files = get_active_files()
+        active_files = get_active_files(entity=entity, process=process)
         if not active_files:
-            raise HTTPException(400, "No files uploaded yet.")
+            raise HTTPException(400, f"No files uploaded yet for {entity} - {process}.")
             
-        cache_file = os.path.join(CACHE_DIR, "pipeline_result.pkl")
+        cache_fn = f"pipeline_result_{entity.upper()}_{process.upper()}.pkl"
+        cache_file = os.path.join(CACHE_DIR, cache_fn)
+        if not os.path.exists(cache_file):
+            cache_file = os.path.join(CACHE_DIR, "pipeline_result.pkl")
         if os.path.exists(cache_file):
             try:
                 with open(cache_file, "rb") as f:
@@ -499,7 +530,7 @@ async def analyze(session_id: str):
                     await asyncio.sleep(0.05)
                     yield {"data": json.dumps({"stage": "result", "pct": 100, "result": sanitized_res}, default=str)}
                 
-                add_audit_log("Dashboard Fetched", "N/A", "Loaded dashboard values from disk cache")
+                add_audit_log("Dashboard Fetched", "N/A", f"Loaded dashboard values from disk cache [{entity}/{process}]")
                 return EventSourceResponse(cached_event_generator())
             except Exception as e:
                 print(f"Failed to read pipeline_result cache: {e}")
@@ -522,15 +553,15 @@ async def analyze(session_id: str):
                             lambda: queue.put_nowait({"stage": "loading", "pct": pct, "message": msg})
                         )
                         
-                    global cached_dfs
-                    dfs = await loop.run_in_executor(None, lambda: load_combined_dfs(sync_on_progress))
-                    cached_dfs = dfs
+                    global cached_dfs_dict
+                    dfs = await loop.run_in_executor(None, lambda: load_combined_dfs(entity=entity, process=process, on_progress=sync_on_progress))
+                    cached_dfs_dict[(entity.upper(), process.upper())] = dfs
                     
                     if not dfs:
-                        raise ValueError("No active sheets found or failed to load them.")
+                        raise ValueError(f"No active sheets found or failed to load them for {entity} - {process}.")
                         
                     sess = session_store.get_or_create_session("combined")
-                    result = await run_pipeline(sess, emit, dfs_override=dfs)
+                    result = await run_pipeline(sess, emit, dfs_override=dfs, entity=entity, process=process)
                     session_store.set_result("combined", result)
                     
                     # Save cache file to disk
@@ -541,7 +572,7 @@ async def analyze(session_id: str):
                         print(f"Failed to write cache: {ce}")
                         
                     # Log execution
-                    await loop.run_in_executor(None, lambda: add_audit_log("Pipeline Run", "All Active Files", "Ran consolidated P2P audit pipeline"))
+                    await loop.run_in_executor(None, lambda: add_audit_log("Pipeline Run", "Active Files", f"Ran audit pipeline for {entity} - {process}"))
                     
                     await queue.put({"stage": "result", "pct": 100, "result": result})
                 except Exception as exc:
@@ -623,28 +654,31 @@ def health():
 
 # ── Get stored result ─────────────────────────────────────────────────────────
 @app.get("/api/result/{session_id}")
-def get_result(session_id: str):
+def get_result(session_id: str, entity: str = "ITL", process: str = "P2P"):
     if session_id == "combined":
-        cache_file = os.path.join(CACHE_DIR, "pipeline_result.pkl")
+        cache_fn = f"pipeline_result_{entity.upper()}_{process.upper()}.pkl"
+        cache_file = os.path.join(CACHE_DIR, cache_fn)
+        if not os.path.exists(cache_file):
+            cache_file = os.path.join(CACHE_DIR, "pipeline_result.pkl")
         if os.path.exists(cache_file):
             try:
                 with open(cache_file, "rb") as f:
                     result = pickle.load(f)
                 sess = session_store.get_or_create_session("combined")
                 sess.result = result
-                add_audit_log("Dashboard Fetched", "N/A", "Loaded dashboard values from disk cache")
+                add_audit_log("Dashboard Fetched", "N/A", f"Loaded dashboard values from disk cache [{entity}/{process}]")
                 return sanitize_for_json(result)
             except Exception as e:
                 print(f"Failed to read pipeline_result cache: {e}")
 
         sess = session_store.get_session("combined")
         if sess is None or sess.result is None:
-            active_files = get_active_files()
+            active_files = get_active_files(entity=entity, process=process)
             if active_files:
                 raise HTTPException(404, "Result not yet computed")
             else:
                 raise HTTPException(404, "No files uploaded")
-        add_audit_log("Dashboard Fetched", "N/A", "Loaded dashboard values from memory")
+        add_audit_log("Dashboard Fetched", "N/A", f"Loaded dashboard values from memory [{entity}/{process}]")
         return sanitize_for_json(sess.result)
         
     sess = session_store.get_session(session_id)

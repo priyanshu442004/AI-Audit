@@ -17,12 +17,35 @@ def get_connection():
         raise ValueError("DATABASE_URL is not set in environment variables.")
     if _pool is None:
         _pool = ThreadedConnectionPool(1, 20, DB_URL)
-    return _pool.getconn()
+    try:
+        conn = _pool.getconn()
+        if conn and conn.closed != 0:
+            try:
+                _pool.closeall()
+            except Exception:
+                pass
+            _pool = ThreadedConnectionPool(1, 20, DB_URL)
+            conn = _pool.getconn()
+        return conn
+    except Exception:
+        try:
+            if _pool:
+                _pool.closeall()
+        except Exception:
+            pass
+        _pool = ThreadedConnectionPool(1, 20, DB_URL)
+        return _pool.getconn()
 
 def put_connection(conn):
     global _pool
     if _pool and conn:
-        _pool.putconn(conn)
+        try:
+            if conn.closed == 0:
+                _pool.putconn(conn)
+            else:
+                _pool.putconn(conn, close=True)
+        except Exception:
+            pass
 
 def init_db():
     conn = get_connection()
@@ -37,8 +60,16 @@ def init_db():
                 s3_url VARCHAR(1000) NOT NULL,
                 row_count INTEGER DEFAULT 0,
                 uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                is_deleted BOOLEAN DEFAULT FALSE
+                is_deleted BOOLEAN DEFAULT FALSE,
+                entity VARCHAR(50) DEFAULT 'ISPL',
+                process VARCHAR(50) DEFAULT 'P2P'
             );
+        """)
+        cur.execute("""
+            ALTER TABLE s3_uploaded_files ADD COLUMN IF NOT EXISTS entity VARCHAR(50) DEFAULT 'ISPL';
+        """)
+        cur.execute("""
+            ALTER TABLE s3_uploaded_files ADD COLUMN IF NOT EXISTS process VARCHAR(50) DEFAULT 'P2P';
         """)
         cur.execute("""
             CREATE TABLE IF NOT EXISTS audit_logs (
@@ -73,15 +104,15 @@ def init_db():
         cur.close()
         put_connection(conn)
 
-def add_uploaded_file(role: str, filename: str, s3_key: str, s3_url: str, row_count: int):
+def add_uploaded_file(role: str, filename: str, s3_key: str, s3_url: str, row_count: int, entity: str = "ISPL", process: str = "P2P"):
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
     try:
         cur.execute("""
-            INSERT INTO s3_uploaded_files (role, filename, s3_key, s3_url, row_count)
-            VALUES (%s, %s, %s, %s, %s)
-            RETURNING id, role, filename, s3_key, s3_url, row_count, uploaded_at;
-        """, (role, filename, s3_key, s3_url, row_count))
+            INSERT INTO s3_uploaded_files (role, filename, s3_key, s3_url, row_count, entity, process)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING id, role, filename, s3_key, s3_url, row_count, uploaded_at, entity, process;
+        """, (role, filename, s3_key, s3_url, row_count, entity, process))
         row = cur.fetchone()
         conn.commit()
         return dict(row)
@@ -92,17 +123,26 @@ def add_uploaded_file(role: str, filename: str, s3_key: str, s3_url: str, row_co
         cur.close()
         put_connection(conn)
 
-def get_active_files():
+def get_active_files(entity: str = "ITL", process: str = "P2P"):
     conn = get_connection()
     cur = conn.cursor(cursor_factory=RealDictCursor)
     try:
         cur.execute("""
-            SELECT id, role, filename, s3_key, s3_url, row_count, uploaded_at
+            SELECT id, role, filename, s3_key, s3_url, row_count, uploaded_at, entity, process
             FROM s3_uploaded_files
-            WHERE is_deleted = FALSE
+            WHERE is_deleted = FALSE AND UPPER(entity) = UPPER(%s) AND UPPER(process) = UPPER(%s)
             ORDER BY uploaded_at DESC;
-        """)
+        """, (entity, process))
         rows = cur.fetchall()
+        if not rows and process.upper() == "P2P":
+            # Fallback to any active P2P files if entity specific files not uploaded yet
+            cur.execute("""
+                SELECT id, role, filename, s3_key, s3_url, row_count, uploaded_at, entity, process
+                FROM s3_uploaded_files
+                WHERE is_deleted = FALSE AND UPPER(process) = 'P2P'
+                ORDER BY uploaded_at DESC;
+            """)
+            rows = cur.fetchall()
         return [dict(row) for row in rows]
     except Exception as e:
         raise e
@@ -115,7 +155,7 @@ def get_file_by_id(file_id: int):
     cur = conn.cursor(cursor_factory=RealDictCursor)
     try:
         cur.execute("""
-            SELECT id, role, filename, s3_key, s3_url, row_count, uploaded_at, is_deleted
+            SELECT id, role, filename, s3_key, s3_url, row_count, uploaded_at, is_deleted, entity, process
             FROM s3_uploaded_files
             WHERE id = %s;
         """, (file_id,))
@@ -144,15 +184,15 @@ def delete_file(file_id: int):
         cur.close()
         put_connection(conn)
 
-def delete_all_files():
+def delete_all_files(entity: str = "ISPL", process: str = "P2P"):
     conn = get_connection()
     cur = conn.cursor()
     try:
         cur.execute("""
             UPDATE s3_uploaded_files
             SET is_deleted = TRUE
-            WHERE is_deleted = FALSE;
-        """)
+            WHERE is_deleted = FALSE AND UPPER(entity) = UPPER(%s) AND UPPER(process) = UPPER(%s);
+        """, (entity, process))
         count = cur.rowcount
         conn.commit()
         return count
@@ -171,7 +211,7 @@ def replace_file(file_id: int, filename: str, s3_key: str, s3_url: str, row_coun
             UPDATE s3_uploaded_files
             SET filename = %s, s3_key = %s, s3_url = %s, row_count = %s, is_deleted = FALSE, uploaded_at = CURRENT_TIMESTAMP
             WHERE id = %s
-            RETURNING id, role, filename, s3_key, s3_url, row_count, uploaded_at;
+            RETURNING id, role, filename, s3_key, s3_url, row_count, uploaded_at, entity, process;
         """, (filename, s3_key, s3_url, row_count, file_id))
         row = cur.fetchone()
         conn.commit()

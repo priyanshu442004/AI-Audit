@@ -1,16 +1,58 @@
 const BASE = '/api'
 
 /**
- * Upload files with roles.
+ * Fetch dynamic file slots based on entity and process.
+ * @param {string} entity
+ * @param {string} process
+ * @returns {Promise<{entity: string, process: string, slots: Array}>}
+ */
+export async function fetchFileSlots(entity = 'ISPL', process = 'P2P') {
+  const res = await fetch(`${BASE}/file-slots?entity=${encodeURIComponent(entity)}&process=${encodeURIComponent(process)}`)
+  if (!res.ok) throw new Error('Failed to load file slots')
+  return res.json()
+}
+
+/**
+ * Fetch uploaded history for entity and process.
+ * @param {string} entity
+ * @param {string} process
+ * @returns {Promise<Array>}
+ */
+export async function fetchHistory(entity = 'ISPL', process = 'P2P') {
+  const res = await fetch(`${BASE}/history?entity=${encodeURIComponent(entity)}&process=${encodeURIComponent(process)}`)
+  if (!res.ok) throw new Error('Failed to fetch history')
+  return res.json()
+}
+
+/**
+ * Delete all history files for entity and process.
+ * @param {string} entity
+ * @param {string} process
+ */
+export async function deleteAllHistory(entity = 'ISPL', process = 'P2P') {
+  const res = await fetch(`${BASE}/history/delete-all?entity=${encodeURIComponent(entity)}&process=${encodeURIComponent(process)}`, {
+    method: 'DELETE'
+  })
+  if (!res.ok) throw new Error('Failed to delete history files')
+  return res.json()
+}
+
+/**
+ * Upload files with roles, entity, and process.
  * @param {Array<{role: string, file: File}>} items
+ * @param {string} entity
+ * @param {string} process
  * @returns {Promise<{session_id: string, files: Array}>}
  */
-export async function uploadFiles(items) {
+export async function uploadFiles(items, entity = 'ISPL', process = 'P2P') {
   const fd = new FormData()
   items.forEach(({ file, role }) => {
     fd.append('files', file)
     fd.append('roles', role)
   })
+  fd.append('entity', entity)
+  fd.append('process', process)
+
   const res = await fetch(`${BASE}/upload`, { method: 'POST', body: fd })
   if (!res.ok) {
     const err = await res.json().catch(() => ({}))
@@ -26,9 +68,10 @@ export async function uploadFiles(items) {
  * onError(msg) called on error.
  * Returns a cleanup function to close the EventSource.
  */
-export function analyzeStream(sessionId, { onProgress, onResult, onError }) {
+export function analyzeStream(sessionId, { onProgress, onResult, onError }, entity = 'ISPL', process = 'P2P') {
   let isDone = false
-  const es = new EventSource(`${BASE}/analyze/${sessionId}`)
+  const query = `?entity=${encodeURIComponent(entity)}&process=${encodeURIComponent(process)}`
+  const es = new EventSource(`${BASE}/analyze/${sessionId}${query}`)
 
   const fetchFinalResult = async (retries = 5) => {
     if (isDone) return
@@ -36,7 +79,7 @@ export function analyzeStream(sessionId, { onProgress, onResult, onError }) {
 
     for (let attempt = 0; attempt < retries; attempt++) {
       try {
-        const res = await fetch(`${BASE}/result/${sessionId}`, {})
+        const res = await fetch(`${BASE}/result/${sessionId}${query}`, {})
         if (res.ok) {
           const data = await res.json()
           if (data && typeof data === 'object' && Object.keys(data).length > 0) {

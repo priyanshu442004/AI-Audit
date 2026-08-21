@@ -35,6 +35,8 @@ export const useStore = create((set, get) => ({
 
   // App state
   page: 'upload',      // 'upload' | 'loading' | 'dashboard'
+  selectedEntity: 'ITL',
+  selectedProcess: 'P2P',
   sessionId: null,
   results: null,
   showUploadModal: false,
@@ -55,7 +57,7 @@ export const useStore = create((set, get) => ({
   theme: getInitialTheme(),
 
   // Active dashboard section
-  activeSection: 'dashboard',
+  activeSection: 'postatus',
 
   // Actions
   login: (email, password) => {
@@ -78,6 +80,8 @@ export const useStore = create((set, get) => ({
     set({ user: null, loginError: null, page: 'upload', results: null })
   },
 
+  setSelectedEntity: (e) => set({ selectedEntity: e }),
+  setSelectedProcess: (p) => set({ selectedProcess: p }),
   setPage: (page) => set({ page }),
   setSessionId: (id) => set({ sessionId: id }),
   setResults: (r) => set((s) => ({

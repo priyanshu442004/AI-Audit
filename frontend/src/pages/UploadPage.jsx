@@ -1,9 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { uploadFiles, analyzeStream } from '../api'
+import { uploadFiles, analyzeStream, fetchFileSlots, fetchHistory } from '../api'
 import { useStore } from '../store'
 import logo from '../assets/logo.jpeg'
 
-const FILE_SLOTS = [
+const DEFAULT_SLOTS = [
   { role: 'ap_credit_note', label: 'AP Credit Note', desc: 'Credit memos and invoice adjustments', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
   { role: 'ap_invoice_report', label: 'AP Invoice Report', desc: 'Accounts payable invoice ledger', icon: 'M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
   { role: 'vendor_master', label: 'BP Master', desc: 'Business Partner / Vendor master file', icon: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z' },
@@ -16,8 +16,20 @@ const FILE_SLOTS = [
 ]
 
 export default function UploadPage() {
-  const { setPage, setSessionId, setResults, setProgress, setShowUploadModal } = useStore()
+  const { 
+    setPage, 
+    setSessionId, 
+    setResults, 
+    setProgress, 
+    setShowUploadModal,
+    selectedEntity,
+    setSelectedEntity,
+    selectedProcess,
+    setSelectedProcess
+  } = useStore()
+
   const [uploaded, setUploaded] = useState({})  // role → File
+  const [fileSlots, setFileSlots] = useState(DEFAULT_SLOTS)
   const [error, setError] = useState('')
   const [dragActive, setDragActive] = useState({}) // role → boolean
   const [hasHistory, setHasHistory] = useState(false)
@@ -51,17 +63,26 @@ export default function UploadPage() {
   }
 
   useEffect(() => {
-    fetch('/api/history', {})
-      .then(res => res.json())
+    fetchFileSlots(selectedEntity, selectedProcess)
+      .then(data => {
+        if (data && data.slots) {
+          setFileSlots(data.slots)
+        }
+      })
+      .catch(() => setFileSlots(DEFAULT_SLOTS))
+
+    fetchHistory(selectedEntity, selectedProcess)
       .then(data => {
         if (Array.isArray(data) && data.length > 0) {
           setHasHistory(true)
+        } else {
+          setHasHistory(false)
         }
       })
       .catch(console.error)
 
     fetchHolidaysInfo()
-  }, [])
+  }, [selectedEntity, selectedProcess])
 
   const handleHolidayFileChange = (file) => {
     if (!file) return
@@ -108,7 +129,6 @@ export default function UploadPage() {
     }
   }
 
-
   const handleFile = (role, file) => {
     if (!file) return
     const ext = file.name.split('.').pop().toLowerCase()
@@ -147,15 +167,17 @@ export default function UploadPage() {
   }
 
   const fileCount = Object.keys(uploaded).length
-  const isComplete = fileCount === FILE_SLOTS.length
+  const isComplete = fileCount === fileSlots.length
 
   const handleGoToDashboard = () => {
     setError('')
     setPage('loading')
     setProgress({ pct: 15, message: 'Retrieving cached audit results...' })
     
+    const query = `?entity=${encodeURIComponent(selectedEntity)}&process=${encodeURIComponent(selectedProcess)}`
+    
     // Check if combined results are already computed
-    fetch('/api/result/combined', {})
+    fetch(`/api/result/combined${query}`, {})
       .then(async res => {
         if (!res.ok) {
           const body = await res.json().catch(() => ({}))
@@ -172,7 +194,7 @@ export default function UploadPage() {
       .catch(err => {
         // If not computed, run full analysis stream
         setSessionId('combined')
-        setProgress({ pct: 0, message: 'Initializing analytical pipeline...' })
+        setProgress({ pct: 0, message: `Initializing ${selectedEntity} - ${selectedProcess} analytical pipeline...` })
         analyzeStream('combined', {
           onProgress: ({ pct, message }) => setProgress({ pct, message }),
           onResult: (result) => {
@@ -182,7 +204,7 @@ export default function UploadPage() {
           },
           onError: async (msg) => {
             try {
-              const res = await fetch('/api/result/combined', {})
+              const res = await fetch(`/api/result/combined${query}`, {})
               if (res.ok) {
                 const data = await res.json()
                 if (data && typeof data === 'object' && Object.keys(data).length > 0) {
@@ -196,7 +218,7 @@ export default function UploadPage() {
             setError(msg)
             setPage('upload')
           },
-        })
+        }, selectedEntity, selectedProcess)
       })
   }
 
@@ -210,14 +232,14 @@ export default function UploadPage() {
       
       setProgress({
         pct: 2,
-        message: `Uploading all ${total} files`
+        message: `Uploading all ${total} files for ${selectedEntity} (${selectedProcess})`
       })
       
-      await uploadFiles(items)
+      await uploadFiles(items, selectedEntity, selectedProcess)
       
       setProgress({
         pct: 5,
-        message: 'Initializing analytical pipeline...'
+        message: `Initializing ${selectedEntity} - ${selectedProcess} analytical pipeline...`
       })
       
       setSessionId('combined')
@@ -229,8 +251,9 @@ export default function UploadPage() {
           setPage('dashboard')
         },
         onError: async (msg) => {
+          const query = `?entity=${encodeURIComponent(selectedEntity)}&process=${encodeURIComponent(selectedProcess)}`
           try {
-            const res = await fetch('/api/result/combined', {})
+            const res = await fetch(`/api/result/combined${query}`, {})
             if (res.ok) {
               const data = await res.json()
               if (data && typeof data === 'object' && Object.keys(data).length > 0) {
@@ -244,7 +267,7 @@ export default function UploadPage() {
           setError(msg)
           setPage('upload')
         },
-      })
+      }, selectedEntity, selectedProcess)
     } catch (e) {
       setError(e.message || 'An unexpected error occurred during analysis.')
       setPage('upload')
@@ -254,6 +277,53 @@ export default function UploadPage() {
   return (
     <div className="app-gradient-bg min-h-screen flex flex-col justify-between py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-7xl mx-auto w-full">
+        {/* Top Control Bar with Entity and Process Dropdowns */}
+        <div className="flex flex-col sm:flex-row justify-between items-center mb-8 bg-white/60 dark:bg-slate-900/40 backdrop-blur border border-slate-200/80 dark:border-slate-800/80 rounded-2xl p-4 shadow-sm gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-white dark:bg-slate-900 p-1 flex items-center justify-center shadow-md">
+              <img src={logo} alt="IKIO Logo" className="w-8 h-8 object-contain rounded-full" />
+            </div>
+            <div>
+              <span className="text-base font-bold text-slate-900 dark:text-white">IKIO Audit Platform</span>
+              <span className="ml-2.5 px-2.5 py-0.5 text-xs font-semibold rounded-lg bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300">
+                {selectedEntity} • {selectedProcess}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Entity:</label>
+              <select
+                value={selectedEntity}
+                onChange={(e) => {
+                  setSelectedEntity(e.target.value)
+                  setUploaded({})
+                }}
+                className="px-3.5 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm transition-all"
+              >
+                <option value="ISPL">ISPL</option>
+                <option value="ITL">ITL</option>
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Process:</label>
+              <select
+                value={selectedProcess}
+                onChange={(e) => {
+                  setSelectedProcess(e.target.value)
+                  setUploaded({})
+                }}
+                className="px-3.5 py-1.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm transition-all"
+              >
+                <option value="P2P">P2P</option>
+                <option value="Consumption">Consumption</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
         {/* Header */}
         <div className="flex flex-col items-center text-center mb-12">
           <div className="relative group mb-6">
@@ -263,10 +333,10 @@ export default function UploadPage() {
             </div>
           </div>
           <h1 className="text-4xl font-extrabold tracking-tight text-slate-900 dark:text-white sm:text-5xl">
-            Procurement Audit Workspace
+            {selectedEntity} {selectedProcess} Audit Workspace
           </h1>
           <p className="mt-3 max-w-2xl text-base text-slate-500 dark:text-slate-400">
-            Upload the mandatory audit files to launch the comprehensive Procure-to-Pay (P2P) integrity audit. All files are verified automatically.
+            Upload the mandatory audit files to launch the comprehensive integrity audit for {selectedEntity} - {selectedProcess}. All files are verified automatically.
           </p>
         </div>
 
@@ -289,18 +359,18 @@ export default function UploadPage() {
                 <div>
                   <h2 className="text-lg font-semibold text-slate-900 dark:text-white">Upload Status</h2>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Ensure all files correspond to the designated audit roles.
+                    Ensure all files correspond to the designated audit roles for {selectedEntity} ({selectedProcess}).
                   </p>
                 </div>
                 <div className="text-right">
                   <span className="text-2xl font-bold text-slate-900 dark:text-white">{fileCount}</span>
-                  <span className="text-slate-400 dark:text-slate-500 font-medium"> / {FILE_SLOTS.length} files</span>
+                  <span className="text-slate-400 dark:text-slate-500 font-medium"> / {fileSlots.length} files</span>
                 </div>
               </div>
               <div className="w-full bg-slate-200/60 dark:bg-slate-800 rounded-full h-2.5 overflow-hidden mt-4">
                 <div
                   className="bg-gradient-to-r from-blue-600 to-indigo-600 h-full rounded-full transition-all duration-500 ease-out"
-                  style={{ width: `${(fileCount / FILE_SLOTS.length) * 100}%` }}
+                  style={{ width: `${(fileCount / fileSlots.length) * 100}%` }}
                 />
               </div>
             </div>
@@ -413,7 +483,7 @@ export default function UploadPage() {
 
         {/* Upload Slots Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-7xl mx-auto mb-12">
-          {FILE_SLOTS.map(({ role, label, desc, icon }) => {
+          {fileSlots.map(({ role, label, desc, icon }) => {
             const file = uploaded[role]
             const isDragActive = dragActive[role]
             return (

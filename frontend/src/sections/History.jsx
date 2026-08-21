@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useStore } from '../store'
-import { analyzeStream } from '../api'
+import { analyzeStream, fetchHistory as fetchHistoryApi } from '../api'
 
 const ROLE_LABELS = {
   vendor_master: 'BP Master',
@@ -12,10 +12,12 @@ const ROLE_LABELS = {
   ap_credit_note: 'AP Credit Note',
   ap_invoice_report: 'AP Invoice Report',
   item_master: 'Item Master',
+  consumption_report: 'Consumption Report',
+  bom_master: 'BOM Master',
 }
 
 export default function History() {
-  const { setPage, setResults, setProgress } = useStore()
+  const { setPage, setResults, setProgress, selectedEntity, selectedProcess } = useStore()
   const [files, setFiles] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -24,14 +26,10 @@ export default function History() {
   const [selectedIds, setSelectedIds] = useState([])
   const fileInputRef = useRef(null)
 
-  const fetchHistory = () => {
+  const loadHistoryData = () => {
     setLoading(true)
     setSelectedIds([])
-    fetch('/api/history')
-      .then((res) => {
-        if (!res.ok) throw new Error('Failed to fetch history')
-        return res.json()
-      })
+    fetchHistoryApi(selectedEntity, selectedProcess)
       .then((data) => {
         setFiles(data)
         setLoading(false)
@@ -47,8 +45,8 @@ export default function History() {
   }
 
   useEffect(() => {
-    fetchHistory()
-  }, [])
+    loadHistoryData()
+  }, [selectedEntity, selectedProcess])
 
   const handleDelete = async (id, filename) => {
     if (!window.confirm(`Are you sure you want to delete "${filename}"? This will exclude it from future audit runs.`)) {
@@ -58,7 +56,7 @@ export default function History() {
     try {
       const res = await fetch(`/api/history/${id}`, { method: 'DELETE' })
       if (!res.ok) throw new Error('Delete failed')
-      fetchHistory()
+      loadHistoryData()
     } catch (err) {
       alert(`Error deleting file: ${err.message}`)
     }
@@ -78,10 +76,10 @@ export default function History() {
         )
       )
       setSelectedIds([])
-      fetchHistory()
+      loadHistoryData()
     } catch (err) {
       alert(`Error performing bulk delete: ${err.message}`)
-      fetchHistory()
+      loadHistoryData()
     }
   }
 
@@ -106,7 +104,7 @@ export default function History() {
         body: formData,
       })
       if (!res.ok) throw new Error('Replacement failed')
-      fetchHistory()
+      loadHistoryData()
     } catch (err) {
       alert(`Error replacing file: ${err.message}`)
       setLoading(false)
@@ -128,7 +126,7 @@ export default function History() {
         alert(`Analysis error: ${msg}`)
         setPage('dashboard')
       },
-    })
+    }, selectedEntity, selectedProcess)
   }
 
   const filteredFiles = files.filter(f =>

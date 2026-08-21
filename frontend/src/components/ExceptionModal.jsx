@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react'
-import { AlertTriangle, X, Search, FileSpreadsheet, Download } from 'lucide-react'
+import { AlertTriangle, X, Search, FileSpreadsheet, Download, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 import TruncatedCell from './TruncatedCell'
 import ExportModal from './ExportModal'
 
@@ -16,6 +16,8 @@ export default function ExceptionModal({
   const [searchTerm, setSearchTerm] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const [showExportModal, setShowExportModal] = useState(false)
+  const [sortCol, setSortCol] = useState(null)
+  const [sortDir, setSortDir] = useState('asc')
   const ITEMS_PER_PAGE = 25
 
   const filteredRows = useMemo(() => {
@@ -26,16 +28,67 @@ export default function ExceptionModal({
     )
   }, [rows, searchTerm])
 
-  const totalPages = Math.max(1, Math.ceil(filteredRows.length / ITEMS_PER_PAGE))
+  const handleSort = (col) => {
+    if (sortCol === col) {
+      if (sortDir === 'asc') {
+        setSortDir('desc')
+      } else {
+        setSortCol(null)
+        setSortDir('asc')
+      }
+    } else {
+      setSortCol(col)
+      setSortDir('asc')
+    }
+    setCurrentPage(1)
+  }
+
+  const sortedRows = useMemo(() => {
+    if (!sortCol) return filteredRows
+
+    return [...filteredRows].sort((a, b) => {
+      let valA = a[sortCol]
+      let valB = b[sortCol]
+
+      // Blank values to the end
+      if (valA === null || valA === undefined || valA === '' || valA === '—') return 1
+      if (valB === null || valB === undefined || valB === '' || valB === '—') return -1
+
+      // Numeric check
+      const parseNum = (v) => {
+        if (typeof v === 'number') return v
+        if (typeof v === 'string') {
+          const cleaned = v.replace(/,/g, '').replace(/₹/g, '').trim()
+          const n = parseFloat(cleaned)
+          return isNaN(n) ? null : n
+        }
+        return null
+      }
+
+      const numA = parseNum(valA)
+      const numB = parseNum(valB)
+
+      let res = 0
+      if (numA !== null && numB !== null) {
+        res = numA - numB
+      } else {
+        res = String(valA).localeCompare(String(valB), undefined, { numeric: true, sensitivity: 'base' })
+      }
+
+      return sortDir === 'asc' ? res : -res
+    })
+  }, [filteredRows, sortCol, sortDir])
+
+  const totalPages = Math.max(1, Math.ceil(sortedRows.length / ITEMS_PER_PAGE))
   const paginatedRows = useMemo(() => {
     const start = (currentPage - 1) * ITEMS_PER_PAGE
-    return filteredRows.slice(start, start + ITEMS_PER_PAGE)
-  }, [filteredRows, currentPage])
+    return sortedRows.slice(start, start + ITEMS_PER_PAGE)
+  }, [sortedRows, currentPage])
 
   if (!isOpen) return null
 
-  const startRec = filteredRows.length === 0 ? 0 : (currentPage - 1) * ITEMS_PER_PAGE + 1
-  const endRec = Math.min(currentPage * ITEMS_PER_PAGE, filteredRows.length)
+  const startRec = sortedRows.length === 0 ? 0 : (currentPage - 1) * ITEMS_PER_PAGE + 1
+  const endRec = Math.min(currentPage * ITEMS_PER_PAGE, sortedRows.length)
 
   const headerBg = isException ? 'bg-rose-50/30 dark:bg-rose-950/10' : 'bg-blue-50/30 dark:bg-blue-950/10'
   const iconContainer = isException ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20' : 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20'
@@ -102,13 +155,13 @@ export default function ExceptionModal({
               />
             </div>
             <span className="text-xs text-slate-500 dark:text-slate-400">
-              Filtered: <strong className="text-slate-900 dark:text-white">{filteredRows.length.toLocaleString()}</strong> of {rows.length.toLocaleString()} rows
+              Filtered: <strong className="text-slate-900 dark:text-white">{sortedRows.length.toLocaleString()}</strong> of {rows.length.toLocaleString()} rows
             </span>
           </div>
 
           {/* Modal Table Content */}
           <div className="flex-1 overflow-auto p-6">
-            {filteredRows.length === 0 ? (
+            {sortedRows.length === 0 ? (
               <div className="py-16 text-center text-slate-400">
                 <AlertTriangle className="w-10 h-10 mx-auto mb-2 text-slate-300 dark:text-slate-600" />
                 <p className="text-sm font-semibold">No records found matching filters.</p>
@@ -118,12 +171,28 @@ export default function ExceptionModal({
                 <table className="w-full text-left border-collapse text-xs">
                   <thead className="bg-slate-100 dark:bg-slate-800/90 text-slate-700 dark:text-slate-200 sticky top-0 z-10">
                     <tr>
-                      <th className="px-3 py-2.5 font-bold uppercase text-[10px] tracking-wider w-10 text-center">
+                      <th className="px-3 py-2.5 font-bold uppercase text-[10px] tracking-wider w-10 text-center select-none">
                         #
                       </th>
                       {columns.map(col => (
-                        <th key={col} className="px-4 py-2.5 font-bold uppercase text-[10px] tracking-wider whitespace-nowrap">
-                          {col.includes('_') ? col.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') : col}
+                        <th
+                          key={col}
+                          onClick={() => handleSort(col)}
+                          title="Click to sort by this column"
+                          className="px-4 py-2.5 font-bold uppercase text-[10px] tracking-wider whitespace-nowrap cursor-pointer select-none hover:bg-slate-200/70 dark:hover:bg-slate-700/70 transition-colors"
+                        >
+                          <div className="flex items-center gap-1.5">
+                            <span>{col.includes('_') ? col.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') : col}</span>
+                            {sortCol === col ? (
+                              sortDir === 'asc' ? (
+                                <ArrowUp className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+                              ) : (
+                                <ArrowDown className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+                              )
+                            ) : (
+                              <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-50 hover:opacity-100" />
+                            )}
+                          </div>
                         </th>
                       ))}
                     </tr>

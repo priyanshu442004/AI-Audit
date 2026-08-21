@@ -5,8 +5,8 @@ import { RefreshCw, Upload } from 'lucide-react'
 const SECTION_TITLES = {
   cover:        'Cover',
   executive:    'Executive Dashboard',
-  postatus:     'PO Status Analysis',
-  gateentry:    'Gate Entry Check',
+  postatus:     'Procurement Transaction Compliance Review',
+  gateentry:    'GRN & Gate Entry Compliance Review',
   qtyvariance:  'Quantity Variance',
   pricevariance:'Price Variance & Savings',
   pricevariancesame: 'Same-Vendor Price Variance',
@@ -30,6 +30,8 @@ export default function Header({ onMenuClick }) {
     activeSection, 
     setPage, 
     setResults,
+    selectedEntity,
+    selectedProcess,
     setPriceVarianceSame,
     setPriceVarianceCross,
     setPaymentAgingDomestic,
@@ -65,7 +67,8 @@ export default function Header({ onMenuClick }) {
       } else if (activeSection === 'settings') {
         window.dispatchEvent(new CustomEvent('refresh-settings'))
       } else {
-        const res = await fetch('/api/result/combined')
+        const query = `?entity=${encodeURIComponent(selectedEntity)}&process=${encodeURIComponent(selectedProcess)}`
+        const res = await fetch(`/api/result/combined${query}`)
         if (res.ok) {
           const data = await res.json()
           setResults(data)
@@ -94,11 +97,14 @@ export default function Header({ onMenuClick }) {
             </h1>
             <span className="text-slate-300 dark:text-slate-700 hidden sm:inline">|</span>
             <div className="flex flex-col hidden sm:flex">
-              <div className="app-label mb-0.5">
-                IKIO Technologies Limited
+              <div className="app-label mb-0.5 flex items-center gap-1.5">
+                <span>IKIO Technologies Limited</span>
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300">
+                  {selectedEntity} • {selectedProcess}
+                </span>
               </div>
               <span className="text-xs font-medium app-muted">
-                P2P Audit Report • FY 2026-27
+                Audit Report • FY 2026-27
               </span>
             </div>
           </div>

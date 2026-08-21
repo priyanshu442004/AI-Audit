@@ -1,801 +1,520 @@
 """
-Module B — Gate Entry Date Integrity.
+Gate Entry Date Integrity Analysis.
 
-Rule: Vendor Bill Date ≤ GE Date ≤ GRPO Date ≤ AP Date.
+Logic (verified against client output file):
+  - Source files: Gate Entry Report + GRPO Report
+  - Join: GE file (all rows) LEFT JOIN GRPO on Gate Entry No
+  - For each GE row take the FIRST matching GRPO item (for table display cols)
+  - GRN Date  = GRPO Posting Date (from GRPO file, NOT GE file's GRN Date)
+  - GRN No.   = GRPO No (from GRPO file)
+  - PO No.    = PO Number from GRPO file
+  - GRPO Days = GRPO Posting Date − Gate Entry Date (calendar days)
+
+Sequence Gap classification:
+  - No GRPO match              → "PO & GRN No. is Missing"
+  - GRPO Days == 0             → "Same Day"
+  - GRPO Days < 0              → "Exception"   (GE date AFTER GRPO date — audit flag)
+  - 1 ≤ GRPO Days ≤ 3         → "Normal"
+  - GRPO Days > 3              → "GRN Date Exceeds 3 Days"
+
+KPIs (7 exactly as per client sheet):
+  1. Total Gate-Entry         = unique Gate Entry Nos in GE file
+  2. Total Value (INR)        = sum of all GRPO line totals for GE Nos that exist
+  3. Sequence Exceptions      = unique Gate Entry Nos with "Exception" classification
+  4. Exceeds 3 day window     = unique Gate Entry Nos with "GRN Date Exceeds 3 Days"
+  5. Avg GRN Days             = average of GRPO Days where GRPO Days >= 0 (rounded to int)
+  6. Unique PO Numbers        = unique valid PO Numbers from GRPO file (joined rows)
+  7. Unique GRN (GRPO Nos.)   = unique GRPO Nos in joined result
+  8. Unique GRNs with No PO   = unique GRPO Nos where PO Number is missing/blank
 """
 
 from __future__ import annotations
 
+import warnings
 import pandas as pd
 import numpy as np
-import warnings
 
-# Suppress pandas mixed-format date parsing warnings
 warnings.simplefilter(action='ignore', category=UserWarning)
 
-# Helper to find column using case-insensitive aliases
-def find_col(df: pd.DataFrame, aliases: list[str]) -> str | None:
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+def _find_col(df: pd.DataFrame, aliases: list[str]) -> str | None:
     if df is None or df.empty:
         return None
-    aliases_set = {a.lower().strip() for a in aliases}
-    for col in df.columns:
-        if str(col).lower().strip() in aliases_set:
-            return col
+    cols_map = {str(col).lower().strip(): col for col in df.columns}
+    for alias in aliases:
+        a = alias.lower().strip()
+        if a in cols_map:
+            return cols_map[a]
     return None
 
-def parse_numeric_val(val) -> float:
-    if pd.isna(val) or val == "" or val is None:
+
+def _clean(val, default="—") -> str:
+    if pd.isna(val) or val is None:
+        return default
+    s = str(val).strip()
+    if s.lower() in ("nan", "none", "null", ""):
+        return default
+    # Remove trailing .0 from numeric IDs stored as floats
+    if s.endswith(".0") and s[:-2].lstrip("-").isdigit():
+        return s[:-2]
+    return s
+
+
+def _parse_num(val) -> float:
+    if pd.isna(val) or val is None or val == "":
         return 0.0
     try:
         if isinstance(val, str):
             val = val.replace(",", "").strip()
         return float(val)
-    except:
+    except Exception:
         return 0.0
 
-def normalize_id(val) -> str:
-    if pd.isna(val) or val is None:
-        return ""
-    val_str = str(val).strip().upper()
-    if val_str.endswith(".0"):
-        val_str = val_str[:-2]
-    return val_str
 
-def clean_str_val(val, default="—") -> str:
-    if pd.isna(val) or val is None:
-        return default
-    val_str = str(val).strip()
-    if val_str.lower() in ("nan", "none", "null", ""):
-        return default
-    return val_str
+def _fmt_cr(val: float) -> str:
+    """Format large INR value as Cr string."""
+    cr = val / 1e7
+    return f"{cr:.2f} Cr"
 
-def parse_single_date(val) -> pd.Timestamp | None:
-    if pd.isna(val) or val is None:
-        return None
-    val_str = str(val).strip()
-    if val_str.lower() in ("nan", "none", ""):
-        return None
+
+def _fmt_date(ts) -> str:
+    if ts is None or pd.isna(ts):
+        return "—"
     try:
-        dt = pd.to_datetime(val_str, errors='coerce', dayfirst=True)
+        return pd.Timestamp(ts).strftime("%d/%m/%y")
+    except Exception:
+        return "—"
+
+
+def _parse_single_date(val):
+    if pd.isna(val) or val is None or val == "":
+        return pd.NaT
+    try:
+        dt = pd.to_datetime(val, format="%d/%m/%y", errors="coerce")
         if pd.notna(dt):
             return dt
-    except:
-        pass
-    return None
+        dt = pd.to_datetime(val, format="%d-%m-%Y", errors="coerce")
+        if pd.notna(dt):
+            return dt
+        return pd.to_datetime(val, errors="coerce", dayfirst=True)
+    except Exception:
+        return pd.NaT
 
 
-def po_overlap(po_str1: str, po_str2: str) -> bool:
-    if not po_str1 or not po_str2:
-        return False
-    parts1 = {normalize_id(p) for p in str(po_str1).split(",") if normalize_id(p)}
-    parts2 = {normalize_id(p) for p in str(po_str2).split(",") if normalize_id(p)}
-    return bool(parts1.intersection(parts2))
+def _parse_date_col(series: pd.Series) -> pd.Series:
+    """Try common date formats used in client ERP exports."""
+    if not isinstance(series, pd.Series):
+        return _parse_single_date(series)
+    # Try dd/mm/yy first (GE file format)
+    result = pd.to_datetime(series, format="%d/%m/%y", errors="coerce")
+    # For NaTs try dd-mm-yyyy (GRPO file format)
+    mask = result.isna()
+    if mask.any():
+        result[mask] = pd.to_datetime(series[mask], format="%d-%m-%Y", errors="coerce")
+    # Final fallback
+    mask2 = result.isna()
+    if mask2.any():
+        result[mask2] = pd.to_datetime(series[mask2], errors="coerce", dayfirst=True)
+    return result
 
 
-def run(dfs_or_ge: dict[str, pd.DataFrame] | pd.DataFrame, df_grpo_raw: pd.DataFrame = None) -> dict:
-    # Support both dict and DataFrame for backward compatibility (tests vs production)
-    df_po_raw = None
-    if isinstance(dfs_or_ge, dict):
-        dfs = dfs_or_ge
-        df_ge_raw = dfs.get("gate_entry")
-        df_grpo_raw = dfs.get("grpo")
-        df_ap_raw = dfs.get("ap_invoice_report")
-        if df_ap_raw is None or df_ap_raw.empty:
-            df_ap_raw = dfs.get("purchase_register")
-        df_po_raw = dfs.get("purchase_order")
-    else:
-        df_ge_raw = dfs_or_ge
-        df_ap_raw = None
+def run(dfs: dict[str, pd.DataFrame]) -> dict:
+    if not isinstance(dfs, dict):
+        dfs = {}
 
+    df_ge_raw = dfs.get("gate_entry")
+    df_grpo_raw = dfs.get("grpo")
+
+    # Empty guard
     if df_ge_raw is None or df_ge_raw.empty:
-        return {
-            "kpis": {
-                "gate_entries": 0,
-                "grpo_docs": 0,
-                "exceptions": 0,
-                "integrity_pct": 100.0,
-                "missing_grpo_date": 0,
-                "missing_bill_date": 0,
-                "ge_lt_grpo": 0,
-                "ge_eq_grpo": 0,
-            },
-            "charts": {
-                "pass_vs_exception": {
-                    "total": 0,
-                    "integrity_pct": 100.0,
-                    "segments": [
-                        {"label": "Pass", "value": 0, "dash": 0, "offset": 0},
-                        {"label": "Exception", "value": 0, "dash": 0, "offset": 0},
-                    ],
-                },
-                "detailed_checks": [],
-            },
-            "tables": [
-                {"title": "GE > GRPO Date Exceptions", "rows": []},
-                {"title": "Gate Entry Full Transaction List", "rows": []},
-            ],
-        }
+        return _empty_result()
 
-    # ── Gate Entry Column Detection ──────────────────────────────────────────
-    col_ge_no = find_col(df_ge_raw, ["gate entry no", "gate entry no.", "ge no", "ge no.", "gate entry number", "security entry no", "security entry number"])
-    col_ge_date = find_col(df_ge_raw, ["ge date", "gate entry date", "entry date", "security date"])
-    col_ge_po_no = find_col(df_ge_raw, ["purchase order number", "purchase order no", "po number", "po no", "po no.", "purchase order", "po_no", "pono"])
-    col_ge_vendor_code = find_col(df_ge_raw, ["vendor code", "bp code", "supplier code", "vendorcode", "bpcode", "account code", "vendor"])
-    col_ge_vendor_name = find_col(df_ge_raw, ["vendor name", "bp name", "supplier name", "vendorname", "bpname", "account name", "accountname", "party name", "name", "vendorname"])
-    col_ge_vendor_bill_no = find_col(df_ge_raw, ["vendor bill no", "bill no", "supplier invoice no", "vendor inv no", "vendorbillno"])
-    col_ge_vendor_bill_date = find_col(df_ge_raw, ["vendor bill date", "bill date", "supplier invoice date", "vendor inv date", "vend bill date"])
-    col_ge_transporter = find_col(df_ge_raw, ["transporter", "transporter name", "transportername", "carrier"])
-    col_ge_grpo_no = find_col(df_ge_raw, ["grpo no", "grpo no.", "linked grpo", "base grpo no", "grpo number", "ge_grpo_no", "grn", "grn no", "grn no.", "grn number", "goods receipt no", "goods receipt number"])
+    # ── Column detection – Gate Entry ────────────────────────────────────────
+    c_ge_no   = _find_col(df_ge_raw, ["gate entry no", "gate entry no.", "ge no", "gate entry number"])
+    c_ge_date = _find_col(df_ge_raw, ["gate entry date", "ge date", "entry date"])
+    c_ge_vc   = _find_col(df_ge_raw, ["vendor code", "bp code", "supplier code"])
+    c_ge_vn   = _find_col(df_ge_raw, ["vendor name", "bp name", "supplier name"])
+    c_ge_vb   = _find_col(df_ge_raw, ["vendor bill no", "vendor ref no", "bill no",
+                                       "challan no", "supplier invoice no"])
+    c_ge_br   = _find_col(df_ge_raw, ["branch", "branch name"])
+    c_ge_cr   = _find_col(df_ge_raw, ["ge creater id", "ge creator id", "creater id",
+                                       "creator id", "created by"])
+    c_ge_grn  = _find_col(df_ge_raw, ["grn no.", "grn no", "grn gate entry no", "grpo no"])
+    c_ge_grn_date = _find_col(df_ge_raw, ["grn date", "grn date."])
 
-    # ── GRPO Column Detection ────────────────────────────────────────────────
-    col_grpo_ge_no = None
-    col_grpo_po_no = None
-    col_grpo_no = None
-    col_grpo_date = None
-    col_grpo_qty = None
-    col_grpo_rate = None
-    col_grpo_line_total = None
-    col_grpo_vendor_code = None
-    col_grpo_vendor_name = None
-    col_grpo_vendor_ref = None
-    col_grpo_item_code = None
-    col_grpo_item_desc = None
-    col_grpo_item_group = None
-    col_grpo_currency = None
-    col_grpo_doc_rate = None
-
+    # ── Column detection – GRPO ──────────────────────────────────────────────
     if df_grpo_raw is not None and not df_grpo_raw.empty:
-        col_grpo_ge_no = find_col(df_grpo_raw, ["gate entry no", "ge no", "gate entry number", "gateentryno", "security entry no", "linked gate entry", "gate no", "entry no"])
-        col_grpo_po_no = find_col(df_grpo_raw, ["po number", "po no", "po no.", "purchase order number", "purchase order no", "purchase order", "po_no", "pono", "base ref", "baseref", "base ref.", "base_ref"])
-        col_grpo_no = find_col(df_grpo_raw, ["grpo no", "grpo no.", "receipt no", "receipt number", "grpono", "goods receipt no", "grpo number", "grn", "grn no", "grn no.", "grn number"])
-        col_grpo_date = find_col(df_grpo_raw, ["document date", "doc date", "docdate", "posting date", "date", "grpo date", "receipt date"])
-        col_grpo_qty = find_col(df_grpo_raw, ["grpo qty", "po qty", "received qty", "quantity", "qty", "received quantity"])
-        col_grpo_rate = find_col(df_grpo_raw, ["grpo price", "po price", "grpo rate", "unit price", "price", "rate", "item price", "unit cost"])
-        col_grpo_line_total = find_col(df_grpo_raw, ["line total", "linetotal", "line amount", "u_total", "total"])
-        col_grpo_vendor_code = find_col(df_grpo_raw, ["vendor code", "bp code", "supplier code", "vendorcode", "bpcode", "account code", "vendor", "cardcode", "card code"])
-        col_grpo_vendor_name = find_col(df_grpo_raw, ["vendor name", "bp name", "supplier name", "vendorname", "bpname", "account name", "accountname", "party name", "name", "cardname", "card name"])
-        col_grpo_vendor_ref = find_col(df_grpo_raw, ["vendor ref no", "vendor ref. no", "vendor ref. no.", "vendor ref no.", "vendor bill no", "bill no", "supplier invoice no", "vendor inv no", "vendorbillno", "numatcard", "num at card"])
-        col_grpo_item_code = find_col(df_grpo_raw, ["item code", "item_code", "item no", "item no.", "itemno", "material no", "itemcode"])
-        col_grpo_item_desc = find_col(df_grpo_raw, ["item description", "description", "material description", "part description", "item name", "itemdescription", "dscription"])
-        col_grpo_item_group = find_col(df_grpo_raw, ["item group", "item_group", "group name", "groupname", "itmsgrpcod", "itms grpcod"])
-        col_grpo_currency = find_col(df_grpo_raw, ["document currency", "currency", "doc currency"])
-        col_grpo_doc_rate = find_col(df_grpo_raw, ["document rate", "doc rate", "rate", "documentrate"])
-
-    # ── AP Column Detection ──────────────────────────────────────────────────
-    col_ap_po_no = None
-    col_ap_grpo_no = None
-    col_ap_inv_no = None
-    col_ap_date = None
-    col_ap_inv_qty = None
-    col_ap_line_total = None
-    if df_ap_raw is not None and not df_ap_raw.empty:
-        col_ap_po_no = find_col(df_ap_raw, ["po number", "po no", "po no.", "purchase order number", "purchase order no", "purchase order", "po_no", "pono"])
-        col_ap_grpo_no = find_col(df_ap_raw, ["grpo number", "grpo no", "grpo no.", "grpo_number", "grpo no.", "grn", "grn no", "grn no.", "grn number", "receipt no", "receipt number"])
-        col_ap_inv_no = find_col(df_ap_raw, ["ap invoice no", "ap invoice no.", "invoice no", "invoice no.", "ap_invoice_no", "ap invoice number"])
-        col_ap_date = find_col(df_ap_raw, ["posting date", "document date", "doc date", "docdate", "date", "invoice date", "inv date", "ap date"])
-        col_ap_inv_qty = find_col(df_ap_raw, ["invoice qty", "invoice quantity", "qty", "quantity", "invoice_qty"])
-        col_ap_line_total = find_col(df_ap_raw, ["line total", "linetotal", "line amount", "u_total", "total"])
-
-    # ── Pre-aggregate GRPO Lookups ───────────────────────────────────────────
-    grpo_lookup = {}
-    grpo_by_no = {}
-    grpo_by_po = {}
-    if df_grpo_raw is not None and not df_grpo_raw.empty:
-        if col_grpo_date:
-            df_grpo_raw["parsed_grpo_date"] = pd.to_datetime(df_grpo_raw[col_grpo_date], errors='coerce', dayfirst=True)
-        else:
-            df_grpo_raw["parsed_grpo_date"] = pd.NaT
-            
-        if col_grpo_ge_no:
-            for idx, row in df_grpo_raw.iterrows():
-                ge_raw = row.get(col_grpo_ge_no)
-                ge_list = [normalize_id(g) for g in str(ge_raw).split(",") if normalize_id(g)] if pd.notna(ge_raw) else []
-                po_raw = row.get(col_grpo_po_no) if col_grpo_po_no else None
-                po_list = [normalize_id(p) for p in str(po_raw).split(",") if normalize_id(p)] if pd.notna(po_raw) else []
-                
-                for ge_val in ge_list:
-                    key = (ge_val, "")
-                    if key not in grpo_lookup:
-                        grpo_lookup[key] = []
-                    grpo_lookup[key].append((idx, row))
-                    for po_val in po_list:
-                        key = (ge_val, po_val)
-                        if key not in grpo_lookup:
-                            grpo_lookup[key] = []
-                        grpo_lookup[key].append((idx, row))
-        
-        if col_grpo_no:
-            for idx, row in df_grpo_raw.iterrows():
-                g_no = normalize_id(row.get(col_grpo_no))
-                if g_no:
-                    if g_no not in grpo_by_no:
-                        grpo_by_no[g_no] = []
-                    grpo_by_no[g_no].append((idx, row))
-
-        if col_grpo_po_no:
-            for idx, row in df_grpo_raw.iterrows():
-                po_raw = row.get(col_grpo_po_no)
-                po_list = [normalize_id(p) for p in str(po_raw).split(",") if normalize_id(p)] if pd.notna(po_raw) else []
-                for p_no in po_list:
-                    if p_no not in grpo_by_po:
-                        grpo_by_po[p_no] = []
-                    grpo_by_po[p_no].append((idx, row))
-
-    # ── Pre-aggregate AP Lookup ───────────────────────────────────────────────
-    ap_lookup = {}
-    if df_ap_raw is not None and not df_ap_raw.empty and col_ap_po_no and col_ap_grpo_no:
-        for _, row in df_ap_raw.iterrows():
-            po_raw = row.get(col_ap_po_no)
-            po_list = [normalize_id(p) for p in str(po_raw).split(",") if normalize_id(p)] if pd.notna(po_raw) else []
-            grpo_raw = row.get(col_ap_grpo_no)
-            grpo_list = [normalize_id(g) for g in str(grpo_raw).split(",") if normalize_id(g)] if pd.notna(grpo_raw) else []
-            
-            for po_val in po_list:
-                for grpo_val in grpo_list:
-                    key = (po_val, grpo_val)
-                    if key not in ap_lookup:
-                        ap_lookup[key] = []
-                    ap_lookup[key].append(row)
-                    
-                    key_grpo_only = ("", grpo_val)
-                    if key_grpo_only not in ap_lookup:
-                        ap_lookup[key_grpo_only] = []
-                    ap_lookup[key_grpo_only].append(row)
-
-    # ── Pre-aggregate PO Lookup for Item Details, Quantity, Rate, Value ────────
-    po_items_lookup = {}
-    col_po_vendor_code = None
-    col_po_vendor_name = None
-    col_po_item = None
-    col_po_desc = None
-    col_po_group = None
-    col_po_qty = None
-    col_po_price = None
-    col_po_rate = None
-    col_po_total = None
-    
-    if df_po_raw is not None and not df_po_raw.empty:
-        col_po_no = find_col(df_po_raw, ["po no", "po no.", "po number", "purchase order no", "purchase order number"])
-        col_po_vendor_code = find_col(df_po_raw, ["vendor code", "vendor_code", "card code", "cardcode"])
-        col_po_vendor_name = find_col(df_po_raw, ["vendor name", "vendor_name", "card name", "cardname"])
-        col_po_item = find_col(df_po_raw, ["item code", "item_code", "item no", "item no.", "itemno"])
-        col_po_desc = find_col(df_po_raw, ["item description", "description", "item_description"])
-        col_po_group = find_col(df_po_raw, ["item group", "item_group", "group name"])
-        col_po_qty = find_col(df_po_raw, ["po qty", "ordered qty", "quantity", "qty", "po_qty"])
-        col_po_price = find_col(df_po_raw, ["po price", "unit price", "price", "rate", "po_price"])
-        col_po_rate = find_col(df_po_raw, ["document rate", "doc rate", "rate", "documentrate"])
-        col_po_total = find_col(df_po_raw, ["line total", "linetotal", "total", "line_total"])
-        
-        if col_po_no:
-            for _, row_po in df_po_raw.iterrows():
-                p_no_raw = row_po.get(col_po_no)
-                p_nos = [normalize_id(x) for x in str(p_no_raw).split(",") if normalize_id(x)] if pd.notna(p_no_raw) else []
-                for p_no in p_nos:
-                    if p_no not in po_items_lookup:
-                        po_items_lookup[p_no] = []
-                    po_items_lookup[p_no].append(row_po)
-
-    # ── Process Gate Entry Records ───────────────────────────────────────────
-    records = []
-    exceptions_rows = []
-    
-    ge_lt_grpo_cnt = 0
-    ge_eq_grpo_cnt = 0
-    ge_gt_grpo_cnt = 0
-    missing_grpo_date_cnt = 0
-    missing_bill_date_cnt = 0
-    total_ge = len(df_ge_raw)
-
-    po_currency_lookup = {}
-    if df_po_raw is not None and not df_po_raw.empty:
-        col_po_no = find_col(df_po_raw, ["po no", "po no.", "po number", "purchase order no", "purchase order number"])
-        col_po_currency = find_col(df_po_raw, ["document currency", "currency", "doc currency", "po currency"])
-        if col_po_no and col_po_currency:
-            for _, row_po in df_po_raw.iterrows():
-                po_val = normalize_id(row_po.get(col_po_no))
-                if po_val:
-                    po_currency_lookup[po_val] = str(row_po.get(col_po_currency, "")).strip()
-
-    df_ge_raw["parsed_ge_date"] = pd.to_datetime(df_ge_raw[col_ge_date], errors='coerce', dayfirst=True) if col_ge_date else pd.NaT
-    df_ge_raw["parsed_v_bill_date"] = pd.to_datetime(df_ge_raw[col_ge_vendor_bill_date], errors='coerce', dayfirst=True) if col_ge_vendor_bill_date else pd.NaT
-
-    # Key count dictionaries to calculate n_shares across all match strategies
-    ge_no_counts = {}
-    ge_grpo_counts = {}
-    ge_po_counts = {}
-
-    if df_ge_raw is not None and not df_ge_raw.empty:
-        for _, row in df_ge_raw.iterrows():
-            ge_no = normalize_id(row.get(col_ge_no))
-            if ge_no:
-                ge_no_counts[ge_no] = ge_no_counts.get(ge_no, 0) + 1
-            if col_ge_grpo_no:
-                ge_grpo_val = normalize_id(row.get(col_ge_grpo_no))
-                if ge_grpo_val:
-                    ge_grpo_counts[ge_grpo_val] = ge_grpo_counts.get(ge_grpo_val, 0) + 1
-            po_no_raw = row.get(col_ge_po_no) if col_ge_po_no else None
-            po_parts_check = [normalize_id(p) for p in str(po_no_raw).split(",") if normalize_id(p)] if po_no_raw and not pd.isna(po_no_raw) else []
-            for p in po_parts_check:
-                ge_po_counts[p] = ge_po_counts.get(p, 0) + 1
-
-    for _, row in df_ge_raw.iterrows():
-        ge_no_raw = row.get(col_ge_no)
-        ge_no = normalize_id(ge_no_raw)
-        
-        # Strict checking: skip if ge_no is blank or null
-        if not ge_no or ge_no.lower() in ("nan", "none", "null"):
-            continue
-            
-        ge_date_val = row.get("parsed_ge_date")
-        ge_date = ge_date_val if pd.notna(ge_date_val) else None
-        
-        po_no_raw = row.get(col_ge_po_no) if col_ge_po_no else None
-        po_parts = []
-        if po_no_raw and not pd.isna(po_no_raw):
-            po_parts = [normalize_id(p) for p in str(po_no_raw).split(",") if normalize_id(p)]
-        
-        po_no = ", ".join(po_parts) if po_parts else ""
-        
-        # Vendor Bill Date
-        v_bill_date_val = row.get("parsed_v_bill_date")
-        v_bill_date = v_bill_date_val if pd.notna(v_bill_date_val) else None
-        if not v_bill_date:
-            missing_bill_date_cnt += 1
-            
-        # 1. Lookup GRPO
-        matched_grpos = []
-        is_fallback_match = False
-        match_strategy = None
-        
-        # A. Try matching by Gate Entry Number in GRPO (col_grpo_ge_no)
-        if col_grpo_ge_no and ge_no:
-            matched_grpos = grpo_lookup.get((ge_no, ""), [])
-            if matched_grpos:
-                match_strategy = ("B", ge_no)
-
-        # B. Fallback to matching by GRPO Number (col_ge_grpo_no)
-        if not matched_grpos and col_ge_grpo_no:
-            ge_grpo_val = normalize_id(row.get(col_ge_grpo_no))
-            if ge_grpo_val:
-                candidate_grpos = grpo_by_no.get(ge_grpo_val, [])
-                if po_parts:
-                    matched_grpos = [item for item in candidate_grpos if po_overlap((item[1] if isinstance(item, tuple) else item).get(col_grpo_po_no), po_no)]
-                if not matched_grpos:
-                    matched_grpos = candidate_grpos
-                if matched_grpos:
-                    match_strategy = ("A", ge_grpo_val)
-                
-        # C. Fallback to matching by PO Number only
-        if not matched_grpos and po_parts:
-            is_fallback_match = True
-            for p in po_parts:
-                candidates = grpo_by_po.get(p)
-                if candidates:
-                    matched_grpos.extend(candidates)
-            if matched_grpos:
-                match_strategy = ("C", po_parts[0] if po_parts else "")
-
-        if not match_strategy and po_parts:
-            match_strategy = ("PO", po_parts[0] if po_parts else "")
-
-        # Deduplicate matched GRPOs
-        if matched_grpos:
-            seen_grpo_idxs = set()
-            unique_grpos = []
-            for item in matched_grpos:
-                idx_g, r_g = item if isinstance(item, tuple) else (id(item), item)
-                if idx_g not in seen_grpo_idxs:
-                    seen_grpo_idxs.add(idx_g)
-                    unique_grpos.append(r_g)
-            matched_grpos = unique_grpos
-        else:
-            matched_grpos = []
-
-        def fmt_dt(dt):
-            return dt.strftime("%d/%m/%y") if dt else "—"
-
-        unique_grns = []
-        unique_aps = []
-        unique_grpo_dts = []
-        days_vals = []
-        is_exc = 0
-        exceeds_3 = 0
-        
-        v_code_grpo = "—"
-        v_name_grpo = "—"
-        v_bill_no_grpo = "—"
-        currency = ""
-        
-        # Extract Item details, PO Numbers, Quantities, Rates, and Values directly from GRPO Sheet (matched_grpos) via GRN Number
-        po_numbers_from_grpo = []
-        po_item_codes = []
-        po_item_descs = []
-        po_item_groups = []
-        po_qty_sum = 0.0
-        po_val_sum = 0.0
-        po_rates = []
-
-        if matched_grpos:
-            for r_grpo in matched_grpos:
-                # PO Number from GRPO
-                if col_grpo_po_no:
-                    p_raw = r_grpo.get(col_grpo_po_no)
-                    p_list = [normalize_id(p) for p in str(p_raw).split(",") if normalize_id(p)] if pd.notna(p_raw) else []
-                    for p_val in p_list:
-                        if p_val and p_val not in po_numbers_from_grpo:
-                            po_numbers_from_grpo.append(p_val)
-
-                # Item Code
-                ic = clean_str_val(r_grpo.get(col_grpo_item_code, "")) if col_grpo_item_code else "—"
-                if ic and ic != "—" and ic not in po_item_codes:
-                    po_item_codes.append(ic)
-
-                # Item Description
-                idsc = clean_str_val(r_grpo.get(col_grpo_item_desc, "")) if col_grpo_item_desc else "—"
-                if idsc and idsc != "—" and idsc not in po_item_descs:
-                    po_item_descs.append(idsc)
-
-                # Item Group
-                ig = clean_str_val(r_grpo.get(col_grpo_item_group, "")) if col_grpo_item_group else "—"
-                if ig and ig != "—" and ig not in po_item_groups:
-                    po_item_groups.append(ig)
-
-                # Quantity & Rates
-                grpo_qty = parse_numeric_val(r_grpo.get(col_grpo_qty)) if col_grpo_qty else 0.0
-                grpo_price = parse_numeric_val(r_grpo.get(col_grpo_rate)) if col_grpo_rate else 0.0
-                grpo_rate_mult = parse_numeric_val(r_grpo.get(col_grpo_doc_rate)) if col_grpo_doc_rate else 1.0
-                if grpo_rate_mult <= 0:
-                    grpo_rate_mult = 1.0
-                grpo_rate_inr = grpo_price * grpo_rate_mult
-
-                po_qty_sum += grpo_qty
-
-                # Raw matched line total directly from GRPO report (converted if explicitly in FC)
-                raw_line_total = parse_numeric_val(r_grpo.get(col_grpo_line_total)) if col_grpo_line_total else 0.0
-                if raw_line_total > 0:
-                    if grpo_rate_mult > 1.0 and grpo_price > 0 and grpo_qty > 0:
-                        calc_fc = grpo_qty * grpo_price
-                        calc_inr = grpo_qty * grpo_rate_inr
-                        if abs(raw_line_total - calc_fc) < abs(raw_line_total - calc_inr) and raw_line_total < (calc_inr / 2.0):
-                            line_val = raw_line_total * grpo_rate_mult
-                        else:
-                            line_val = raw_line_total
-                    else:
-                        line_val = raw_line_total
-                else:
-                    line_val = grpo_qty * grpo_rate_inr
-
-                po_val_sum += line_val
-
-                if grpo_rate_inr > 0:
-                    grpo_rate_str = f"{grpo_rate_inr:.2f}"
-                    if grpo_rate_str not in po_rates:
-                        po_rates.append(grpo_rate_str)
-        # Fallback/supplement with PO Report lines for item details
-        all_po_nums = po_numbers_from_grpo if po_numbers_from_grpo else po_parts
-        matched_po_lines = []
-        for p in all_po_nums:
-            matched_po_lines.extend(po_items_lookup.get(p, []))
-
-        if matched_po_lines:
-            for r_po in matched_po_lines:
-                ic = clean_str_val(r_po.get(col_po_item, "")) if col_po_item else "—"
-                if ic and ic != "—" and ic not in po_item_codes:
-                    po_item_codes.append(ic)
-
-                idsc = clean_str_val(r_po.get(col_po_desc, "")) if col_po_desc else "—"
-                if idsc and idsc != "—" and idsc not in po_item_descs:
-                    po_item_descs.append(idsc)
-
-                ig = clean_str_val(r_po.get(col_po_group, "")) if col_po_group else "—"
-                if ig and ig != "—" and ig not in po_item_groups:
-                    po_item_groups.append(ig)
-
-            if not matched_grpos or po_qty_sum == 0.0:
-                po_qty_sum = sum(parse_numeric_val(r_po.get(col_po_qty)) if col_po_qty else 0.0 for r_po in matched_po_lines)
-                
-                calculated_po_val = 0.0
-                for r_po in matched_po_lines:
-                    p_qty = parse_numeric_val(r_po.get(col_po_qty)) if col_po_qty else 0.0
-                    p_price = parse_numeric_val(r_po.get(col_po_price)) if col_po_price else 0.0
-                    p_mult = parse_numeric_val(r_po.get(col_po_rate)) if col_po_rate else 1.0
-                    if p_mult <= 0:
-                        p_mult = 1.0
-                    p_rate_inr = p_price * p_mult
-
-                    raw_po_total = parse_numeric_val(r_po.get(col_po_total)) if col_po_total else 0.0
-                    if raw_po_total > 0:
-                        if p_mult > 1.0 and p_price > 0 and p_qty > 0:
-                            calc_fc = p_qty * p_price
-                            calc_inr = p_qty * p_rate_inr
-                            if abs(raw_po_total - calc_fc) < abs(raw_po_total - calc_inr):
-                                l_val = raw_po_total * p_mult
-                            else:
-                                l_val = raw_po_total
-                        else:
-                            l_val = raw_po_total
-                    else:
-                        l_val = p_qty * p_rate_inr
-                    calculated_po_val += l_val
-                po_val_sum = calculated_po_val
-
-                for r_po in matched_po_lines:
-                    p_price = parse_numeric_val(r_po.get(col_po_price)) if col_po_price else 0.0
-                    p_mult = parse_numeric_val(r_po.get(col_po_rate)) if col_po_rate else 1.0
-                    if p_mult <= 0:
-                        p_mult = 1.0
-                    p_rate = p_price * p_mult
-                    if p_rate > 0:
-                        p_rate_str = f"{p_rate:.2f}"
-                        if p_rate_str not in po_rates:
-                            po_rates.append(p_rate_str)
-
-        # Proportional share allocation across matching GEs to prevent value inflation
-        n_shares = 1
-        if match_strategy:
-            stype, sval = match_strategy
-            if stype == "A":
-                n_shares = ge_grpo_counts.get(sval, 1)
-            elif stype == "B":
-                n_shares = ge_no_counts.get(sval, 1)
-            elif stype in ("C", "PO"):
-                if all_po_nums:
-                    n_shares = max((ge_po_counts.get(p, 1) for p in all_po_nums), default=1)
-
-        if n_shares > 1:
-            po_qty_sum = po_qty_sum / n_shares
-            po_val_sum = po_val_sum / n_shares
-
-        if po_numbers_from_grpo:
-            po_no = ", ".join(po_numbers_from_grpo)
-
-        if matched_grpos:
-            for r_grpo in matched_grpos:
-                g_no = normalize_id(r_grpo.get(col_grpo_no))
-                if g_no and g_no != "—" and g_no not in unique_grns:
-                    unique_grns.append(g_no)
-                
-                # Fetch AP Invoices matching this po_parts and g_no
-                if g_no:
-                    ap_list = []
-                    if po_parts:
-                        for p in po_parts:
-                            candidates = ap_lookup.get((p, g_no))
-                            if candidates:
-                                ap_list.extend(candidates)
-                    else:
-                        candidates = ap_lookup.get(("", g_no))
-                        if candidates:
-                            ap_list.extend(candidates)
-                            
-                    if ap_list:
-                        for r_ap in ap_list:
-                            a_no = normalize_id(r_ap.get(col_ap_inv_no))
-                            if a_no and a_no != "—" and a_no not in unique_aps:
-                                unique_aps.append(a_no)
-                
-                if v_code_grpo == "—" and col_grpo_vendor_code:
-                    v_code_grpo = clean_str_val(r_grpo.get(col_grpo_vendor_code, ""))
-                if v_name_grpo == "—" and col_grpo_vendor_name:
-                    v_name_grpo = clean_str_val(r_grpo.get(col_grpo_vendor_name, ""))
-                if v_bill_no_grpo == "—" and col_grpo_vendor_ref:
-                    v_bill_no_grpo = clean_str_val(r_grpo.get(col_grpo_vendor_ref, ""))
-                if not currency and col_grpo_currency:
-                    currency = str(r_grpo.get(col_grpo_currency, "")).strip()
-
-            valid_grpo_dates = []
-            for r_grpo in matched_grpos:
-                grpo_date_val = r_grpo.get("parsed_grpo_date")
-                grpo_date = grpo_date_val if pd.notna(grpo_date_val) else None
-                if grpo_date:
-                    grpo_date_str = fmt_dt(grpo_date)
-                    if grpo_date_str not in unique_grpo_dts:
-                        unique_grpo_dts.append(grpo_date_str)
-                    valid_grpo_dates.append(grpo_date)
-                    
-            if ge_date and valid_grpo_dates:
-                # Option B: Use earliest GRPO date for whole-row comparison
-                earliest_grpo_dt = min(valid_grpo_dates)
-                days_val = int((earliest_grpo_dt - ge_date).days)
-                days_vals.append(str(days_val))
-                if days_val < 0:
-                    is_exc = 1
-                elif days_val > 3:
-                    exceeds_3 = 1
-
-            if is_exc == 1:
-                ge_gt_grpo_cnt += 1
-            elif days_vals:
-                has_positive = any(int(d) > 0 for d in days_vals)
-                if has_positive:
-                    ge_lt_grpo_cnt += 1
-                else:
-                    ge_eq_grpo_cnt += 1
-        else:
-            missing_grpo_date_cnt += 1
-            
-        # Vendor Code/Name Fallbacks
-        v_code = v_code_grpo if v_code_grpo != "—" else clean_str_val(row.get(col_ge_vendor_code, ""))
-        v_name = v_name_grpo if v_name_grpo != "—" else clean_str_val(row.get(col_ge_vendor_name, ""))
-        v_bill_no = v_bill_no_grpo if v_bill_no_grpo != "—" else clean_str_val(row.get(col_ge_vendor_bill_no, ""))
-        
-        # Fallback to PO Report for vendor details if still missing
-        if (not v_code or v_code == "—") and matched_po_lines:
-            for r_po in matched_po_lines:
-                vc = clean_str_val(r_po.get(col_po_vendor_code, "")) if col_po_vendor_code else "—"
-                if vc and vc != "—":
-                    v_code = vc
-                    break
-        if (not v_name or v_name == "—") and matched_po_lines:
-            for r_po in matched_po_lines:
-                vn = clean_str_val(r_po.get(col_po_vendor_name, "")) if col_po_vendor_name else "—"
-                if vn and vn != "—":
-                    v_name = vn
-                    break
-        
-        if not currency:
-            if po_parts:
-                currency = po_currency_lookup.get(po_parts[0], "")
-        vendor_country = "India" if currency.upper() in ("INR", "") else "USA"
-        
-        grn_str = ", ".join(unique_grns) if unique_grns else "—"
-        ap_str = ", ".join(unique_aps) if unique_aps else "—"
-        grpo_dt_str = ", ".join(unique_grpo_dts) if unique_grpo_dts else "—"
-        item_code_str = ", ".join(po_item_codes) if po_item_codes else "—"
-        item_desc_str = ", ".join(po_item_descs) if po_item_descs else "—"
-        item_group_str = ", ".join(po_item_groups) if po_item_groups else "—"
-        days_str = ", ".join(days_vals) if days_vals else "—"
-        rate_str = ", ".join(po_rates) if po_rates else "—"
-        
-        rec = {
-            "Gate Entry number": ge_no,
-            "Gate Entry Date": fmt_dt(ge_date),
-            "PO Number": po_no if po_no else "—",
-            "GRN Number": grn_str,
-            "AP Invoice Number": ap_str,
-            "GRPO Date": grpo_dt_str,
-            "Vendor Code": v_code,
-            "Vendor Name": v_name,
-            "Vendor Country": vendor_country,
-            "Vendor Bill Number": v_bill_no,
-            "Item Code": item_code_str,
-            "Item Description": item_desc_str,
-            "Item Group": item_group_str,
-            "Quantity": po_qty_sum,
-            "Rate(INR)": rate_str,
-            "Value(INR)": po_val_sum,
-            "Days(GRPO-GE)": days_str,
-            "Seq Exception(GE>GRPO)": is_exc,
-            "Exceeds 3 days": exceeds_3
-        }
-        records.append(rec)
-        if is_exc == 1:
-            exceptions_rows.append({
-                "GE No": ge_no,
-                "GE Date": fmt_dt(ge_date),
-                "GRPO Date": grpo_dt_str,
-                "Vendor Bill Date": fmt_dt(v_bill_date),
-                "Vendor Bill No": v_bill_no,
-                "Vendor Code": v_code,
-                "GRPO No": grn_str,
-            })
-
-    # Calculations for KPIs & Charts
-    total_lines = len(records)
-    total_val = sum(r["Value(INR)"] for r in records)
-    seq_exceptions = sum(1 for r in records if r["Seq Exception(GE>GRPO)"] == 1)
-    exceeds_3_days = sum(1 for r in records if r["Exceeds 3 days"] == 1)
-    
-    unique_pos = len(set(r["PO Number"] for r in records if r["PO Number"] and r["PO Number"] != "—"))
-    unique_grns = len(set(r["GRN Number"] for r in records if r["GRN Number"] and r["GRN Number"] != "—"))
-    
-    missing_po_grns = set()
-    for r in records:
-        po_val = str(r.get("PO Number", "")).strip()
-        if not po_val or po_val.upper() in ("—", "-", "NONE", "NAN", "NA", "N/A", "NULL"):
-            grn_val = str(r.get("GRN Number", "")).strip()
-            if grn_val and grn_val != "—":
-                for g in grn_val.split(","):
-                    g_clean = g.strip()
-                    if g_clean and g_clean != "—":
-                        missing_po_grns.add(g_clean)
-    missing_po_count = len(missing_po_grns) if missing_po_grns else sum(
-        1 for r in records
-        if not r.get("PO Number") or str(r.get("PO Number")).strip().upper() in ("", "—", "-", "NONE", "NAN", "NA", "N/A", "NULL")
-    )
-
-    exceeded_days_list = []
-    for r in records:
-        if r.get("Exceeds 3 days") == 1 or str(r.get("Exceeds 3 days")) == "1":
-            d_str = str(r.get("Days(GRPO-GE)", "")).strip()
-            if d_str and d_str != "—":
-                for p in d_str.split(","):
-                    p_clean = p.strip()
-                    try:
-                        val = float(p_clean)
-                        if val > 3:
-                            exceeded_days_list.append(val)
-                    except ValueError:
-                        pass
-    if exceeded_days_list:
-        avg_val = sum(exceeded_days_list) / len(exceeded_days_list)
-        avg_grn_days = int(round(avg_val)) if (avg_val % 1 == 0) else round(avg_val, 1)
+        c_gp_ge_no  = _find_col(df_grpo_raw, ["gate entry no", "gate entry no.", "ge no"])
+        c_gp_grpo   = _find_col(df_grpo_raw, ["grpo no", "grpo no.", "grn no", "grn no.",
+                                               "receipt no", "goods receipt no"])
+        c_gp_po     = _find_col(df_grpo_raw, ["po number", "po no", "po no.",
+                                               "purchase order number", "purchase order no"])
+        c_gp_date   = _find_col(df_grpo_raw, ["posting date", "document date", "grpo date",
+                                               "receipt date", "doc date"])
+        c_gp_vc     = _find_col(df_grpo_raw, ["vendor code", "bp code", "supplier code"])
+        c_gp_vn     = _find_col(df_grpo_raw, ["vendor name", "bp name", "supplier name"])
+        c_gp_vref   = _find_col(df_grpo_raw, ["vendor ref no", "vendor ref. no.", "vendor bill no",
+                                               "bill no", "supplier invoice no"])
+        c_gp_br     = _find_col(df_grpo_raw, ["branch", "branch name"])
+        c_gp_cr_id  = _find_col(df_grpo_raw, ["ge creater id", "ge creator id", "created by"])
+        c_gp_ic     = _find_col(df_grpo_raw, ["item code", "item no", "item no."])
+        c_gp_id     = _find_col(df_grpo_raw, ["item description", "description",
+                                               "item/service description", "item name"])
+        c_gp_ig     = _find_col(df_grpo_raw, ["item group", "item group name", "group name"])
+        c_gp_uom    = _find_col(df_grpo_raw, ["uom", "unit of measure", "purchasing uom"])
+        c_gp_qty    = _find_col(df_grpo_raw, ["grpo qty", "quantity", "qty"])
+        c_gp_price  = _find_col(df_grpo_raw, ["grpo price", "unit price", "price"])
+        c_gp_curr   = _find_col(df_grpo_raw, ["document currency", "currency", "doc currency"])
+        c_gp_rate   = _find_col(df_grpo_raw, ["document rate", "doc rate"])
+        c_gp_lt     = _find_col(df_grpo_raw, ["line total", "linetotal"])
     else:
-        avg_grn_days = 0
+        (c_gp_ge_no, c_gp_grpo, c_gp_po, c_gp_date, c_gp_vc, c_gp_vn, c_gp_vref,
+         c_gp_br, c_gp_cr_id, c_gp_ic, c_gp_id, c_gp_ig, c_gp_uom,
+         c_gp_qty, c_gp_price, c_gp_curr, c_gp_rate, c_gp_lt) = [None] * 18
 
-    pass_count = total_lines - seq_exceptions
-    integrity_pct = round(pass_count / total_lines * 100, 2) if total_lines else 0.0
+    # ── Parse Gate Entry dates and sort numerically ─────────────────────────
+    df_ge = df_ge_raw.copy()
+    if c_ge_no:
+        df_ge["_ge_no_str"] = df_ge[c_ge_no].astype(str).str.strip().str.replace(".0", "", regex=False)
+        df_ge["_ge_num"] = pd.to_numeric(df_ge["_ge_no_str"], errors="coerce")
+        df_ge = df_ge.sort_values("_ge_num", kind="stable").reset_index(drop=True)
+    else:
+        df_ge["_ge_no_str"] = ""
+
+    if c_ge_date:
+        df_ge["_ge_date"] = _parse_date_col(df_ge[c_ge_date])
+    else:
+        df_ge["_ge_date"] = pd.NaT
+
+    # ── Build GRPO lookups (GE No lookup and GRN No lookup) ─────────────────
+    grpo_first_by_ge: dict = {}
+    grpo_first_by_grn: dict = {}
+    grpo_sumlt_by_ge: dict = {}
+
+    if df_grpo_raw is not None and not df_grpo_raw.empty:
+        df_grpo = df_grpo_raw.copy()
+        if c_gp_ge_no:
+            df_grpo["_ge_no_str"] = df_grpo[c_gp_ge_no].astype(str).str.strip().str.replace(".0", "", regex=False)
+        else:
+            df_grpo["_ge_no_str"] = ""
+
+        if c_gp_grpo:
+            df_grpo["_grpo_no_str"] = df_grpo[c_gp_grpo].astype(str).str.strip().str.replace(".0", "", regex=False)
+        else:
+            df_grpo["_grpo_no_str"] = ""
+
+        if c_gp_date:
+            df_grpo["_posting_date"] = _parse_date_col(df_grpo[c_gp_date])
+        else:
+            df_grpo["_posting_date"] = pd.NaT
+
+        if c_gp_lt:
+            df_grpo["_lt_num"] = df_grpo[c_gp_lt].astype(str).str.replace(",", "")
+            df_grpo["_lt_num"] = pd.to_numeric(df_grpo["_lt_num"], errors="coerce").fillna(0.0)
+        else:
+            df_grpo["_lt_num"] = 0.0
+
+        if c_gp_ge_no:
+            lt_by_ge = df_grpo.groupby("_ge_no_str")["_lt_num"].sum()
+            grpo_sumlt_by_ge = lt_by_ge.to_dict()
+
+            grpo_first_df = df_grpo.groupby("_ge_no_str", sort=False).first().reset_index()
+            for _, row in grpo_first_df.iterrows():
+                ge_key = row["_ge_no_str"]
+                if ge_key and ge_key not in ("nan", "None", ""):
+                    grpo_first_by_ge[ge_key] = row
+
+        if c_gp_grpo:
+            grpo_grn_df = df_grpo.groupby("_grpo_no_str", sort=False).first().reset_index()
+            for _, row in grpo_grn_df.iterrows():
+                grn_key = row["_grpo_no_str"]
+                if grn_key and grn_key not in ("nan", "None", ""):
+                    grpo_first_by_grn[grn_key] = row
+
+    def _total_value_for_ge(ge_no: str) -> float:
+        return grpo_sumlt_by_ge.get(ge_no, 0.0)
+
+    # ── Classify sequence gap ─────────────────────────────────────────────────
+    def _classify(ge_date, grpo_posting_date, has_grpo: bool) -> tuple[str, int]:
+        """Returns (label, grpo_days)."""
+        if not has_grpo:
+            return "PO & GRN No. is Missing", None
+        if pd.isna(ge_date) or pd.isna(grpo_posting_date):
+            return "PO & GRN No. is Missing", None
+        days = int((pd.Timestamp(grpo_posting_date) - pd.Timestamp(ge_date)).days)
+        if days == 0:
+            return "Same Day", 0
+        if days < 0:
+            return "Exception", days
+        if 1 <= days <= 3:
+            return "Normal", days
+        return "GRN Date Exceeds 3 Days", days
+
+    # ── Build result table rows ───────────────────────────────────────────────
+    rows = []
+    for _, ge_row in df_ge.iterrows():
+        ge_no_str = ge_row["_ge_no_str"]
+        ge_date   = ge_row["_ge_date"]
+        if not ge_no_str or ge_no_str in ("nan", "None", ""):
+            continue
+
+        # Step 1: GE -> GRPO lookup by Gate Entry No
+        ge_grpo_row = grpo_first_by_ge.get(ge_no_str)
+        
+        # Determine GRN No
+        grn_no = "—"
+        if ge_grpo_row is not None and c_gp_grpo:
+            grn_no = _clean(ge_grpo_row.get(c_gp_grpo))
+        if (not grn_no or grn_no in ("—", "nan", "None", "")) and c_ge_grn:
+            grn_no = _clean(ge_row.get(c_ge_grn))
+            
+        # Determine GRN Date
+        grpo_post = pd.NaT
+        if ge_grpo_row is not None:
+            grpo_post = ge_grpo_row.get("_posting_date")
+        if pd.isna(grpo_post) and c_ge_grn_date:
+            grpo_post = _parse_date_col(ge_row.get(c_ge_grn_date))
+
+        has_grpo = (ge_grpo_row is not None) or (grn_no != "—" and grn_no in grpo_first_by_grn)
+        
+        # Step 2: GRN -> GRPO lookup by GRN No for item & financial details
+        grn_grpo_row = grpo_first_by_grn.get(grn_no) if grn_no != "—" else None
+        target_grpo_row = grn_grpo_row if grn_grpo_row is not None else ge_grpo_row
+
+        seq_gap, grpo_days = _classify(ge_date, grpo_post, has_grpo)
+
+        def _gf(col, default="—"):
+            if target_grpo_row is None or col is None:
+                return default
+            return _clean(target_grpo_row.get(col, default), default)
+
+        po_no     = _gf(c_gp_po, "0")
+        item_code = _gf(c_gp_ic)
+        item_desc = _gf(c_gp_id)
+        item_group= _gf(c_gp_ig)
+        uom       = _gf(c_gp_uom)
+
+        grpo_qty_raw = target_grpo_row.get(c_gp_qty) if (target_grpo_row is not None and c_gp_qty) else None
+        grpo_price_raw = target_grpo_row.get(c_gp_price) if (target_grpo_row is not None and c_gp_price) else None
+        doc_curr  = _gf(c_gp_curr)
+        doc_rate_raw = target_grpo_row.get(c_gp_rate) if (target_grpo_row is not None and c_gp_rate) else None
+        line_total_raw = target_grpo_row.get("_lt_num") if target_grpo_row is not None else 0.0
+
+        grpo_qty   = _parse_num(grpo_qty_raw)
+        grpo_price = _parse_num(grpo_price_raw)
+        doc_rate   = _parse_num(doc_rate_raw) if doc_rate_raw is not None else 1.0
+        if doc_rate <= 0:
+            doc_rate = 1.0
+        value      = _parse_num(line_total_raw)
+
+        # Vendor / branch / creator from GRPO (fallback to GE)
+        vcode = (_gf(c_gp_vc) if c_gp_vc else "—") or _clean(ge_row.get(c_ge_vc, ""), "—")
+        if not vcode or vcode == "—":
+            vcode = _clean(ge_row.get(c_ge_vc, ""), "—")
+        vname = (_gf(c_gp_vn) if c_gp_vn else "—") or _clean(ge_row.get(c_ge_vn, ""), "—")
+        if not vname or vname == "—":
+            vname = _clean(ge_row.get(c_ge_vn, ""), "—")
+        vbill = (_gf(c_gp_vref) if c_gp_vref else "—")
+        if not vbill or vbill == "—":
+            vbill = _clean(ge_row.get(c_ge_vb, ""), "—")
+        branch  = (_gf(c_gp_br) if c_gp_br else "—")
+        if not branch or branch == "—":
+            branch = _clean(ge_row.get(c_ge_br, ""), "—")
+        creator = (_gf(c_gp_cr_id) if c_gp_cr_id else "—")
+        if not creator or creator == "—":
+            creator = _clean(ge_row.get(c_ge_cr, ""), "—")
+
+        rows.append({
+            "Gate Entry No": ge_no_str,
+            "Gate Entry Date": _fmt_date(ge_date),
+            "GRN Date": _fmt_date(grpo_post),
+            "GRN No.": grn_no,
+            "PO No.": po_no,
+            "Sequence Gap": seq_gap,
+            "GRPO Days": grpo_days if grpo_days is not None else "—",
+            "Vendor Code": vcode,
+            "Vendor Name": vname,
+            "Vendor Bill No": vbill,
+            "Branch": branch,
+            "GE Creater ID": creator,
+            "Item Code": item_code,
+            "Item Description": item_desc,
+            "Item Group": item_group,
+            "UOM": uom,
+            "GRPO Qty": grpo_qty,
+            "GRPO Price": grpo_price,
+            "Document Currency": doc_curr,
+            "Document Rate": doc_rate,
+            "Value": value,
+            # Flags for chart usage
+            "_is_exception": 1 if seq_gap == "Exception" else 0,
+            "_exceeds_3d": 1 if seq_gap == "GRN Date Exceeds 3 Days" else 0,
+            "_missing": 1 if seq_gap == "PO & GRN No. is Missing" else 0,
+        })
+
+    # ── KPI Calculations ──────────────────────────────────────────────────────
+    total_ge_unique = df_ge["_ge_no_str"].nunique()
+
+    # Total Value = sum of ALL line totals from GRPO for every Gate Entry No in GE file
+    unique_ge_nos = set(df_ge["_ge_no_str"].unique())
+    total_value = sum(_total_value_for_ge(g) for g in unique_ge_nos if g not in ("nan","None",""))
+
+    # Sequence Exceptions = unique Gate Entry Nos classified as Exception
+    exc_ge_nos = set(r["Gate Entry No"] for r in rows if r["_is_exception"] == 1)
+    seq_exceptions = len(exc_ge_nos)
+
+    # Exceeds 3 day window = unique Gate Entry Nos with GRN Date Exceeds 3 Days
+    exc3_ge_nos = set(r["Gate Entry No"] for r in rows if r["_exceeds_3d"] == 1)
+    exceeds_3d = len(exc3_ge_nos)
+
+    # Avg GRN Days (rounded to int, from all rows with numeric GRPO Days >= 0)
+    valid_days = [r["GRPO Days"] for r in rows
+                  if isinstance(r["GRPO Days"], (int, float)) and r["GRPO Days"] >= 0]
+    avg_grn_days = int(round(sum(valid_days) / len(valid_days))) if valid_days else 0
+
+    # Unique PO Numbers (valid, non-blank, non-zero)
+    unique_po = set(r["PO No."] for r in rows
+                    if r["PO No."] and r["PO No."] not in ("—", "", "nan", "None", "0"))
+    unique_po_count = len(unique_po)
+
+    # Unique GRN (GRPO Nos.) in joined rows
+    unique_grn = set(r["GRN No."] for r in rows
+                     if r["GRN No."] and r["GRN No."] not in ("—", "", "nan", "None"))
+    unique_grn_count = len(unique_grn)
+
+    # Unique GRNs with No PO Number
+    no_po_grns = set(r["GRN No."] for r in rows
+                     if r["GRN No."] not in ("—", "", "nan", "None")
+                     and (not r["PO No."] or r["PO No."] in ("—", "", "nan", "None")))
+    unique_no_po_grn = len(no_po_grns)
+
+    # Charts (Unique Gate Entry counts matching 7 KPIs)
+    total_rows = len(rows)
     
-    CIRC = 314.0
-    pass_dash = round(pass_count / total_lines * CIRC, 0) if total_lines else 0
-    exc_dash  = round(seq_exceptions / total_lines * CIRC, 0) if total_lines else 0
+    # Row counts (total line items)
+    same_day_rows  = sum(1 for r in rows if r["Sequence Gap"] == "Same Day")
+    normal_rows    = sum(1 for r in rows if r["Sequence Gap"] == "Normal")
+    exception_rows = sum(1 for r in rows if r["Sequence Gap"] == "Exception")
+    exc_3d_rows    = sum(1 for r in rows if r["Sequence Gap"] == "GRN Date Exceeds 3 Days")
+    missing_rows   = sum(1 for r in rows if r["Sequence Gap"] == "PO & GRN No. is Missing")
 
-    from app.analysis.calculated_fields import field, same_row
+    # Unique Gate Entry counts (matching KPI cards)
+    same_day_ge  = len(set(r["Gate Entry No"] for r in rows if r["Sequence Gap"] == "Same Day"))
+    normal_ge    = len(set(r["Gate Entry No"] for r in rows if r["Sequence Gap"] == "Normal"))
+    exception_ge = len(set(r["Gate Entry No"] for r in rows if r["_is_exception"] == 1)) # 22
+    exc_3d_ge    = len(set(r["Gate Entry No"] for r in rows if r["_exceeds_3d"] == 1))    # 17
+    missing_ge   = len(set(r["Gate Entry No"] for r in rows if r["_missing"] == 1))       # 5
+
+    pass_count_ge = total_ge_unique - exception_ge
+    integrity_pct = round(pass_count_ge / total_ge_unique * 100, 1) if total_ge_unique else 100.0
+
+    CIRC = 314.0
+    pass_dash = round(pass_count_ge / total_ge_unique * CIRC) if total_ge_unique else 0
+    exc_dash  = round(exception_ge / total_ge_unique * CIRC) if total_ge_unique else 0
+
+    # Clean rows for frontend (remove internal flags)
+    clean_rows = []
+    for r in rows:
+        row_out = {k: v for k, v in r.items() if not k.startswith("_")}
+        clean_rows.append(row_out)
 
     return {
         "kpis": {
-            "gate_entries": total_ge,
-            "gate_entry_grpo_lines": total_lines,
-            "total_value_inr": total_val,
+            # 7 KPIs matching client output file exactly
+            "total_gate_entry": total_ge_unique,
+            "total_value_inr": total_value,
             "sequence_exceptions": seq_exceptions,
-            "exceeds_3_day_window": exceeds_3_days,
-            "missing_po_count": missing_po_count,
+            "exceeds_3_day_window": exceeds_3d,
             "avg_grn_days": avg_grn_days,
-            "unique_po_numbers": unique_pos,
-            "unique_grn_numbers": unique_grns,
-            "integrity_pct": integrity_pct,
+            "unique_po_numbers": unique_po_count,
+            "unique_grn_nos": unique_grn_count,
+            "unique_grns_no_po": unique_no_po_grn,
+            # Legacy aliases
+            "gate_entries": total_ge_unique,
             "exceptions": seq_exceptions,
-            "missing_grpo_date": missing_grpo_date_cnt,
-            "ge_eq_grpo": ge_eq_grpo_cnt,
-            "ge_lt_grpo": ge_lt_grpo_cnt,
-            "ge_gt_grpo": ge_gt_grpo_cnt,
+            "ge_gt_grpo": exception_ge,
+            "ge_lt_grpo": normal_ge,
+            "ge_eq_grpo": same_day_ge,
+            "missing_grpo_date": missing_ge,
+            "integrity_pct": integrity_pct,
         },
         "charts": {
             "pass_vs_exception": {
-                "total": total_lines,
+                "total": total_ge_unique,
                 "integrity_pct": integrity_pct,
                 "segments": [
-                    {"label": "Pass",      "value": pass_count, "dash": pass_dash, "offset": 0},
-                    {"label": "Exception", "value": seq_exceptions, "dash": exc_dash,  "offset": -pass_dash},
+                    {"label": "Pass (Correct Order)",   "value": pass_count_ge, "dash": pass_dash, "offset": 0},
+                    {"label": "Exception (GE > GRPO)",  "value": exception_ge,  "dash": exc_dash,  "offset": -pass_dash},
                 ],
             },
             "detailed_checks": [
-                {"label": "Total",                   "value": total_lines,            "pct": 100},
-                {"label": "GE = GRPO (same)",        "value": ge_eq_grpo_cnt,          "pct": round(ge_eq_grpo_cnt / total_lines * 100, 1) if total_lines else 0},
-                {"label": "GE < GRPO (normal)",      "value": ge_lt_grpo_cnt,          "pct": round(ge_lt_grpo_cnt / total_lines * 100, 1) if total_lines else 0},
-                {"label": "GE > GRPO (error)",       "value": ge_gt_grpo_cnt,          "pct": round(ge_gt_grpo_cnt / total_lines * 100, 1) if total_lines else 0},
-                {"label": "GRN date exceeds 3 days", "value": exceeds_3_days,          "pct": round(exceeds_3_days / total_lines * 100, 1) if total_lines else 0},
-                {"label": "GRN not done yet",        "value": missing_grpo_date_cnt,   "pct": round(missing_grpo_date_cnt / total_lines * 100, 1) if total_lines else 0},
+                {"label": "Total Unique Gate Entries","value": total_ge_unique, "pct": 100},
+                {"label": "GE = GRPO (same)",         "value": same_day_ge,     "pct": round(same_day_ge  / total_ge_unique * 100, 1) if total_ge_unique else 0},
+                {"label": "GE < GRPO (normal)",       "value": normal_ge,       "pct": round(normal_ge    / total_ge_unique * 100, 1) if total_ge_unique else 0},
+                {"label": "GE > GRPO (exception)",    "value": exception_ge,    "pct": round(exception_ge / total_ge_unique * 100, 1) if total_ge_unique else 0},
+                {"label": "GRN Date Exceeds 3 Days",  "value": exc_3d_ge,       "pct": round(exc_3d_ge    / total_ge_unique * 100, 1) if total_ge_unique else 0},
+                {"label": "PO & GRN No. is Missing",  "value": missing_ge,      "pct": round(missing_ge   / total_ge_unique * 100, 1) if total_ge_unique else 0},
             ],
+            "row_level_checks": [
+                {"label": "Total Line Items",         "value": total_rows,     "pct": 100},
+                {"label": "GE = GRPO (same)",         "value": same_day_rows,  "pct": round(same_day_rows  / total_rows * 100, 1) if total_rows else 0},
+                {"label": "GE < GRPO (normal)",       "value": normal_rows,    "pct": round(normal_rows    / total_rows * 100, 1) if total_rows else 0},
+                {"label": "GE > GRPO (exception)",    "value": exception_rows, "pct": round(exception_rows / total_rows * 100, 1) if total_rows else 0},
+                {"label": "GRN Date Exceeds 3 Days",  "value": exc_3d_rows,    "pct": round(exc_3d_rows    / total_rows * 100, 1) if total_rows else 0},
+                {"label": "PO & GRN No. is Missing",  "value": missing_rows,   "pct": round(missing_rows   / total_rows * 100, 1) if total_rows else 0},
+            ]
         },
         "tables": [
-            {"title": "GE > GRPO Date Exceptions",   "rows": exceptions_rows},
             {
-                "title": "Gate Entry Full Transaction List",
-                "rows": records,
-                "calculated_fields": {
-                    "Days(GRPO-GE)": field(
-                        "GRPO Date − Gate Entry Date",
-                        "ABS(GRPO_Date − GE_Date)",
-                        inputs=[
-                            {"field": "Gate Entry Date", "source_file": "Gate Entry Report", "source_record": "Gate Entry number"},
-                            {"field": "GRPO Date", "source_file": "GRPO Report", "source_record": "GRN Number"},
-                        ],
-                    ),
-                    "Seq Exception(GE>GRPO)": field(
-                        "Gate Entry Date > GRPO Date",
-                        "IF(GE_Date > GRPO_Date, 1, 0)",
-                        inputs=[
-                            {"field": "Gate Entry Date", "source_file": "Gate Entry Report", "source_record": "Gate Entry number"},
-                            {"field": "GRPO Date", "source_file": "GRPO Report", "source_record": "GRN Number"},
-                        ],
-                    ),
-                    "Exceeds 3 days": field(
-                        "Days(GRPO-GE) > 3 days",
-                        "IF(Days_GRPO_GE > 3, 1, 0)",
-                        inputs=[{"field": "Days(GRPO-GE)", "source_file": "GRPO Report (calculated)", "source_record": "GRN Number"}],
-                    ),
-                },
+                "title": "Gate Entry Check",
+                "rows": clean_rows,
             },
+            {
+                "title": "Sequence Exceptions (GE > GRPO)",
+                "rows": [r for r in clean_rows if r["Sequence Gap"] == "Exception"],
+            },
+            {
+                "title": "GRN Date Exceeds 3 Days",
+                "rows": [r for r in clean_rows if r["Sequence Gap"] == "GRN Date Exceeds 3 Days"],
+            },
+        ],
+    }
+
+
+def _empty_result() -> dict:
+    return {
+        "kpis": {
+            "total_gate_entry": 0,
+            "total_value_inr": 0,
+            "sequence_exceptions": 0,
+            "exceeds_3_day_window": 0,
+            "avg_grn_days": 0,
+            "unique_po_numbers": 0,
+            "unique_grn_nos": 0,
+            "unique_grns_no_po": 0,
+            "gate_entries": 0,
+            "exceptions": 0,
+            "ge_gt_grpo": 0,
+            "ge_lt_grpo": 0,
+            "ge_eq_grpo": 0,
+            "missing_grpo_date": 0,
+            "integrity_pct": 100.0,
+        },
+        "charts": {
+            "pass_vs_exception": {
+                "total": 0,
+                "integrity_pct": 100.0,
+                "segments": [
+                    {"label": "Pass (Correct Order)",  "value": 0, "dash": 0, "offset": 0},
+                    {"label": "Exception (GE > GRPO)", "value": 0, "dash": 0, "offset": 0},
+                ],
+            },
+            "detailed_checks": [],
+        },
+        "tables": [
+            {"title": "Gate Entry Check", "rows": []},
+            {"title": "Sequence Exceptions (GE > GRPO)", "rows": []},
+            {"title": "GRN Date Exceeds 3 Days", "rows": []},
         ],
     }

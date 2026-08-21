@@ -17,15 +17,14 @@ const formatCurrency = (val) => {
 }
 
 const COL_GROUPS = [
-  { label: 'Gate Entry Details', cols: ['Gate Entry number', 'Gate Entry Date', 'Vendor Bill Date', 'Vendor Bill Number'] },
-  { label: 'Vendor & Items',     cols: ['Vendor Code', 'Vendor Name', 'Vendor Country', 'Item Code', 'Item Description', 'Item Group'] },
-  { label: 'Document Links',     cols: ['PO Number', 'GRN Number', 'AP Invoice Number', 'GRPO Date'] },
-  { label: 'Values & Rates',     cols: ['Quantity', 'Rate(INR)', 'Value(INR)'] },
-  { label: 'Analysis & Flags',   cols: ['Days(GRPO-GE)', 'Seq Exception(GE>GRPO)', 'Exceeds 3 days'] },
+  { label: 'Gate Entry Details', cols: ['Gate Entry No', 'Gate Entry Date', 'GRN Date', 'GRN No.', 'PO No.', 'Sequence Gap', 'GRPO Days'] },
+  { label: 'Vendor & Items',    cols: ['Vendor Code', 'Vendor Name', 'Vendor Bill No', 'Branch', 'GE Creater ID'] },
+  { label: 'Item Details',      cols: ['Item Code', 'Item Description', 'Item Group', 'UOM', 'GRPO Qty', 'GRPO Price'] },
+  { label: 'Values',            cols: ['Document Currency', 'Document Rate', 'Value'] },
 ]
 
 const ALL_COLS = COL_GROUPS.flatMap(g => g.cols)
-const INT_COLS = ['Quantity']
+const INT_COLS = ['GRPO Qty']
 
 function SortIcon({ dir }) {
   if (!dir) return (
@@ -65,108 +64,36 @@ export default function GateEntry({ data }) {
   const kpis   = data?.kpis   || {}
   const tables = data?.tables || []
 
-  const mainTable = tables.find(t => t.title === 'Gate Entry Full Transaction List')
+  const mainTable = tables.find(t => t.title === 'Gate Entry Check') || tables[0]
   const rows = mainTable?.rows || []
 
   const dynamicChronologyData = useMemo(() => {
     const detailedChecks = data?.charts?.detailed_checks || []
-    
-    // 1. Determine total gate entry lines
-    let total = kpis?.gate_entry_grpo_lines ?? data?.charts?.pass_vs_exception?.total ?? rows.length ?? 0
+    const total = kpis?.total_gate_entry ?? data?.charts?.pass_vs_exception?.total ?? 0
 
-    // 2. Fetch or compute the check values dynamically
-    let geEq = kpis?.ge_eq_grpo ?? detailedChecks.find(c => c.label === 'GE = GRPO (same)')?.value
-    let geLt = kpis?.ge_lt_grpo ?? detailedChecks.find(c => c.label === 'GE < GRPO (normal)')?.value
-    let geGt = kpis?.ge_gt_grpo ?? kpis?.sequence_exceptions ?? kpis?.exceptions ?? detailedChecks.find(c => c.label === 'GE > GRPO (error)')?.value
-    let exceeds3 = kpis?.exceeds_3_day_window
-    let missingGrpo = kpis?.missing_grpo_date ?? detailedChecks.find(c => c.label === 'Missing GRPO Date')?.value
+    const get = (label) => detailedChecks.find(c => c.label === label)?.value ?? 0
+    const sameDay  = kpis?.ge_eq_grpo  ?? get('GE = GRPO (same)')
+    const normal   = kpis?.ge_lt_grpo  ?? get('GE < GRPO (normal)')
+    const exception= kpis?.sequence_exceptions ?? kpis?.ge_gt_grpo ?? get('GE > GRPO (exception)')
+    const exc3d    = kpis?.exceeds_3_day_window ?? get('GRN Date Exceeds 3 Days')
+    const missing  = kpis?.missing_grpo_date ?? get('PO & GRN No. is Missing')
 
-    // If any value is missing from KPIs/charts, derive dynamically directly from current active table rows
-    if (rows.length > 0 && (geEq === undefined || geLt === undefined || geGt === undefined || exceeds3 === undefined || missingGrpo === undefined || total === 0)) {
-      if (total === 0) total = rows.length
-
-      let calcGeEq = 0
-      let calcGeLt = 0
-      let calcGeGt = 0
-      let calcExceeds3 = 0
-      let calcMissing = 0
-
-      rows.forEach(r => {
-        const grpoDt = r['GRPO Date']
-        const grnNo = r['GRN Number']
-        const isExc = r['Seq Exception(GE>GRPO)'] === 1 || r['Seq Exception(GE>GRPO)'] === '1'
-        const isExceeds3 = r['Exceeds 3 days'] === 1 || r['Exceeds 3 days'] === '1'
-        const daysStr = String(r['Days(GRPO-GE)'] ?? '').trim()
-
-        if (isExceeds3) {
-          calcExceeds3++
-        }
-
-        if (!grpoDt || grpoDt === '—' || grpoDt === '' || !grnNo || grnNo === '—') {
-          calcMissing++
-        } else if (isExc) {
-          calcGeGt++
-        } else {
-          if (daysStr === '0') {
-            calcGeEq++
-          } else {
-            const numDays = parseFloat(daysStr)
-            if (!isNaN(numDays) && numDays > 0) {
-              calcGeLt++
-            } else if (daysStr.split(',').some(d => parseFloat(d) > 0)) {
-              calcGeLt++
-            } else {
-              calcGeEq++
-            }
-          }
-        }
-      })
-
-      if (geEq === undefined) geEq = calcGeEq
-      if (geLt === undefined) geLt = calcGeLt
-      if (geGt === undefined) geGt = calcGeGt
-      if (exceeds3 === undefined) exceeds3 = calcExceeds3
-      if (missingGrpo === undefined) missingGrpo = calcMissing
-    }
-
-    const finalGeEq = geEq ?? 0
-    const finalGeLt = geLt ?? 0
-    const finalGeGt = geGt ?? 0
-    const finalExceeds3 = exceeds3 ?? 0
-    const finalMissing = missingGrpo ?? 0
-
-    // Compute exact integrity percentage dynamically
-    let integrityPct = 100.0
-    if (total > 0) {
-      if (kpis?.integrity_pct !== undefined) {
-        integrityPct = Number(kpis.integrity_pct)
-      } else if (data?.charts?.pass_vs_exception?.integrity_pct !== undefined) {
-        integrityPct = Number(data.charts.pass_vs_exception.integrity_pct)
-      } else {
-        const passCount = Math.max(0, total - finalGeGt)
-        integrityPct = Number(((passCount / total) * 100).toFixed(1))
-      }
-    } else {
-      integrityPct = 0
-    }
+    const integrityPct = total > 0
+      ? kpis?.integrity_pct ?? data?.charts?.pass_vs_exception?.integrity_pct ?? Number(((Math.max(0, total - exception) / total) * 100).toFixed(1))
+      : 100.0
 
     return {
-      total,
-      geEq: finalGeEq,
-      geLt: finalGeLt,
-      geGt: finalGeGt,
-      exceeds3: finalExceeds3,
-      missingGrpo: finalMissing,
-      excCount: finalGeGt,
-      integrityPct,
+      total, sameDay, normal, exception, exc3d, missing,
+      excCount: exception,
+      integrityPct: Number(integrityPct),
       checks: [
-        { label: 'Total', value: total, color: 'bg-slate-600 dark:bg-slate-400' },
-        { label: 'GE = GRPO (same)', value: finalGeEq, color: 'bg-emerald-600 dark:bg-emerald-500' },
-        { label: 'GE < GRPO (normal)', value: finalGeLt, color: 'bg-blue-600 dark:bg-blue-500' },
-        { label: 'GE > GRPO (error)', value: finalGeGt, color: 'bg-rose-500 dark:bg-rose-500' },
-        { label: 'GRN date exceeds 3 days', value: finalExceeds3, color: 'bg-amber-500 dark:bg-amber-400' },
-        { label: 'PO & GRN No. is Missing', value: finalMissing, color: 'bg-slate-400 dark:bg-slate-500' },
-      ]
+        { label: 'Total Unique Gate Entries',  value: total,     color: 'bg-slate-600 dark:bg-slate-400' },
+        { label: 'GE = GRPO (same)',         value: sameDay,   color: 'bg-emerald-600 dark:bg-emerald-500' },
+        { label: 'GE < GRPO (normal)',       value: normal,    color: 'bg-emerald-600 dark:bg-emerald-500' },
+        { label: 'GE > GRPO (exception)',    value: exception, color: 'bg-rose-500 dark:bg-rose-500' },
+        { label: 'GRN Date Exceeds 3 Days',  value: exc3d,     color: 'bg-amber-500 dark:bg-amber-400' },
+        { label: 'PO & GRN No. is Missing',  value: missing,   color: 'bg-slate-400 dark:bg-slate-500' },
+      ],
     }
   }, [data, kpis, rows])
 
@@ -285,89 +212,69 @@ export default function GateEntry({ data }) {
   const endRec      = Math.min(currentPage * ITEMS_PER_PAGE, filtered.length)
 
   const kpiCards = [
-    { 
-      label: 'Gate-Entry GRPO Lines', 
-      value: kpis.gate_entry_grpo_lines, 
-      accent: 'blue', 
-      desc: 'Total transaction lines',
+    {
+      label: 'Total Gate-Entry',
+      value: kpis.total_gate_entry ?? kpis.gate_entries,
+      accent: 'blue',
+      desc: 'Unique gate entry numbers in file',
       isException: false,
-      onCardClick: () => openExceptionModal('Gate-Entry GRPO Lines', r => true, null, false)
+      onCardClick: () => openExceptionModal('All Gate Entry Records', () => true, null, false)
     },
-    { 
-      label: 'Total Value(INR)', 
-      value: formatCurrency(kpis.total_value_inr), 
-      accent: 'blue', 
-      desc: 'Sum of matched GRPO & PO values',
+    {
+      label: 'Total Value (INR)',
+      value: formatCurrency(kpis.total_value_inr),
+      accent: 'blue',
+      desc: 'Sum of all GRPO line totals',
       isException: false,
-      onCardClick: () => openExceptionModal('Total Value (INR) Transactions', r => true, null, false)
+      onCardClick: () => openExceptionModal('All Records by Value', () => true, null, false)
     },
-    { 
-      label: 'Sequence Exceptions', 
-      value: kpis.sequence_exceptions, 
-      accent: (kpis.sequence_exceptions ?? 0) > 0 ? 'rose' : 'blue', 
-      desc: 'GE > GRPO chronological anomalies', 
+    {
+      label: 'Sequence Exceptions',
+      value: kpis.sequence_exceptions,
+      accent: (kpis.sequence_exceptions ?? 0) > 0 ? 'rose' : 'blue',
+      desc: 'GE date is after GRPO date (anomaly)',
       isException: true,
       onCardClick: () => openExceptionModal(
-        'Sequence Exceptions (GE > GRPO Date)',
-        r => r['Seq Exception(GE>GRPO)'] === 1 || r['Seq Exception(GE>GRPO)'] === '1',
-        null,
-        true
+        'Sequence Exceptions (GE > GRPO)',
+        r => r['Sequence Gap'] === 'Exception',
+        'Gate Entry No', true
       )
     },
-    { 
-      label: 'Exceeds 3 day window', 
-      value: kpis.exceeds_3_day_window, 
-      accent: (kpis.exceeds_3_day_window ?? 0) > 0 ? 'amber' : 'blue', 
-      desc: 'Lag > 3 days between GE and GRPO', 
+    {
+      label: 'Exceeds 3 day window',
+      value: kpis.exceeds_3_day_window,
+      accent: (kpis.exceeds_3_day_window ?? 0) > 0 ? 'amber' : 'blue',
+      desc: 'GRN received >3 days after gate entry',
       isException: true,
       onCardClick: () => openExceptionModal(
-        'Exceeds 3 Day Window (GE to GRPO)',
-        r => r['Exceeds 3 days'] === 1 || r['Exceeds 3 days'] === '1',
-        null,
-        true
+        'GRN Date Exceeds 3 Days',
+        r => r['Sequence Gap'] === 'GRN Date Exceeds 3 Days',
+        'Gate Entry No', true
       )
     },
-    { 
-      label: 'Missing PO Count', 
-      value: kpis.missing_po_count, 
-      accent: (kpis.missing_po_count ?? 0) > 0 ? 'amber' : 'blue', 
-      desc: 'FOC/Job work',
-      isException: true,
-      onCardClick: () => openExceptionModal(
-        'GRN Records with Missing PO (FOC/Job work)',
-        r => !r['PO Number'] || String(r['PO Number']).trim() === '—' || String(r['PO Number']).trim() === '',
-        null,
-        true
-      )
+    {
+      label: 'Avg GRN Days',
+      value: (kpis.avg_grn_days !== undefined && kpis.avg_grn_days !== null) ? `${kpis.avg_grn_days} days` : '—',
+      accent: 'blue',
+      desc: 'Average days from gate entry to GRN',
+      isException: false,
+      onCardClick: () => openExceptionModal('Normal & Same-Day Records', r => r['Sequence Gap'] === 'Same Day' || r['Sequence Gap'] === 'Normal', null, false)
     },
-    { 
-      label: 'Average GRN Days', 
-      value: (kpis.avg_grn_days !== undefined && kpis.avg_grn_days !== null) ? `${kpis.avg_grn_days} days` : '—', 
-      accent: 'amber', 
-      desc: 'Avg lag for GRNs exceeding 3-day window',
-      isException: true,
-      onCardClick: () => openExceptionModal(
-        'Exceeds 3 Day Window (GE to GRPO)',
-        r => r['Exceeds 3 days'] === 1 || r['Exceeds 3 days'] === '1',
-        null,
-        true
-      )
-    },
-    { 
-      label: 'Unique PO Numbers', 
-      value: kpis.unique_po_numbers, 
-      accent: 'blue', 
+    {
+      label: 'Unique PO Numbers',
+      value: kpis.unique_po_numbers,
+      accent: 'blue',
       desc: 'Distinct purchase orders linked',
       isException: false,
-      onCardClick: () => openExceptionModal('Unique PO Numbers', r => r['PO Number'] && String(r['PO Number']).trim() !== '—', 'PO Number', false)
+      onCardClick: () => openExceptionModal('Records with PO Numbers', r => r['PO No.'] && r['PO No.'] !== '—', 'PO No.', false)
     },
-    { 
-      label: 'Unique GRN(GRPO Nos.)', 
-      value: kpis.unique_grn_numbers, 
-      accent: 'blue', 
+    {
+      label: 'Unique GRN (GRPO Nos.)',
+      value: kpis.unique_grn_nos ?? kpis.unique_grn_numbers,
+      accent: 'blue',
       desc: 'Distinct goods receipts processed',
       isException: false,
-      onCardClick: () => openExceptionModal('Unique Goods Receipts (GRPO)', r => r['GRN Number'] && String(r['GRN Number']).trim() !== '—', 'GRN Number', false)
+      onCardClick: () => openExceptionModal('All GRN Records', r => r['GRN No.'] && r['GRN No.'] !== '—', 'GRN No.', false)
     },
   ]
 
@@ -412,34 +319,37 @@ export default function GateEntry({ data }) {
       <AiInsightBox section="gateentry" kpis={kpis} />
 
       {/* KPI Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
         {kpiCards.map((k) => {
           const ac = accentMap[k.accent] || accentMap.blue
           return (
             <div
               key={k.label}
               onClick={k.onCardClick}
-              className={`relative bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm transition-all duration-200 overflow-hidden flex flex-col justify-between cursor-pointer hover:shadow-md active:scale-[0.98] ${
-                k.isException ? 'hover:border-rose-500/50' : 'hover:border-blue-500/50'
+              className={`relative bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-3.5 shadow-sm transition-all duration-200 overflow-hidden flex flex-col justify-between cursor-pointer hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 ${
+                k.isException ? 'hover:border-rose-500/50 dark:hover:border-rose-500/50' : 'hover:border-blue-500/50 dark:hover:border-blue-500/50'
               }`}
             >
-              <div className={`absolute top-0 left-0 right-0 h-0.5 ${ac.bar}`} />
+              <div className={`absolute top-0 left-0 right-0 h-1 ${ac.bar}`} />
               <div>
-                <div className="flex items-center justify-between gap-1 mb-2">
-                  <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-widest leading-tight">
+                <div className="flex items-start justify-between gap-1 mb-2">
+                  <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider leading-snug">
                     {k.label}
                   </p>
                   {k.isException && (
-                    <span className="flex items-center gap-0.5 text-[9px] font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 px-1.5 py-0.5 rounded-full border border-rose-200 dark:border-rose-800/40">
-                      <AlertTriangle className="w-2.5 h-2.5" /> Exception
+                    <span
+                      className="shrink-0 flex items-center justify-center w-5 h-5 rounded-md bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/60 shadow-xs"
+                      title="Exception Flagged"
+                    >
+                      <AlertTriangle className="w-3 h-3" />
                     </span>
                   )}
                 </div>
-                <p className={`text-xl font-black tracking-tight leading-none ${ac.text}`}>
+                <p className={`text-xl sm:text-2xl font-black tracking-tight leading-none mb-1.5 ${ac.text}`}>
                   {typeof k.value === 'number' ? k.value.toLocaleString() : (k.value ?? '—')}
                 </p>
               </div>
-              {k.desc && <p className="text-[9px] text-slate-400 dark:text-slate-500 mt-2 leading-tight">{k.desc}</p>}
+              {k.desc && <p className="text-[10px] font-medium text-slate-400 dark:text-slate-500 leading-tight">{k.desc}</p>}
             </div>
           )
         })}
@@ -540,8 +450,8 @@ export default function GateEntry({ data }) {
         <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex flex-col gap-3">
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white">Gate Entry Full Transaction List</h3>
-              <p className="text-xs text-slate-400 mt-0.5">Chronological timeline · cross-file match status · SLA compliance</p>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">Gate Entry Check</h3>
+              <p className="text-xs text-slate-400 mt-0.5">Gate Entry × GRPO join · sequence classification · value reconciliation</p>
             </div>
             <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
               <div className="relative">
@@ -704,21 +614,33 @@ export default function GateEntry({ data }) {
                       </td>
                     )
 
-                    if (c === 'Value(INR)') return (
+                    if (c === 'Value') return (
                       <td key={c} className="px-4 py-2 whitespace-nowrap font-mono text-slate-700 dark:text-slate-300 text-right font-semibold">
                         {typeof val === 'number' ? formatCurrency(val) : String(val ?? '—')}
                       </td>
                     )
 
-                    if (c === 'Seq Exception(GE>GRPO)') return (
-                      <td key={c} className={`px-4 py-2 font-mono text-center ${val === 1 || val === '1' ? 'bg-rose-50/30 dark:bg-rose-950/10 text-rose-600 font-bold' : 'text-slate-700 dark:text-slate-300'}`}>
-                        {val === null || val === undefined || val === '' ? '—' : <TruncatedCell value={val} />}
-                      </td>
-                    )
+                    if (c === 'Sequence Gap') {
+                      const color =
+                        val === 'Exception' ? 'text-rose-600 dark:text-rose-400 font-bold bg-rose-50/40 dark:bg-rose-950/20' :
+                        val === 'GRN Date Exceeds 3 Days' ? 'text-amber-600 dark:text-amber-400 font-semibold bg-amber-50/40 dark:bg-amber-950/20' :
+                        val === 'PO & GRN No. is Missing' ? 'text-slate-500 dark:text-slate-400 bg-slate-50/40' :
+                        val === 'Same Day' ? 'text-emerald-600 dark:text-emerald-400' :
+                        'text-blue-600 dark:text-blue-400'
+                      return (
+                        <td key={c} className={`px-4 py-2 whitespace-nowrap text-xs font-medium ${color}`}>
+                          {val ?? '—'}
+                        </td>
+                      )
+                    }
 
-                    if (c === 'Exceeds 3 days') return (
-                      <td key={c} className={`px-4 py-2 font-mono text-center ${val === 1 || val === '1' ? 'bg-amber-50/30 dark:bg-amber-950/10 text-amber-600 font-bold' : 'text-slate-700 dark:text-slate-300'}`}>
-                        {val === null || val === undefined || val === '' ? '—' : <TruncatedCell value={val} />}
+                    if (c === 'GRPO Days') return (
+                      <td key={c} className={`px-4 py-2 font-mono text-right ${
+                        typeof val === 'number' && val < 0 ? 'text-rose-600 dark:text-rose-400 font-bold' :
+                        typeof val === 'number' && val > 3 ? 'text-amber-600 dark:text-amber-400 font-semibold' :
+                        'text-slate-700 dark:text-slate-300'
+                      }`}>
+                        {val === null || val === undefined || val === '—' ? '—' : val}
                       </td>
                     )
 
@@ -770,7 +692,7 @@ export default function GateEntry({ data }) {
       <ExportModal
         isOpen={showExportModal}
         onClose={() => setShowExportModal(false)}
-        title="Export Gate Entry Data"
+        title="Export Gate Entry Check"
         columns={ALL_COLS}
         data={rows}
         filenamePrefix="Gate_Entry_Audit"

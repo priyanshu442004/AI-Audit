@@ -1,16 +1,27 @@
 """
-Module A — Purchase Order Status Analysis.
+Module A — Purchase Order Status Analysis (ITL & General P2P Pipeline).
+Standardized to align with Purchase Status Report Excel specifications.
 """
 
 from __future__ import annotations
+import os
+import re
 import pandas as pd
 import numpy as np
-from datetime import datetime
-import os
-import glob
-import re
 
-# Helper to find column using case-insensitive aliases
+
+def clean_num(series) -> pd.Series:
+    if series is None:
+        return pd.Series(dtype=float)
+    return pd.to_numeric(series.astype(str).str.replace(',', '').str.strip(), errors='coerce')
+
+
+def safe_parse_date(series) -> pd.Series:
+    if series is None:
+        return pd.Series(dtype='datetime64[ns]')
+    return pd.to_datetime(series, dayfirst=True, errors='coerce')
+
+
 def find_col(df: pd.DataFrame, aliases: list[str]) -> str | None:
     if df is None or df.empty:
         return None
@@ -20,967 +31,455 @@ def find_col(df: pd.DataFrame, aliases: list[str]) -> str | None:
             return col
     return None
 
-def parse_numeric_val(val) -> float:
-    if pd.isna(val) or val == "" or val is None:
-        return 0.0
-    try:
-        if isinstance(val, str):
-            val = val.replace(",", "").strip()
-        return float(val)
-    except:
-        return 0.0
 
-def normalize_id(val) -> str:
-    if pd.isna(val) or val is None:
-        return ""
-    val_str = str(val).strip()
-    if val_str.endswith(".0"):
-        val_str = val_str[:-2]
-    return val_str
+def compute_po_missing(df_grpo: pd.DataFrame | None) -> dict:
+    TARGET_COLS = [
+        'Gate Entry No', 'PO Number', 'GRPO No', 'Series Name', 'Posting Date',
+        'Delivery Date', 'Document Date', 'Vendor Ref No', 'Branch', 'Document Status',
+        'Canceled Status', 'Group Name', 'Vendor Code', 'Vendor Name', 'Item Group',
+        'Item Code', 'Item Description', 'UOM', 'GRPO Qty', 'GRPO Price',
+        'Document Currency', 'Document Rate', 'Line Total', 'Document Total',
+        'Warehouse Code', 'Account Code'
+    ]
 
-def clean_str_val(val, default="—") -> str:
-    if pd.isna(val) or val is None:
-        return default
-    val_str = str(val).strip()
-    if val_str.lower() in ("nan", "none", "null", ""):
-        return default
-    return val_str
-
-def parse_single_date(val) -> pd.Timestamp | None:
-    if pd.isna(val) or val is None or str(val).strip().lower() in ("nan", "none", ""):
-        return None
-    val_str = str(val).strip()
-    if re.match(r'^\d{4}[-/]\d{2}[-/]\d{2}', val_str):
-        try:
-            dt = pd.to_datetime(val_str, errors='coerce', dayfirst=False)
-            if pd.notna(dt):
-                return dt
-        except:
-            pass
-    try:
-        from app.cleaning import parse_dates
-        s = pd.Series([val_str])
-        parsed = parse_dates(s)
-        if not parsed.isna().all():
-            return parsed[0]
-    except:
-        pass
-    try:
-        return pd.to_datetime(val, errors='coerce', dayfirst=True)
-    except:
-        return None
-
-# Static list of Indian/corporate public holidays for 2025-2026 with holiday names
-STATIC_HOLIDAYS_MAP = {
-    # 2025
-    "2025-01-01": "New Year", "2025-01-26": "Republic Day", "2025-03-14": "Holi", "2025-03-31": "Eid-ul-Fitr",
-    "2025-04-10": "Mahavir Jayanti", "2025-04-18": "Good Friday", "2025-05-12": "Buddha Purnima", "2025-08-15": "Independence Day",
-    "2025-10-02": "Gandhi Jayanti", "2025-10-20": "Dussehra", "2025-10-23": "Diwali", "2025-11-05": "Guru Nanak Jayanti", "2025-12-25": "Christmas",
-    # 2026
-    "2026-01-01": "New Year", "2026-01-26": "Republic Day", "2026-03-04": "Holi", "2026-03-05": "Holi", "2026-03-26": "Ram Navami",
-    "2026-04-02": "Good Friday", "2026-04-14": "Ambedkar Jayanti", "2026-05-01": "May Day", "2026-08-15": "Independence Day",
-    "2026-08-28": "Raksha Bandhan", "2026-10-02": "Gandhi Jayanti", "2026-10-18": "Dussehra", "2026-10-20": "Dussehra",
-    "2026-10-22": "Diwali", "2026-11-09": "Dipavali", "2026-11-10": "Govardhan Puja", "2026-11-11": "Bhai Dooj", "2026-12-25": "Christmas"
-}
-STATIC_HOLIDAYS = set(STATIC_HOLIDAYS_MAP.keys())
-
-def parse_holiday_date(val):
-    if pd.isna(val) or val is None:
-        return None
-    if hasattr(val, "strftime"):
-        return val
-    val_str = str(val).strip()
-    if re.match(r'^\s*\d+(\.\d+)?\s*$', val_str):
-        return None
-    clean = re.sub(r'[\.\,]+', ' ', val_str)
-    clean = re.sub(r'\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b', '', clean, flags=re.IGNORECASE)
-    clean = ' '.join(clean.split())
-    if len(clean) < 5:
-        return None
-    try:
-        dt = pd.to_datetime(clean, errors='coerce')
-        if pd.notna(dt):
-            return dt
-    except:
-        pass
-    return None
-
-def load_holiday_map(dfs) -> dict[str, str]:
-    holiday_map = dict(STATIC_HOLIDAYS_MAP)
-
-    def parse_df_or_file(source):
-        dfs_to_process = []
-        if isinstance(source, pd.DataFrame):
-            dfs_to_process = [source]
-        elif isinstance(source, str) and os.path.exists(source):
-            if source.lower().endswith(('.xlsx', '.xls')):
-                try:
-                    xl = pd.ExcelFile(source)
-                    for s in xl.sheet_names:
-                        dfs_to_process.append(pd.read_excel(source, sheet_name=s, header=None))
-                except Exception as e:
-                    print(f"Error reading excel holiday file: {e}")
-            elif source.lower().endswith('.csv'):
-                try:
-                    dfs_to_process.append(pd.read_csv(source, header=None))
-                except Exception as e:
-                    print(f"Error reading csv holiday file: {e}")
-        
-        for df in dfs_to_process:
-            if df is None or df.empty:
-                continue
-            for _, row in df.iterrows():
-                cells = [str(c).strip() for c in row if pd.notna(c)]
-                if not cells:
-                    continue
-                
-                found_dt = None
-                found_name = None
-                
-                for c in cells:
-                    if c.lower() in ('nan', 'none', '') or re.match(r'^\d+(\.\d+)?$', c):
-                        continue
-                    clean = re.sub(r'[\.\,]+', ' ', c)
-                    clean = re.sub(r'\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b', '', clean, flags=re.IGNORECASE)
-                    clean = ' '.join(clean.split())
-                    
-                    dt = None
-                    if len(clean) >= 5:
-                        try:
-                            parsed = pd.to_datetime(clean, errors='coerce')
-                            if pd.notna(parsed) and 2000 <= parsed.year <= 2100:
-                                dt = parsed
-                        except:
-                            pass
-                    
-                    if dt is not None and found_dt is None:
-                        found_dt = dt
-                    elif found_dt is None:
-                        if not re.search(r'\b(20\d\d|19\d\d)\b', c) and c.lower() not in ('national', 'festival', 'festlval', 'restricted', 'holiday type', 'day & date', 'holiday'):
-                            found_name = c
-                
-                if found_dt is not None:
-                    dt_str = found_dt.strftime('%Y-%m-%d')
-                    name = found_name if found_name else 'Public Holiday'
-                    holiday_map[dt_str] = name
-
-    if isinstance(dfs, dict) and "holiday" in dfs and dfs["holiday"] is not None:
-        parse_df_or_file(dfs["holiday"])
-
-    try:
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        holidays_dir = os.path.abspath(os.path.join(current_dir, "..", "..", "holidays"))
-        if os.path.exists(holidays_dir):
-            files = glob.glob(os.path.join(holidays_dir, "*"))
-            if files:
-                for f in files:
-                    if f.lower().endswith(('.xlsx', '.xls', '.csv')):
-                        parse_df_or_file(f)
-    except Exception as e:
-        print(f"Error loading holidays from folder: {e}")
-
-    return holiday_map
-
-def load_holiday_dates(dfs) -> set[str]:
-    return set(load_holiday_map(dfs).keys())
-
-from app.analysis.calculated_fields import field, same_row
-
-def run(dfs_or_df: dict[str, pd.DataFrame] | pd.DataFrame) -> dict:
-    # Support both DataFrame (for tests) and dict of DataFrames (for production)
-    if isinstance(dfs_or_df, pd.DataFrame):
-        df_po = dfs_or_df
-        dfs = {"purchase_order": df_po}
-    else:
-        dfs = dfs_or_df
-        df_po = dfs.get("purchase_order")
-
-    if df_po is None or df_po.empty:
-        return {"kpis": {}, "charts": {}, "tables": []}
-
-    df_grpo = dfs.get("grpo")
-    # Support both "ap_invoice_report" and "purchase_register"
-    df_ap = dfs.get("ap_invoice_report")
-    if df_ap is None or df_ap.empty:
-        df_ap = dfs.get("purchase_register")
-    df_cn = dfs.get("ap_credit_note")
-    df_ge = dfs.get("gate_entry")
-    df_holiday = dfs.get("holiday")
-
-    # ── 1. Column Detection in PO Sheet ──────────────────────────────────────
-    col_po_no = find_col(df_po, ["po no", "po no.", "po number", "purchase order no", "purchase order number"])
-    col_doc_date = find_col(df_po, ["document date", "doc date", "documentdate"])
-    col_post_date = find_col(df_po, ["posting date", "post date", "postingdate", "po date", "po_date"])
-    col_doc_status = find_col(df_po, ["document status", "doc status", "documentstatus", "status", "po status"])
-    col_currency = find_col(df_po, ["document currency", "currency", "doc currency", "po currency"])
-    col_vendor_code = find_col(df_po, ["vendor code", "vendor_code", "card code", "cardcode"])
-    col_vendor_name = find_col(df_po, ["vendor name", "vendor_name", "card name", "cardname"])
-    col_vendor_group = find_col(df_po, ["vendor group", "vendor_group", "group name", "groupname"])
-    col_item_code = find_col(df_po, ["item code", "item_code", "item no", "item no.", "itemno"])
-    col_item_desc = find_col(df_po, ["item description", "description", "item_description", "itemname"])
-    col_item_group = find_col(df_po, ["item group", "item_group", "group name", "groupname"])
-    col_uom = find_col(df_po, ["uom", "unit"])
-    col_po_qty = find_col(df_po, ["po qty", "ordered qty", "quantity", "qty", "po_qty"])
-    col_po_price = find_col(df_po, ["po price", "unit price", "price", "rate", "po_price"])
-    col_doc_rate = find_col(df_po, ["document rate", "doc rate", "rate", "documentrate"])
-    col_line_total = find_col(df_po, ["line total", "linetotal", "total", "line_total"])
-    col_open_qty = find_col(df_po, ["open qty", "outstanding qty", "openqty", "open_qty"])
-
-    # ── 2. Column Detection in GRPO Sheet ────────────────────────────────────
-    col_grpo_po_no = None
-    col_grpo_item_code = None
-    col_grpo_no = None
-    col_grpo_qty = None
-    col_grpo_ge_no = None
-    if df_grpo is not None and not df_grpo.empty:
-        col_grpo_po_no = find_col(df_grpo, ["po number", "po no", "po no.", "purchase order number", "purchase order no"])
-        col_grpo_item_code = find_col(df_grpo, ["item code", "item_code", "item no", "item no.", "itemno"])
-        col_grpo_no = find_col(df_grpo, ["grpo no", "grpo no.", "receipt no", "grpo number", "grpono"])
-        col_grpo_qty = find_col(df_grpo, ["po qty", "grpo qty", "received qty", "quantity", "qty", "received quantity"])
-        col_grpo_ge_no = find_col(df_grpo, ["gate entry no", "ge no", "gate entry number", "gateentryno", "security entry no", "linked gate entry", "gate no", "entry no"])
-
-    # ── 3. Column Detection in AP Sheet ──────────────────────────────────────
-    col_ap_po_no = None
-    col_ap_grpo_no = None
-    col_ap_inv_no = None
-    col_ap_cust_ref = None
-    if df_ap is not None and not df_ap.empty:
-        col_ap_po_no = find_col(df_ap, ["po number", "po no", "po no.", "purchase order number", "purchase order no"])
-        col_ap_grpo_no = find_col(df_ap, ["grpo number", "grpo no", "grpo no.", "grpo_number", "grpo no."])
-        col_ap_inv_no = find_col(df_ap, ["ap invoice no", "ap invoice no.", "invoice no", "invoice no.", "ap_invoice_no"])
-        col_ap_cust_ref = find_col(df_ap, ["customer ref. no.", "customer ref no", "vendor ref no", "vendor ref. no", "ref no", "reference"])
-
-    # ── 4. Column Detection in Credit Note Sheet ─────────────────────────────
-    col_cn_ap_inv_no = None
-    col_cn_no = None
-    col_cn_vendor_ref = None
-    col_cn_vendor_code = None
-    col_cn_item_code = None
-    col_cn_qty = None
-    col_cn_remarks = None
-    if df_cn is not None and not df_cn.empty:
-        col_cn_ap_inv_no = find_col(df_cn, ["ap invoice number", "ap invoice no", "invoice number", "invoice no", "ap_invoice_no"])
-        col_cn_no = find_col(df_cn, ["ap credit note no", "ap credit note number", "credit note no", "ap_credit_note_no"])
-        col_cn_vendor_ref = find_col(df_cn, ["vendor ref no", "vendor ref. no", "customer ref. no.", "customer ref no", "ref no", "reference"])
-        col_cn_vendor_code = find_col(df_cn, ["vendor code", "bp code", "supplier code", "vendorcode", "bpcode", "account code", "vendor"])
-        col_cn_item_code = find_col(df_cn, ["item code", "item_code", "item no", "item no.", "itemno"])
-        col_cn_qty = find_col(df_cn, ["credit note qty", "qty", "quantity", "credit note quantity", "quantity in doc", "quantity in document"])
-        col_cn_remarks = find_col(df_cn, ["remarks", "remark", "comments", "narration"])
-
-    # ── 5. Column Detection in Gate Entry Sheet ──────────────────────────────
-    col_ge_po_no = None
-    col_ge_date = None
-    if df_ge is not None and not df_ge.empty:
-        col_ge_po_no = find_col(df_ge, ["purchase order number", "purchase order no", "po number", "po no", "po no."])
-        col_ge_date = find_col(df_ge, ["gate entry date", "ge date", "date"])
-
-    # ── 6. Pre-aggregate and Build Lookup Dictionaries for O(1) Performance ──
-    grpo_by_po_item = {}
-    grpo_qty_lookup = {}
-    grpo_to_ge_no = {}
-    if df_grpo is not None and not df_grpo.empty and col_grpo_po_no and col_grpo_item_code:
-        for _, row in df_grpo.iterrows():
-            po_raw = row.get(col_grpo_po_no)
-            item_raw = row.get(col_grpo_item_code)
-            if pd.isna(po_raw) or pd.isna(item_raw):
-                continue
-            item = normalize_id(item_raw).upper()
-            if not item:
-                continue
-            
-            po_str = str(po_raw)
-            po_parts = [normalize_id(p.strip()) for p in po_str.split(",") if p.strip()]
-            
-            grn = normalize_id(row.get(col_grpo_no)) if col_grpo_no else ""
-            if pd.isna(grn):
-                grn = ""
-            qty = parse_numeric_val(row.get(col_grpo_qty)) if col_grpo_qty else 0.0
-            ge_n = normalize_id(row.get(col_grpo_ge_no)) if col_grpo_ge_no else ""
-            if pd.isna(ge_n):
-                ge_n = ""
-                
-            for po in po_parts:
-                if not po:
-                    continue
-                key = (po, item)
-                if key not in grpo_by_po_item:
-                    grpo_by_po_item[key] = []
-                if grn and str(grn).lower() not in ("nan", "none", ""):
-                    if grn not in grpo_by_po_item[key]:
-                        grpo_by_po_item[key].append(grn)
-                
-                qty_key = (po, item, grn)
-                grpo_qty_lookup[qty_key] = grpo_qty_lookup.get(qty_key, 0.0) + qty
-                
-                if grn and ge_n and str(ge_n).lower() not in ("nan", "none", ""):
-                    grpo_to_ge_no[(po, grn)] = ge_n
-                    grpo_to_ge_no[grn] = ge_n
-
-    ap_lookup = {}
-    ap_by_po = {}
-    if df_ap is not None and not df_ap.empty and col_ap_po_no and col_ap_grpo_no:
-        po_raw_vals = df_ap[col_ap_po_no].values
-        grpo_vals = df_ap[col_ap_grpo_no].apply(normalize_id).values
-        inv_vals = df_ap[col_ap_inv_no].apply(normalize_id).values if col_ap_inv_no else [""] * len(df_ap)
-        
-        for po_raw, grpo, inv in zip(po_raw_vals, grpo_vals, inv_vals):
-            if not grpo:
-                continue
-            
-            po_str = str(po_raw) if not pd.isna(po_raw) else ""
-            po_parts = [normalize_id(p.strip()) for p in po_str.split(",") if p.strip()]
-            if not po_parts:
-                po_parts = [""]
-                
-            for po in po_parts:
-                key = (po, grpo)
-                if key not in ap_lookup:
-                    ap_lookup[key] = set()
-                if inv and str(inv).lower() not in ("nan", "none", ""):
-                    ap_lookup[key].add(inv)
-        
-        ap_lookup = {k: list(v) for k, v in ap_lookup.items()}
-
-    if df_ap is not None and not df_ap.empty and col_ap_po_no:
-        po_raw_vals = df_ap[col_ap_po_no].values
-        inv_vals = df_ap[col_ap_inv_no].apply(normalize_id).values if col_ap_inv_no else [""] * len(df_ap)
-        for po_raw, inv in zip(po_raw_vals, inv_vals):
-            po_str = str(po_raw) if not pd.isna(po_raw) else ""
-            po_parts = [normalize_id(p.strip()) for p in po_str.split(",") if p.strip()]
-            for po in po_parts:
-                if po:
-                    if po not in ap_by_po:
-                        ap_by_po[po] = set()
-                    if inv and str(inv).lower() not in ("nan", "none", ""):
-                        ap_by_po[po].add(inv)
-        ap_by_po = {k: list(v) for k, v in ap_by_po.items()}
-
-    cn_lookup = {}
-    cn_to_remarks = {}
-    cn_fallback_by_qty = {}
-    cn_fallback_by_item = {}
-    ap_ref_to_inv = {}
-    if df_ap is not None and not df_ap.empty and col_ap_cust_ref and col_ap_inv_no:
-        for _, row in df_ap.iterrows():
-            ref = row.get(col_ap_cust_ref)
-            inv = row.get(col_ap_inv_no)
-            if pd.notna(ref) and pd.notna(inv):
-                ref_str = str(ref).strip().upper()
-                inv_norm = normalize_id(inv)
-                if ref_str and inv_norm:
-                    if ref_str not in ap_ref_to_inv:
-                        ap_ref_to_inv[ref_str] = set()
-                    ap_ref_to_inv[ref_str].add(inv_norm)
-
-    if df_cn is not None and not df_cn.empty and col_cn_no:
-        for _, row in df_cn.iterrows():
-            cn = normalize_id(row.get(col_cn_no))
-            if not cn or cn.lower() in ("nan", "none", ""):
-                continue
-
-            if col_cn_remarks:
-                rem_raw = row.get(col_cn_remarks)
-                if pd.notna(rem_raw):
-                    rem_str = str(rem_raw).strip()
-                    if rem_str.lower() not in ("nan", "none", "null", ""):
-                        cn_to_remarks[cn] = rem_str
-                
-            invoices = set()
-            if col_cn_ap_inv_no:
-                inv_raw = row.get(col_cn_ap_inv_no)
-                if pd.notna(inv_raw):
-                    inv_parts = [normalize_id(p.strip()) for p in str(inv_raw).split(",") if p.strip()]
-                    for inv in inv_parts:
-                        if inv:
-                            invoices.add(inv)
-                            
-            if col_cn_vendor_ref:
-                ref_raw = row.get(col_cn_vendor_ref)
-                if pd.notna(ref_raw):
-                    for r in str(ref_raw).split(","):
-                        r_norm = str(r).strip().upper()
-                        if r_norm in ap_ref_to_inv:
-                            invoices.update(ap_ref_to_inv[r_norm])
-                            
-            for inv in invoices:
-                if inv not in cn_lookup:
-                    cn_lookup[inv] = set()
-                cn_lookup[inv].add(cn)
-
-            # Build Fallback mappings
-            vc = normalize_id(row.get(col_cn_vendor_code)) if col_cn_vendor_code else ""
-            ic = normalize_id(row.get(col_cn_item_code)).upper() if col_cn_item_code else ""
-            if vc and ic:
-                # Key 1: with Qty
-                qty_val = parse_numeric_val(row.get(col_cn_qty)) if col_cn_qty else 0.0
-                qty_str = f"{qty_val:.2f}"
-                qty_key = (vc, ic, qty_str)
-                if qty_key not in cn_fallback_by_qty:
-                    cn_fallback_by_qty[qty_key] = set()
-                cn_fallback_by_qty[qty_key].add(cn)
-                
-                # Key 2: item only
-                item_key = (vc, ic)
-                if item_key not in cn_fallback_by_item:
-                    cn_fallback_by_item[item_key] = set()
-                cn_fallback_by_item[item_key].add(cn)
-                
-        cn_lookup = {k: list(v) for k, v in cn_lookup.items()}
-        cn_fallback_by_qty = {k: list(v) for k, v in cn_fallback_by_qty.items()}
-        cn_fallback_by_item = {k: list(v) for k, v in cn_fallback_by_item.items()}
-
-    ge_no_to_date = {}
-    po_to_ge_dates = {}
-    if df_ge is not None and not df_ge.empty:
-        col_ge_no = find_col(df_ge, ["gate entry no", "gate entry no.", "ge no", "ge no.", "gate entry number", "security entry no", "security entry number"])
-        col_ge_po_no = find_col(df_ge, ["purchase order number", "purchase order no", "po number", "po no", "po no."])
-        col_ge_date = find_col(df_ge, ["gate entry date", "ge date", "date"])
-        
-        ge_nos = df_ge[col_ge_no].apply(normalize_id).values if col_ge_no else [""] * len(df_ge)
-        po_vals = df_ge[col_ge_po_no].apply(normalize_id).values if col_ge_po_no else [""] * len(df_ge)
-        date_vals = df_ge[col_ge_date].astype(str).str.strip().values if col_ge_date else [""] * len(df_ge)
-        
-        for g_no, po, dt in zip(ge_nos, po_vals, date_vals):
-            dt_clean = clean_str_val(dt, "")
-            if not dt_clean or dt_clean == "—":
-                continue
-            if g_no:
-                ge_no_to_date[g_no] = dt_clean
-            if po:
-                if po not in po_to_ge_dates:
-                    po_to_ge_dates[po] = []
-                if dt_clean not in po_to_ge_dates[po]:
-                    po_to_ge_dates[po].append(dt_clean)
-
-    # Holiday dates parsing
-    holiday_map = load_holiday_map(dfs)
-
-    # ── 7. Process PO Lines ──────────────────────────────────────────────────
-    po_records = df_po.to_dict(orient="records")
-    rows = []
-
-    for row in po_records:
-        po_num = clean_str_val(row.get(col_po_no), "") if col_po_no else ""
-        po_num_norm = normalize_id(po_num)
-        
-        # Enforce strict PO number checking - skip row if blank, null or nan
-        if not po_num_norm or po_num_norm.lower() in ("nan", "none", "null"):
-            continue
-
-        doc_date = clean_str_val(row.get(col_doc_date)) if col_doc_date else "—"
-        post_date = clean_str_val(row.get(col_post_date)) if col_post_date else "—"
-        
-        # Determine status
-        doc_status = clean_str_val(row.get(col_doc_status), "") if col_doc_status else ""
-        if not doc_status or doc_status == "—":
-            open_qty_val = 0.0
-            if col_open_qty:
-                open_qty_val = parse_numeric_val(row.get(col_open_qty))
-            doc_status = "OPEN" if open_qty_val > 0 else "Closed"
-        
-        # Normalize status to Closed or OPEN
-        if doc_status.strip().upper() == "OPEN":
-            doc_status = "OPEN"
-        else:
-            doc_status = "Closed"
-
-        currency = clean_str_val(row.get(col_currency), "INR") if col_currency else "INR"
-        vendor_code = clean_str_val(row.get(col_vendor_code)) if col_vendor_code else "—"
-        vendor_name = clean_str_val(row.get(col_vendor_name)) if col_vendor_name else "—"
-        vendor_country = "India" if currency.upper() == "INR" else "USA"
-        vendor_group = clean_str_val(row.get(col_vendor_group)) if col_vendor_group else "—"
-        item_code = clean_str_val(row.get(col_item_code)) if col_item_code else "—"
-        item_desc = clean_str_val(row.get(col_item_desc)) if col_item_desc else "—"
-        item_group = clean_str_val(row.get(col_item_group)) if col_item_group else "—"
-        uom = clean_str_val(row.get(col_uom)) if col_uom else "—"
-
-        ordered_qty = parse_numeric_val(row.get(col_po_qty)) if col_po_qty else 0.0
-        po_price = parse_numeric_val(row.get(col_po_price)) if col_po_price else 0.0
-        doc_rate = parse_numeric_val(row.get(col_doc_rate)) if col_doc_rate else 1.0
-        rate_inr = po_price * doc_rate
-        line_val_inr = parse_numeric_val(row.get(col_line_total)) if col_line_total else (ordered_qty * rate_inr)
-
-        # Lookups with normalized IDs
-        item_code_norm = normalize_id(item_code).upper()
-
-        grn_nos = grpo_by_po_item.get((po_num_norm, item_code_norm), [])
-        
-        unique_grns = []
-        unique_ap_invs = []
-        unique_cns = []
-        unique_ge_dts = []
-        
-        received_qty_row = 0.0
-        
-        # 1. Fetch AP Invoices directly by PO number
-        ap_by_po_list = ap_by_po.get(po_num_norm, [])
-        for ap_inv in ap_by_po_list:
-            if ap_inv and ap_inv != "—" and ap_inv not in unique_ap_invs:
-                unique_ap_invs.append(ap_inv)
-
-        if grn_nos:
-            for g_no in grn_nos:
-                if g_no and g_no != "—" and g_no not in unique_grns:
-                    unique_grns.append(g_no)
-                
-                # Sum received quantity
-                received_qty_row += grpo_qty_lookup.get((po_num_norm, item_code_norm, g_no), 0.0)
-                
-                # Gate Entry Date
-                ge_n = grpo_to_ge_no.get((po_num_norm, g_no)) or grpo_to_ge_no.get(g_no)
-                ge_dt = ge_no_to_date.get(ge_n) if ge_n else None
-                if not ge_dt:
-                    fallback_dates = po_to_ge_dates.get(po_num_norm, [])
-                    ge_dt = fallback_dates[0] if fallback_dates else "—"
-                if ge_dt and ge_dt != "—" and ge_dt not in unique_ge_dts:
-                    unique_ge_dts.append(ge_dt)
-                
-                # AP Invoices
-                ap_invoices = ap_lookup.get((po_num_norm, g_no), [])
-                if not ap_invoices:
-                    ap_invoices = ap_lookup.get(("", g_no), [])
-                
-                for ap_inv in ap_invoices:
-                    if ap_inv and ap_inv != "—" and ap_inv not in unique_ap_invs:
-                        unique_ap_invs.append(ap_inv)
-        else:
-            fallback_dates = po_to_ge_dates.get(po_num_norm, [])
-            ge_dt = fallback_dates[0] if fallback_dates else "—"
-            if ge_dt and ge_dt != "—":
-                unique_ge_dts.append(ge_dt)
-
-        # 2. Lookup Credit Notes for all matched AP Invoices
-        for ap_inv in unique_ap_invs:
-            credit_notes = cn_lookup.get(ap_inv, [])
-            for cn in credit_notes:
-                if cn and cn != "—" and cn not in unique_cns:
-                    unique_cns.append(cn)
-
-        # Fallback to Vendor + Item + Qty, or Vendor + Item if no direct link
-        if not unique_cns and vendor_code and item_code_norm:
-            vc_norm = normalize_id(vendor_code)
-            if vc_norm:
-                # A. Try matching by Vendor Code, Item Code, and Quantity
-                qty_str = f"{ordered_qty:.2f}"
-                fallback_cns = cn_fallback_by_qty.get((vc_norm, item_code_norm, qty_str), [])
-                if not fallback_cns:
-                    # Also check received quantity
-                    fallback_cns = cn_fallback_by_qty.get((vc_norm, item_code_norm, f"{received_qty_row:.2f}"), [])
-                
-                # B. If still empty, check Vendor + Item (broader fallback)
-                if not fallback_cns:
-                    fallback_cns = cn_fallback_by_item.get((vc_norm, item_code_norm), [])
-                    
-                for cn in fallback_cns:
-                    if cn and cn != "—" and cn not in unique_cns:
-                        unique_cns.append(cn)
-        unique_remarks = []
-        for cn in unique_cns:
-            rem = cn_to_remarks.get(cn, "")
-            if rem and rem not in unique_remarks:
-                unique_remarks.append(rem)
-                
-        grn_str = ", ".join(unique_grns) if unique_grns else "—"
-        ap_inv_str = ", ".join(unique_ap_invs) if unique_ap_invs else "—"
-        cn_str = ", ".join(unique_cns) if unique_cns else "—"
-        remarks_str = ", ".join(unique_remarks) if unique_remarks else "—"
-        ge_dt_str = unique_ge_dts[0] if unique_ge_dts else "—"
-
-        pending_qty_row = ordered_qty - received_qty_row
-        pct_received_row = (received_qty_row / ordered_qty * 100.0) if ordered_qty > 0 else 0.0
-        
-        if doc_status == "OPEN":
-            open_value_inr_row = pending_qty_row * rate_inr
-        else:
-            open_value_inr_row = "PO is closed"
-            
-        diff = received_qty_row - ordered_qty
-        if diff > 0 and ordered_qty > 0:
-            var_pct = (diff / ordered_qty) * 100.0
-            variance_str = f"+{var_pct:.2f}%"
-        else:
-            var_pct = 0.0
-            variance_str = "0.00%"
-
-        # Days Open
-        days_open = 0
-        if doc_status == "OPEN":
-            dt_post_parsed = parse_single_date(post_date)
-            if dt_post_parsed is not None:
-                try:
-                    dt_target = pd.to_datetime("2026-03-31")
-                    days_open = (dt_target - dt_post_parsed).days
-                except:
-                    days_open = 0
-        else:
-            days_open = "PO is closed"
-
-        # Pending Flag
-        pending_flag = 1 if received_qty_row > ordered_qty else 0
-
-        # Open>90d & No receipt
-        is_open_90_no_rcpt = 0
-        if doc_status == "OPEN" and isinstance(days_open, (int, float)) and days_open > 90 and received_qty_row == 0:
-            is_open_90_no_rcpt = 1
-
-        # Recv<50%
-        recv_lt_50 = 1 if (ordered_qty > 0 and received_qty_row < ordered_qty * 0.5) else 0
-
-        # Holiday flag & Holiday Name
-        holiday_flag = 0
-        holiday_name = "none"
-        if post_date and post_date != "—":
-            dt_parsed = parse_single_date(post_date)
-            if dt_parsed is not None:
-                dt_str = dt_parsed.strftime("%Y-%m-%d")
-                if dt_str in holiday_map:
-                    holiday_flag = 1
-                    holiday_name = holiday_map[dt_str]
-                elif dt_parsed.dayofweek == 6:
-                    holiday_flag = 1
-                    holiday_name = "Sunday"
-
-        # Compute variance>5% and Financial difference
-        if received_qty_row > (1.05 * ordered_qty):
-            var_gt_5_qty = received_qty_row - (1.05 * ordered_qty)
-        else:
-            var_gt_5_qty = 0.0
-        
-        financial_diff = rate_inr * var_gt_5_qty
-
-        rows.append({
-            "PO Number": po_num_norm,
-            "Document Date": doc_date,
-            "Posting Date": post_date,
-            "Doc Status": doc_status,
-            "Currency": currency,
-            "Vendor Code": vendor_code,
-            "Vendor Name": vendor_name,
-            "Vendor Country": vendor_country,
-            "Vendor Group": vendor_group,
-            "Item code": item_code,
-            "Item Description": item_desc,
-            "Item Group": item_group,
-            "UOM": uom,
-            "GRN No.": grn_str,
-            "AP Invoice No.": ap_inv_str,
-            "AP Credit Note": cn_str,
-            "Remarks": remarks_str,
-            "Ordered Qty.": ordered_qty,
-            "Received Qty.": received_qty_row,
-            "Pending Qty.": pending_qty_row,
-            "%age Received": f"{pct_received_row:.2f}%",
-            "Rate(INR)": rate_inr,
-            "Line Value(INR)": line_val_inr,
-            "Open Value(INR)": open_value_inr_row if isinstance(open_value_inr_row, str) else round(open_value_inr_row, 2),
-            "Gate Entry Date": ge_dt_str,
-            "Days Open": days_open,
-            "%age Variance": variance_str,
-            "variance_pct_raw": var_pct,
-            "variance>5%": round(var_gt_5_qty, 2),
-            "Financial difference": round(financial_diff, 2),
-            "Pending Flag": pending_flag,
-            "Open>90d & No receipt": is_open_90_no_rcpt,
-            "Recv<50%": recv_lt_50,
-            "Holiday flag": holiday_flag,
-            "Holiday Name": holiday_name
-        })
-
-
-    # ── 8. Compute KPIs for Frontend and Tests ───────────────────────────────
-    unique_pos = len(set(r["PO Number"] for r in rows if r["PO Number"]))
-    po_lines = len(rows)
-    open_lines_pending = sum(1 for r in rows if str(r["Doc Status"]).strip().upper() == "OPEN")
-    closed_lines = po_lines - open_lines_pending
-
-    po_value_india = sum(r["Line Value(INR)"] for r in rows if r["Vendor Country"] == "India")
-    po_value_foreign = sum(r["Line Value(INR)"] for r in rows if r["Vendor Country"] != "India")
-    open_po_value = sum(r["Line Value(INR)"] for r in rows if str(r["Doc Status"]).strip().upper() == "OPEN")
-
-    recv_lt_50 = sum(1 for r in rows if r["Recv<50%"] == 1)
-
-    all_grns = set()
-    for r in rows:
-        if r["GRN No."]:
-            for part in r["GRN No."].split(","):
-                part_clean = part.strip()
-                if part_clean and part_clean != "—":
-                    all_grns.add(part_clean)
-    unique_grn_count = len(all_grns)
-
-    all_ap_invs = set()
-    for r in rows:
-        if r["AP Invoice No."]:
-            for part in r["AP Invoice No."].split(","):
-                part_clean = part.strip()
-                if part_clean and part_clean != "—":
-                    all_ap_invs.add(part_clean)
-    unique_ap_count = len(all_ap_invs)
-
-    unique_pos_flagged = sum(1 for r in rows if r["Pending Flag"] == 1)
-
-    # ── 9. Keep Backwards Compatibility for Tests ────────────────────────────
-    unique_vendors = len(set(r["Vendor Code"] for r in rows if r["Vendor Code"]))
-    total_value_cr = round(sum(r["Line Value(INR)"] for r in rows) / 1e7, 2)
-    open_value_cr = round(open_po_value / 1e7, 2)
-    pct_open_value = round(open_value_cr / total_value_cr * 100, 1) if total_value_cr else 0.0
-    top_vendor_open = 0
-    if open_lines_pending > 0:
-        vendor_open_counts = {}
-        for r in rows:
-            if str(r["Doc Status"]).strip().upper() == "OPEN" and r["Vendor Code"] and r["Vendor Code"] != "—":
-                vendor_open_counts[r["Vendor Code"]] = vendor_open_counts.get(r["Vendor Code"], 0) + 1
-        if vendor_open_counts:
-            top_vendor_open = max(vendor_open_counts.values())
-
-    # Build old PO summary tables to avoid breaking tests
-    po_summary_dict = {}
-    for r in rows:
-        po = r["PO Number"]
-        if po not in po_summary_dict:
-            po_summary_dict[po] = {
-                "PO No": po,
-                "Vendor_Code": r["Vendor Code"],
-                "Vendor_Name": r["Vendor Name"],
-                "Total_Lines": 0,
-                "Open_Lines": 0,
-                "Total_Qty": 0.0,
-                "Open_Qty": 0.0,
-                "Total_Value": 0.0,
-                "Open_Value": 0.0,
-            }
-        po_summary_dict[po]["Total_Lines"] += 1
-        po_summary_dict[po]["Total_Qty"] += r["Ordered Qty."]
-        po_summary_dict[po]["Total_Value"] += r["Line Value(INR)"]
-        if str(r["Doc Status"]).strip().upper() == "OPEN":
-            po_summary_dict[po]["Open_Lines"] += 1
-            po_summary_dict[po]["Open_Qty"] += r["Pending Qty."]
-            po_summary_dict[po]["Open_Value"] += r["Line Value(INR)"]
-
-    po_summary = list(po_summary_dict.values())
-    for p in po_summary:
-        p["Status"] = "Partially Open" if 0 < p["Open_Lines"] < p["Total_Lines"] else ("Open" if p["Open_Lines"] > 0 else "Closed")
-    po_summary = sorted(po_summary, key=lambda x: x["Open_Value"], reverse=True)
-
-    vendor_open_dict = {}
-    for r in rows:
-        if str(r["Doc Status"]).strip().upper() == "OPEN" and r["Vendor Code"] and r["Vendor Code"] != "—":
-            vc = r["Vendor Code"]
-            if vc not in vendor_open_dict:
-                vendor_open_dict[vc] = {
-                    "Vendor Code": vc,
-                    "Vendor Name": r["Vendor Name"],
-                    "Open_POs": set(),
-                    "Open_Lines": 0,
-                    "Open_Value": 0.0,
-                    "Open_Qty": 0.0,
-                }
-            vendor_open_dict[vc]["Open_POs"].add(r["PO Number"])
-            vendor_open_dict[vc]["Open_Lines"] += 1
-            vendor_open_dict[vc]["Open_Value"] += r["Line Value(INR)"]
-            vendor_open_dict[vc]["Open_Qty"] += r["Pending Qty."]
-
-    vendor_open = []
-    for k, v in vendor_open_dict.items():
-        v["Open_POs"] = len(v["Open_POs"])
-        vendor_open.append(v)
-    vendor_open = sorted(vendor_open, key=lambda x: x["Open_Value"], reverse=True)[:25]
-
-    open_tx = []
-    for r in rows:
-        if str(r["Doc Status"]).strip().upper() == "OPEN":
-            open_tx.append({
-                "PO No": r["PO Number"],
-                "Vendor Code": r["Vendor Code"],
-                "Vendor Name": r["Vendor Name"],
-                "Item Code": r["Item code"],
-                "Description": r["Item Description"],
-                "PO Qty": str(r["Ordered Qty."]),
-                "Open Qty": str(r["Pending Qty."]),
-                "Unit Price": str(r["Rate(INR)"]),
-                "Line Total": str(r["Line Value(INR)"]),
-                "PO Date": r["Posting Date"],
-            })
-
-    def _to_rows(records_list: list[dict]) -> list[dict]:
-        res = []
-        for r in records_list:
-            res.append({k: str(v) for k, v in r.items()})
-        return res
-
-    # Calculated fields metadata for the main PO Status table
-    po_calculated_fields = {
-        "%age Received": field(
-            "Received Qty ÷ Ordered Qty × 100",
-            "Received_Qty / Ordered_Qty * 100",
-            inputs=[
-                {"field": "Ordered Qty.", "source_file": "Purchase Order", "source_record": "PO Number"},
-                {"field": "Received Qty.", "source_file": "GRPO Report", "source_record": "GRN No."},
-            ],
-        ),
-        "Pending Qty.": field(
-            "Ordered Qty − Received Qty",
-            "Ordered_Qty − Received_Qty",
-            inputs=[
-                {"field": "Ordered Qty.", "source_file": "Purchase Order", "source_record": "PO Number"},
-                {"field": "Received Qty.", "source_file": "GRPO Report", "source_record": "GRN No."},
-            ],
-        ),
-        "Rate(INR)": field(
-            "PO Price × Document Rate",
-            "PO_Price * Document_Rate",
-            inputs=[
-                {"field": "PO Price", "source_file": "Purchase Order", "source_record": "PO Number"},
-                {"field": "Document Rate", "source_file": "Purchase Order", "source_record": "PO Number"},
-            ],
-        ),
-        "Line Value(INR)": field(
-            "Ordered Qty × Rate(INR)",
-            "Ordered_Qty * Rate_INR",
-            inputs=[
-                {"field": "Ordered Qty.", "source_file": "Purchase Order", "source_record": "PO Number"},
-                {"field": "Rate(INR)", "source_file": "Purchase Order", "source_record": "PO Number"},
-            ],
-        ),
-        "Open Value(INR)": field(
-            "Pending Qty × Rate(INR) (if OPEN)",
-            "IF(Status='OPEN', Pending_Qty * Rate_INR, 'PO is closed')",
-            inputs=[
-                {"field": "Pending Qty.", "source_file": "Purchase Order (calculated)", "source_record": "PO Number"},
-                {"field": "Rate(INR)", "source_file": "Purchase Order", "source_record": "PO Number"},
-                {"field": "Doc Status", "source_file": "Purchase Order", "source_record": "PO Number"},
-            ],
-        ),
-        "%age Variance": field(
-            "(Received Qty − Ordered Qty) ÷ Ordered Qty × 100",
-            "(Received_Qty − Ordered_Qty) / Ordered_Qty * 100",
-            inputs=[
-                {"field": "Received Qty.", "source_file": "GRPO Report", "source_record": "GRN No."},
-                {"field": "Ordered Qty.", "source_file": "Purchase Order", "source_record": "PO Number"},
-            ],
-        ),
-        "Days Open": field(
-            "Target Date − Posting Date (if OPEN)",
-            "IF(Status='OPEN', Target_Date − Posting_Date, 'PO is closed')",
-            inputs=[
-                {"field": "Posting Date", "source_file": "Purchase Order", "source_record": "PO Number"},
-                {"field": "Doc Status", "source_file": "Purchase Order", "source_record": "PO Number"},
-            ],
-        ),
-        "Pending Flag": field(
-            "1 if Received Qty > Ordered Qty",
-            "IF(Received_Qty > Ordered_Qty, 1, 0)",
-            inputs=[
-                {"field": "Received Qty.", "source_file": "GRPO Report", "source_record": "GRN No."},
-                {"field": "Ordered Qty.", "source_file": "Purchase Order", "source_record": "PO Number"},
-            ],
-        ),
-        "Open>90d & No receipt": field(
-            "1 if OPEN & Days Open > 90 & Received Qty = 0",
-            "IF(Status='OPEN' AND Days_Open>90 AND Received_Qty=0, 1, 0)",
-            inputs=[
-                {"field": "Doc Status", "source_file": "Purchase Order", "source_record": "PO Number"},
-                {"field": "Days Open", "source_file": "Purchase Order (calculated)", "source_record": "PO Number"},
-                {"field": "Received Qty.", "source_file": "GRPO Report", "source_record": "GRN No."},
-            ],
-        ),
-        "Recv<50%": field(
-            "1 if Received Qty < Ordered Qty × 0.5",
-            "IF(Received_Qty < Ordered_Qty * 0.5, 1, 0)",
-            inputs=[
-                {"field": "Received Qty.", "source_file": "GRPO Report", "source_record": "GRN No."},
-                {"field": "Ordered Qty.", "source_file": "Purchase Order", "source_record": "PO Number"},
-            ],
-        ),
-        "Holiday flag": field(
-            "1 if Posting Date is a holiday or Sunday",
-            "IF(Posting_Date IN Holidays OR DayOfWeek=Sunday, 1, 0)",
-            inputs=[
-                {"field": "Posting Date", "source_file": "Purchase Order", "source_record": "PO Number"},
-            ],
-        ),
-        "Holiday Name": field(
-            "Name of holiday if Holiday flag is 1, else 'none'",
-            "IF(Holiday_flag=1, Holiday_Name, 'none')",
-            inputs=[
-                {"field": "Posting Date", "source_file": "Purchase Order", "source_record": "PO Number"},
-                {"field": "Holiday File", "source_file": "Holiday List", "source_record": "Holiday Name"},
-            ],
-        ),
-        "variance>5%": field(
-            "Received Qty − (1.05 × Ordered Qty)",
-            "Received_Qty − (1.05 * Ordered_Qty)",
-            inputs=[
-                {"field": "Received Qty.", "source_file": "GRPO Report", "source_record": "GRN No."},
-                {"field": "Ordered Qty.", "source_file": "Purchase Order", "source_record": "PO Number"},
-            ],
-        ),
-        "Financial difference": field(
-            "Rate(INR) × variance>5%",
-            "Rate_INR * variance_gt_5",
-            inputs=[
-                {"field": "Rate(INR)", "source_file": "Purchase Order", "source_record": "PO Number"},
-                {"field": "variance>5%", "source_file": "Purchase Order (calculated)", "source_record": "PO Number"},
-            ],
-        ),
+    empty_kpis = {
+        "total_count": 0,
+        "unique_grpo": 0,
+        "sum_grpo_qty": "0.00",
+        "sum_grpo_value": "₹0.00"
     }
 
-    # Charts segments
-    CIRC = 314.0
-    open_pct = open_lines_pending / po_lines if po_lines else 0
-    closed_pct = 1 - open_pct
-    open_dash = round(open_pct * CIRC, 0)
-    closed_dash = round(closed_pct * CIRC, 0)
+    if df_grpo is None or df_grpo.empty:
+        return {
+            "foc_items": {"title": "FOC Items Sheet", "kpis": empty_kpis, "columns": TARGET_COLS, "rows": []},
+            "job_work": {"title": "Job Work Items Sheet", "kpis": empty_kpis, "columns": TARGET_COLS, "rows": []},
+            "repair_maintenance": {"title": "Repair & Maintenance Sheet", "kpis": empty_kpis, "columns": TARGET_COLS, "rows": []},
+        }
 
-    total_val = po_value_india + po_value_foreign
-    closed_val = total_val - open_po_value
-    closed_val_pct = round(closed_val / total_val * 100, 0) if total_val else 0.0
-    open_val_pct = round(open_po_value / total_val * 100, 0) if total_val else 0.0
+    grpo = df_grpo.copy()
+
+    for col in TARGET_COLS:
+        if col not in grpo.columns:
+            found = find_col(grpo, [col])
+            if found:
+                grpo[col] = grpo[found]
+            else:
+                grpo[col] = ""
+
+    grpo = grpo[TARGET_COLS].copy()
+
+    grpo['GRPO_Qty_Num'] = clean_num(grpo['GRPO Qty']).fillna(0.0)
+    grpo['Line_Total_Num'] = clean_num(grpo['Line Total']).fillna(0.0)
+
+    po_str = grpo['PO Number'].astype(str).str.strip()
+    is_po_missing = (
+        grpo['PO Number'].isna() | po_str.isin(['', '0', '0.0', 'nan', 'None', '—', '-'])
+    )
+
+    missing_df = grpo[is_po_missing].copy()
+
+    for d_col in ['Posting Date', 'Delivery Date', 'Document Date']:
+        if d_col in missing_df.columns:
+            missing_df[d_col] = safe_parse_date(missing_df[d_col]).apply(lambda dt: dt.strftime('%Y-%m-%d') if pd.notna(dt) else "")
+
+    def format_kpis(subset_df: pd.DataFrame) -> dict:
+        total_count = len(subset_df)
+        unique_grpo = int(subset_df['GRPO No'].nunique()) if not subset_df.empty else 0
+        sum_qty = float(subset_df['GRPO_Qty_Num'].sum()) if not subset_df.empty else 0.0
+        sum_val = float(subset_df['Line_Total_Num'].sum()) if not subset_df.empty else 0.0
+
+        if sum_val >= 1e7:
+            val_str = f"₹{(sum_val / 1e7):.2f} Cr"
+        elif sum_val >= 1e5:
+            val_str = f"₹{(sum_val / 1e5):.2f} Lakh"
+        else:
+            val_str = f"₹{sum_val:,.2f}"
+
+        return {
+            "total_count": total_count,
+            "unique_grpo": unique_grpo,
+            "sum_grpo_qty": f"{sum_qty:,.2f}",
+            "sum_grpo_value": val_str,
+        }
+
+    # 1. FOC Items Sheet (Series Name starts with FOC)
+    foc_mask = missing_df['Series Name'].astype(str).str.strip().str.upper().str.startswith('FOC')
+    foc_df = missing_df[foc_mask]
+
+    # 2. Job Work Items Sheet (Group Name == 'JOB WORK VENDOR')
+    jw_mask = missing_df['Group Name'].astype(str).str.strip().str.upper() == 'JOB WORK VENDOR'
+    jw_df = missing_df[jw_mask]
+
+    # 3. Repair & Maintenance Items Sheet (Item Group == 'Rep & Maint Mach')
+    rep_mask = missing_df['Item Group'].astype(str).str.strip() == 'Rep & Maint Mach'
+    rep_df = missing_df[rep_mask]
+
+    foc_kpis = format_kpis(foc_df)
+    jw_kpis = format_kpis(jw_df)
+    rep_kpis = format_kpis(rep_df)
+
+    foc_rows = foc_df[TARGET_COLS].to_dict(orient="records")
+    jw_rows = jw_df[TARGET_COLS].to_dict(orient="records")
+    rep_rows = rep_df[TARGET_COLS].to_dict(orient="records")
 
     return {
-        "kpis": {
-            # Old KPIs (kept for unit tests)
-            "unique_pos": unique_pos,
-            "total_lines": po_lines,
-            "open_lines": open_lines_pending,
+        "foc_items": {
+            "title": "FOC Items Sheet",
+            "kpis": foc_kpis,
+            "columns": TARGET_COLS,
+            "rows": foc_rows,
+        },
+        "job_work": {
+            "title": "Job Work Items Sheet",
+            "kpis": jw_kpis,
+            "columns": TARGET_COLS,
+            "rows": jw_rows,
+        },
+        "repair_maintenance": {
+            "title": "Repair & Maintenance Sheet",
+            "kpis": rep_kpis,
+            "columns": TARGET_COLS,
+            "rows": rep_rows,
+        }
+    }
+
+
+def run(dfs_or_df: dict[str, pd.DataFrame] | pd.DataFrame) -> dict:
+    if isinstance(dfs_or_df, pd.DataFrame):
+        dfs = {"purchase_order": dfs_or_df}
+    else:
+        dfs = dfs_or_df or {}
+
+    df_po = dfs.get("purchase_order")
+    df_grpo = dfs.get("grpo")
+    df_holiday = dfs.get("holiday")
+
+    if df_po is None or df_po.empty:
+        return {
+            "kpis": {},
+            "charts": {},
+            "po_missing": compute_po_missing(df_grpo),
+            "tables": [{"title": "Purchase Order Status — Full Audit Detail", "columns": [], "rows": []}]
+        }
+
+    # [Existing processing logic remains...]
+    # We will also call compute_po_missing(df_grpo) at the return block!
+
+
+    # Column mappings in PO Report
+    col_po_no = find_col(df_po, ["po no", "po no.", "po number", "purchase order no"]) or 'PO No'
+    col_item_code = find_col(df_po, ["item code", "item_code", "item no", "item no."]) or 'Item Code'
+    col_post_date = find_col(df_po, ["posting date", "post date", "po date"]) or 'Posting Date'
+    col_deliv_date = find_col(df_po, ["delivery date", "deliv date"]) or 'Delivery Date'
+    col_doc_date = find_col(df_po, ["document date", "doc date"]) or 'Document Date'
+    col_branch = find_col(df_po, ["branch", "plant"]) or 'Branch'
+    col_doc_status = find_col(df_po, ["document status", "doc status", "status"]) or 'Document Status'
+    col_canceled_status = find_col(df_po, ["canceled status", "canceled", "cancelled status"]) or 'Canceled Status'
+    col_vendor_group = find_col(df_po, ["vendor group", "vendor_group"]) or 'Vendor Group'
+    col_vendor_code = find_col(df_po, ["vendor code", "card code", "vendor_code"]) or 'Vendor Code'
+    col_vendor_name = find_col(df_po, ["vendor name", "card name", "vendor_name"]) or 'Vendor Name'
+    col_item_group = find_col(df_po, ["item group", "item_group"]) or 'Item Group'
+    col_item_desc = find_col(df_po, ["item description", "description", "item name"]) or 'Item Description'
+    col_uom = find_col(df_po, ["uom", "unit"]) or 'UOM'
+    col_po_qty = find_col(df_po, ["po qty", "ordered qty", "quantity", "qty"]) or 'PO Qty'
+    col_open_qty = find_col(df_po, ["open qty", "outstanding qty"]) or 'Open Qty'
+    col_po_price = find_col(df_po, ["po price", "unit price", "price"]) or 'PO Price'
+    col_doc_curr = find_col(df_po, ["document currency", "currency"]) or 'Document Currency'
+    col_doc_rate = find_col(df_po, ["document rate", "doc rate", "rate"]) or 'Document Rate'
+    col_line_total = find_col(df_po, ["line total", "total", "line_total"]) or 'Line Total'
+    col_doc_total = find_col(df_po, ["document total", "doc total"]) or 'Document Total'
+    col_po_series = find_col(df_po, ["po series", "series"]) or 'PO Series'
+
+    # Column mappings in GRPO Report
+    grpo_key_qty = {}
+    grpo_key_price = {}
+    grpo_key_line_total = {}
+    grpo_po_to_grn_no = {}
+
+    if df_grpo is not None and not df_grpo.empty:
+        g_po_no = find_col(df_grpo, ["po number", "po no", "po no."]) or 'PO Number'
+        g_grn_no = find_col(df_grpo, ["grpo no", "grpo no.", "grn no", "receipt no"]) or 'GRPO No'
+        g_item_code = find_col(df_grpo, ["item code", "item_code", "item no."]) or 'Item Code'
+        g_qty = find_col(df_grpo, ["grpo qty", "quantity", "received qty"]) or 'GRPO Qty'
+        g_price = find_col(df_grpo, ["grpo price", "unit price", "price"]) or 'GRPO Price'
+        g_line_tot = find_col(df_grpo, ["line total", "row total", "total"]) or 'Line Total'
+
+        # Clean GRPO numeric
+        df_grpo_work = df_grpo.copy()
+        df_grpo_work['_qty'] = clean_num(df_grpo_work[g_qty]) if g_qty in df_grpo_work.columns else 0
+        df_grpo_work['_price'] = clean_num(df_grpo_work[g_price]) if g_price in df_grpo_work.columns else 0
+        df_grpo_work['_line_total'] = clean_num(df_grpo_work[g_line_tot]) if g_line_tot in df_grpo_work.columns else 0
+
+        # Unique key mapping
+        g_po_str = df_grpo_work[g_po_no].astype(str).str.strip() if g_po_no in df_grpo_work.columns else ""
+        g_item_str = df_grpo_work[g_item_code].astype(str).str.strip() if g_item_code in df_grpo_work.columns else ""
+        df_grpo_work['_key'] = g_po_str + "-" + g_item_str
+
+        df_grpo_dedup = df_grpo_work.drop_duplicates(subset=['_key'], keep='first')
+        grpo_key_qty = df_grpo_dedup.set_index('_key')['_qty'].to_dict()
+        grpo_key_price = df_grpo_dedup.set_index('_key')['_price'].to_dict()
+        grpo_key_line_total = df_grpo_dedup.set_index('_key')['_line_total'].to_dict()
+
+        if g_po_no in df_grpo_work.columns and g_grn_no in df_grpo_work.columns:
+            df_first_grn = df_grpo_work.dropna(subset=[g_po_no]).drop_duplicates(subset=[g_po_no], keep='first')
+            grpo_po_to_grn_no = df_first_grn.set_index(g_po_no)[g_grn_no].to_dict()
+
+    # Holiday mapping
+    holiday_map = {}
+    if df_holiday is not None and not df_holiday.empty:
+        for _, h_row in df_holiday.iterrows():
+            d_val = h_row.iloc[-1]
+            h_name = h_row.iloc[1] if len(h_row) > 1 else "Public Holiday"
+            if pd.notna(d_val):
+                d_parsed = pd.to_datetime(d_val, errors='coerce')
+                if pd.notna(d_parsed):
+                    holiday_map[d_parsed.date()] = str(h_name).strip()
+
+    # Build Result Dataframe (38 Columns)
+    df_res = pd.DataFrame()
+
+    raw_po_no = df_po[col_po_no].astype(str).str.strip() if col_po_no in df_po.columns else pd.Series([""] * len(df_po))
+    raw_item_code = df_po[col_item_code].astype(str).str.strip() if col_item_code in df_po.columns else pd.Series([""] * len(df_po))
+
+    df_res['PO No'] = raw_po_no
+    df_res['Item Code'] = raw_item_code
+    df_res['Key'] = df_res['PO No'] + "-" + df_res['Item Code']
+    df_res['GRN No'] = df_res['PO No'].map(grpo_po_to_grn_no).fillna("")
+
+    df_res['PO Series'] = df_po[col_po_series].astype(str).str.strip() if col_po_series in df_po.columns else ""
+    df_res['Posting Date'] = safe_parse_date(df_po[col_post_date]) if col_post_date in df_po.columns else None
+    df_res['Delivery Date'] = safe_parse_date(df_po[col_deliv_date]) if col_deliv_date in df_po.columns else None
+    df_res['Document Date'] = safe_parse_date(df_po[col_doc_date]) if col_doc_date in df_po.columns else None
+
+    df_res['Branch'] = df_po[col_branch].astype(str).str.strip() if col_branch in df_po.columns else ""
+    df_res['Document Status'] = df_po[col_doc_status].astype(str).str.strip().str.title() if col_doc_status in df_po.columns else ""
+    df_res['Canceled Status'] = df_po[col_canceled_status].astype(str).str.strip() if col_canceled_status in df_po.columns else ""
+
+    df_res['Vendor Group'] = df_po[col_vendor_group].astype(str).str.strip() if col_vendor_group in df_po.columns else ""
+    df_res['Vendor Code'] = df_po[col_vendor_code].astype(str).str.strip() if col_vendor_code in df_po.columns else ""
+    df_res['Vendor Name'] = df_po[col_vendor_name].astype(str).str.strip() if col_vendor_name in df_po.columns else ""
+
+    df_res['Item Group'] = df_po[col_item_group].astype(str).str.strip() if col_item_group in df_po.columns else ""
+    df_res['Item Description'] = df_po[col_item_desc].astype(str).str.strip() if col_item_desc in df_po.columns else ""
+    df_res['UOM'] = df_po[col_uom].astype(str).str.strip() if col_uom in df_po.columns else ""
+
+    df_res['PO Qty'] = clean_num(df_po[col_po_qty]).fillna(0) if col_po_qty in df_po.columns else 0.0
+    df_res['Open Qty'] = clean_num(df_po[col_open_qty]).fillna(0) if col_open_qty in df_po.columns else 0.0
+
+    # GRN Qty from map
+    df_res['GRN Qty'] = df_res['Key'].map(grpo_key_qty)
+
+    # PO Monitoring Status
+    def calc_po_mon_status(row):
+        if row['Canceled Status'] == 'Yes':
+            return 'PO Canceled'
+        if pd.isna(row['GRN Qty']):
+            return 'Item Not Received'
+        if row['PO Qty'] == row['Open Qty'] and row['GRN Qty'] > 0:
+            return 'Open Qty Error'
+        if row['Document Status'] == 'Closed':
+            return 'PO Closed'
+        if row['Open Qty'] == 0:
+            return 'Fully Received'
+        if row['Document Status'] == 'Open' and row['PO Qty'] > row['Open Qty'] and row['Open Qty'] > 0:
+            return 'Partially Received'
+        return 'Check'
+
+    df_res['PO Monitoring Status'] = df_res.apply(calc_po_mon_status, axis=1)
+
+    # Holiday & Sunday Exception
+    def calc_holiday_exc(dt):
+        if pd.isna(dt) or dt is None:
+            return 'Regular'
+        d = dt.date()
+        if dt.weekday() == 6:  # Sunday
+            return 'Sunday'
+        if d in holiday_map:
+            return f"Holiday - {holiday_map[d]}"
+        return 'Regular'
+
+    df_res['Holiday & Sunday Exception'] = df_res['Posting Date'].apply(calc_holiday_exc)
+
+    # Excess QTY
+    df_res['Excess QTY'] = np.where(
+        df_res['GRN Qty'].isna(),
+        0,
+        np.where(df_res['PO Qty'] - df_res['GRN Qty'] < 0, (df_res['PO Qty'] - df_res['GRN Qty']).abs(), 0)
+    )
+
+    df_res['Excess Qty Variation %'] = np.where(
+        df_res['Excess QTY'] > 0,
+        df_res['Excess QTY'] / np.where(df_res['PO Qty'] > 0, df_res['PO Qty'], 1),
+        0
+    )
+
+    def calc_qty_diff(row):
+        if pd.isna(row['GRN Qty']):
+            return 'Regular'
+        diff = row['PO Qty'] - row['GRN Qty']
+        if diff >= 0:
+            return 'Regular'
+        if row['PO Qty'] > 0 and (abs(diff) / row['PO Qty']) <= 0.05:
+            return 'Tolerable'
+        return 'Exception'
+
+    df_res['QTY Difference'] = df_res.apply(calc_qty_diff, axis=1)
+
+    # Price fields
+    df_res['PO Price'] = clean_num(df_po[col_po_price]).fillna(0) if col_po_price in df_po.columns else 0.0
+    df_res['GRN Price'] = df_res['Key'].map(grpo_key_price)
+
+    df_res['Excess Rate'] = np.where(
+        df_res['GRN Price'].isna(),
+        0,
+        np.where(df_res['PO Price'] - df_res['GRN Price'] < 0, (df_res['PO Price'] - df_res['GRN Price']).abs(), 0)
+    )
+
+    df_res['Excess Rate Variation %'] = np.where(
+        df_res['Excess Rate'] > 0,
+        df_res['Excess Rate'] / np.where(df_res['PO Price'] > 0, df_res['PO Price'], 1),
+        0
+    )
+
+    def calc_rate_diff(row):
+        if pd.isna(row['GRN Price']):
+            return 'Regular'
+        diff = row['PO Price'] - row['GRN Price']
+        if diff >= 0:
+            return 'Regular'
+        if row['PO Price'] > 0 and (abs(diff) / row['PO Price']) <= 0.05:
+            return 'Tolerable'
+        return 'Exception'
+
+    df_res['Rate Difference'] = df_res.apply(calc_rate_diff, axis=1)
+
+    df_res['Document Currency'] = df_po[col_doc_curr].astype(str).str.strip() if col_doc_curr in df_po.columns else 'INR'
+    df_res['Document Rate'] = clean_num(df_po[col_doc_rate]).fillna(1) if col_doc_rate in df_po.columns else 1.0
+
+    po_line_tot_calc = df_res['PO Qty'] * df_res['PO Price']
+    raw_line_tot = clean_num(df_po[col_line_total]) if col_line_total in df_po.columns else po_line_tot_calc
+    df_res['Line Total'] = raw_line_tot.fillna(po_line_tot_calc)
+
+    df_res['GRN Line Total'] = df_res['Key'].map(grpo_key_line_total)
+
+    df_res['Excess Price'] = np.where(
+        df_res['GRN Line Total'].isna(),
+        0,
+        np.where(df_res['Line Total'] - df_res['GRN Line Total'] < 0, (df_res['Line Total'] - df_res['GRN Line Total']).abs(), 0)
+    )
+
+    df_res['Excess Price Variation %'] = np.where(
+        df_res['Excess Price'] > 0,
+        df_res['Excess Price'] / np.where(df_res['Line Total'] > 0, df_res['Line Total'], 1),
+        0
+    )
+
+    def calc_line_diff(row):
+        if pd.isna(row['GRN Line Total']):
+            return 'Regular'
+        diff = row['Line Total'] - row['GRN Line Total']
+        if diff >= 0:
+            return 'Regular'
+        if row['Line Total'] > 0 and (abs(diff) / row['Line Total']) <= 0.05:
+            return 'Tolerable'
+        return 'Exception'
+
+    df_res['Line Total Difference'] = df_res.apply(calc_line_diff, axis=1)
+    df_res['Document Total'] = clean_num(df_po[col_doc_total]).fillna(0) if col_doc_total in df_po.columns else 0.0
+
+    # ── Calculate exact 12 KPIs ──────────────────────────────────────────────
+    valid_po_mask = (df_res['PO No'] != '') & (df_res['PO No'] != '0') & (df_res['PO No'].notna())
+
+    unique_po_count = int(df_res[valid_po_mask]['PO No'].nunique())
+    total_po_val_cr = round(float(df_res['Line Total'].sum()) / 10000000.0, 2)
+    canceled_po_count = int(df_res[valid_po_mask & (df_res['Canceled Status'] == 'Yes')]['PO No'].nunique())
+
+    holiday_po_mask = valid_po_mask & (~df_res['Holiday & Sunday Exception'].isin(['Sunday', 'Regular']))
+    holiday_po_count = int(df_res[holiday_po_mask]['PO No'].nunique())
+
+    sunday_po_mask = valid_po_mask & (df_res['Holiday & Sunday Exception'] == 'Sunday')
+    sunday_po_count = int(df_res[sunday_po_mask]['PO No'].nunique())
+
+    cnt_excess_qty = int((df_res['QTY Difference'] == 'Exception').sum())
+    sum_excess_qty_lakh = round(float(df_res[df_res['QTY Difference'] == 'Exception']['Excess QTY'].sum()) / 100000.0, 2)
+
+    cnt_excess_rate = int((df_res['Rate Difference'] == 'Exception').sum())
+    exc_rate_rows = df_res[df_res['Rate Difference'] == 'Exception']
+    sum_excess_rate = round(float((exc_rate_rows['Excess Rate'] * exc_rate_rows['Document Rate']).sum()), 2)
+
+    cnt_excess_price = int((df_res['Line Total Difference'] == 'Exception').sum())
+    sum_excess_price_lakh = round(float(df_res[df_res['Line Total Difference'] == 'Exception']['Excess Price'].sum()) / 100000.0, 2)
+
+    kpi_contract = {
+        "foreign_vendor": "FILTER",
+        "unique_po_raise": unique_po_count,
+        "total_po_value": f"{total_po_val_cr:.2f} Cr",
+        "canceled_po_count": canceled_po_count,
+        "holiday_exception": holiday_po_count,
+        "sunday_exception": sunday_po_count,
+        "count_of_excess_qty": cnt_excess_qty,
+        "sum_of_excess_qty": f"{sum_excess_qty_lakh:.2f} Lakh",
+        "count_of_excess_rate": cnt_excess_rate,
+        "sum_of_excess_rate": float(sum_excess_rate),
+        "count_of_excess_price": cnt_excess_price,
+        "sum_of_excess_price": f"{sum_excess_price_lakh:.2f} Lakh",
+    }
+
+    total_lines = len(df_res)
+    open_mask = df_res['Document Status'] == 'Open'
+    closed_mask = df_res['Document Status'] == 'Closed'
+
+    open_lines = int(open_mask.sum())
+    closed_lines = int(closed_mask.sum())
+
+    open_line_pct = round((open_lines / total_lines) * 100, 1) if total_lines else 0.0
+    closed_line_pct = round((closed_lines / total_lines) * 100, 1) if total_lines else 0.0
+
+    total_val = float(df_res['Line Total'].sum())
+    open_val = float(df_res[open_mask]['Line Total'].sum())
+    closed_val = float(df_res[closed_mask]['Line Total'].sum())
+
+    open_val_cr = round(open_val / 1e7, 2)
+    closed_val_cr = round(closed_val / 1e7, 2)
+
+    open_val_pct = round((open_val / total_val) * 100) if total_val else 0
+    closed_val_pct = round((closed_val / total_val) * 100) if total_val else 0
+
+    charts_contract = {
+        "po_status_distribution": {
+            "total_lines": total_lines,
+            "open_lines": open_lines,
+            "open_line_pct": open_line_pct,
             "closed_lines": closed_lines,
-            "total_value_cr": total_value_cr,
-            "open_value_cr": open_value_cr,
-            "pct_open_value": pct_open_value,
-            "top_vendor_open": top_vendor_open,
-            "unique_vendors": unique_vendors,
-            # New KPIs (for frontend dashboard)
-            "po_lines": po_lines,
-            "open_lines_pending": open_lines_pending,
-            "po_value_india": po_value_india,
-            "po_value_foreign": po_value_foreign,
-            "open_po_value": open_po_value,
-            "recv_lt_50": recv_lt_50,
-            "unique_grn_nos": unique_grn_count,
-            "unique_ap_invoices": unique_ap_count,
-            "unique_pos_flagged": unique_pos_flagged,
+            "closed_line_pct": closed_line_pct,
         },
-        "charts": {
-            "po_status": {
-                "total": po_lines,
-                "segments": [
-                    {"label": "Open", "value": open_lines_pending, "dash": open_dash, "offset": 0},
-                    {"label": "Closed", "value": closed_lines, "dash": closed_dash, "offset": -open_dash},
-                ],
-            },
-            "po_value": {
-                "closed": {"label": "Closed Value", "value_cr": round(closed_val / 1e7, 2), "pct": closed_val_pct},
-                "open": {"label": "Open Value", "value_cr": round(open_po_value / 1e7, 2), "pct": open_val_pct},
-            },
-        },
+        "po_value_exposure": {
+            "total_value": f"{total_val/1e7:.2f} Cr",
+            "closed_value": f"{closed_val_cr:.2f} Cr",
+            "closed_value_pct": closed_val_pct,
+            "open_value": f"{open_val_cr:.2f} Cr",
+            "open_value_pct": open_val_pct,
+        }
+    }
+
+    # Format dates as YYYY-MM-DD for JSON serialization
+    for date_col in ['Posting Date', 'Delivery Date', 'Document Date']:
+        df_res[date_col] = df_res[date_col].apply(lambda dt: dt.strftime('%Y-%m-%d') if pd.notna(dt) else "")
+
+    # Convert DataFrame to records dict
+    table_rows = df_res.to_dict(orient="records")
+
+    columns_list = list(df_res.columns)
+
+    return {
+        "kpis": kpi_contract,
+        "charts": charts_contract,
+        "po_missing": compute_po_missing(df_grpo),
         "tables": [
-            {"title": "PO Status Summary", "rows": _to_rows(po_summary[:100])},
-            {"title": "Top 25 Vendors – Highest Open PO Exposure", "rows": _to_rows(vendor_open)},
-            {"title": "Open PO Transaction Data List", "rows": _to_rows(open_tx[:500])},
             {
-                "title": "Purchase Order Line Status Analysis",
-                "rows": rows,
-                "calculated_fields": po_calculated_fields,
-            },
-        ],
+                "title": "Purchase Order Status — Full Audit Detail",
+                "columns": columns_list,
+                "rows": table_rows
+            }
+        ]
     }

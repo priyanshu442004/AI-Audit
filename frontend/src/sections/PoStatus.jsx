@@ -2,31 +2,54 @@ import React, { useState, useMemo } from 'react'
 import AiInsightBox from '../components/AiInsightBox'
 import TruncatedCell from '../components/TruncatedCell'
 import useColumnOrder from '../hooks/useColumnOrder'
-import PageActionBar from '../components/PageActionBar'
 import ExportModal from '../components/ExportModal'
 import ExceptionModal from '../components/ExceptionModal'
-import { RefreshCw, FileSpreadsheet, AlertTriangle } from 'lucide-react'
-
-const formatCurrency = (val) => {
-  if (val === null || val === undefined) return '—'
-  const num = parseFloat(val)
-  if (isNaN(num)) return val
-  if (num >= 10000000) return `₹${(num / 10000000).toFixed(2)} Cr`
-  if (num >= 100000) return `₹${(num / 100000).toFixed(2)} L`
-  return `₹${num.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
-}
+import LineItemSourceTraceModal from '../components/LineItemSourceTraceModal'
+import PoMissingView from './PoMissingView'
+import { RefreshCw, FileSpreadsheet, AlertTriangle, Filter, Layers, FileWarning } from 'lucide-react'
 
 const COL_GROUPS = [
-  { label: 'PO Details',    cols: ['PO Number', 'PO Date', 'Doc Status', 'Vendor Code', 'Vendor Name', 'Vendor Country'] },
-  { label: 'Item Details',  cols: ['Item Code', 'Item Description', 'Item Group'] },
-  { label: 'Quantities',    cols: ['Ordered Qty', 'Open Qty', 'GRPO Qty', 'AP Inv Qty'] },
-  { label: 'Values (INR)',  cols: ['Doc Currency', 'Doc Rate', 'Price', 'Line Total (INR)', 'Open PO Value'] },
-  { label: 'Receipt Info',  cols: ['GRN Number', 'GRPO Date', 'AP Invoice Number', 'AP Posting Date', 'AP Credit Note', 'Remarks'] },
-  { label: 'Audit Flags',   cols: ['Pending Flag', 'Open>90d & No receipt', 'Recv<50%', 'Holiday flag', 'variance>5%'] },
+  {
+    label: 'PO Details',
+    cols: ['PO No', 'PO Series', 'Posting Date', 'Delivery Date', 'Document Date', 'Branch', 'Document Status', 'Canceled Status']
+  },
+  {
+    label: 'Vendor & Item',
+    cols: ['Vendor Group', 'Vendor Code', 'Vendor Name', 'Item Group', 'Item Code', 'Item Description', 'UOM']
+  },
+  {
+    label: 'Quantities & Rates',
+    cols: ['PO Qty', 'Open Qty', 'GRN Qty', 'PO Price', 'GRN Price', 'Excess Rate', 'Excess Rate Variation %', 'Rate Difference']
+  },
+  {
+    label: 'Values & Totals',
+    cols: ['Document Currency', 'Document Rate', 'Line Total', 'GRN Line Total', 'Excess Price', 'Excess Price Variation %', 'Line Total Difference', 'Document Total']
+  },
+  {
+    label: 'Audit Flags',
+    cols: ['GRN No', 'PO Monitoring Status', 'Holiday & Sunday Exception', 'Excess QTY', 'Excess Qty Variation %', 'QTY Difference']
+  }
 ]
 
-const ALL_COLS = COL_GROUPS.flatMap(g => g.cols)
-const INT_COLS = ['Ordered Qty', 'Open Qty', 'GRPO Qty', 'AP Inv Qty']
+// Note: 'Key' is omitted from ALL_COLS to hide it from the UI while keeping it in the underlying data objects
+const ALL_COLS = [
+  'PO No', 'GRN No', 'PO Series', 'Posting Date', 'Delivery Date',
+  'Document Date', 'Branch', 'Document Status', 'Canceled Status',
+  'Vendor Group', 'Vendor Code', 'Vendor Name', 'Item Group', 'Item Code',
+  'Item Description', 'UOM', 'PO Qty', 'Open Qty', 'PO Monitoring Status',
+  'Holiday & Sunday Exception', 'GRN Qty', 'Excess QTY', 'Excess Qty Variation %',
+  'QTY Difference', 'PO Price', 'GRN Price', 'Excess Rate', 'Excess Rate Variation %',
+  'Rate Difference', 'Document Currency', 'Document Rate', 'Line Total',
+  'GRN Line Total', 'Excess Price', 'Excess Price Variation %',
+  'Line Total Difference', 'Document Total'
+]
+
+const NUMERIC_COLS = [
+  'PO Qty', 'Open Qty', 'GRN Qty', 'Excess QTY', 'Excess Qty Variation %',
+  'PO Price', 'GRN Price', 'Excess Rate', 'Excess Rate Variation %',
+  'Document Rate', 'Line Total', 'GRN Line Total', 'Excess Price',
+  'Excess Price Variation %', 'Document Total'
+]
 
 function SortIcon({ dir }) {
   if (!dir) return (
@@ -66,8 +89,14 @@ export default function PoStatus({ data }) {
   const kpis   = data?.kpis   || {}
   const tables = data?.tables || []
 
-  const mainTable = tables.find(t => t.title === 'Purchase Order Line Status Analysis') || tables.find(t => t.title === 'Purchase Order Status — Full Audit Detail') || tables[3] || tables[0]
+  const mainTable = tables.find(t => t.title === 'Purchase Order Status — Full Audit Detail') || tables[0]
   const rows = mainTable?.rows || []
+
+  // Interactive Header Filters State
+  const [viewMode, setViewMode]                 = useState('main') // 'main' | 'po_missing'
+  const [vendorTypeFilter, setVendorTypeFilter] = useState('all') // 'all' | 'indian' | 'foreign'
+  const [holidayFilter, setHolidayFilter]       = useState('all') // 'all' | 'holiday_only'
+  const [excess5PctFilter, setExcess5PctFilter] = useState('all') // 'all' | 'qty' | 'rate' | 'price'
 
   const [searchTerm, setSearchTerm]         = useState('')
   const [currentPage, setCurrentPage]       = useState(1)
@@ -79,14 +108,21 @@ export default function PoStatus({ data }) {
   const [startDate, setStartDate]           = useState('')
   const [endDate, setEndDate]               = useState('')
   const [refreshing, setRefreshing]         = useState(false)
+  
+  // Modals state
+  const [showExportModal, setShowExportModal]       = useState(false)
   const [showExceptionModal, setShowExceptionModal] = useState(false)
-  const [exceptionTitle, setExceptionTitle] = useState('')
+  const [exceptionTitle, setExceptionTitle]         = useState('')
   const [exceptionModalRows, setExceptionModalRows] = useState([])
-  const [isModalException, setIsModalException] = useState(true)
+  const [isModalException, setIsModalException]     = useState(true)
+
+  // 3-Sheet Line Item Source Trace Modal
+  const [showTraceModal, setShowTraceModal] = useState(false)
+  const [selectedTraceRow, setSelectedTraceRow] = useState(null)
 
   const ITEMS_PER_PAGE = 25
 
-  const { order: colOrder, moveColumn } = useColumnOrder('po-status', ALL_COLS)
+  const { order: colOrder, moveColumn } = useColumnOrder('po-status-v2', ALL_COLS)
   const [dragCol, setDragCol]     = useState(null)
   const [dragOverCol, setDragOverCol] = useState(null)
 
@@ -119,19 +155,45 @@ export default function PoStatus({ data }) {
     setRefreshing(false)
   }
 
+  // Reactive Multi-Filter Pipeline
   const filtered = useMemo(() => {
-    const term = searchTerm.trim().toLowerCase()
-    let out = term
-      ? rows.filter(r => Object.entries(r).some(([, v]) => String(v).toLowerCase().includes(term)))
-      : rows
+    let out = rows
 
+    // 1. Vendor Type Filter
+    if (vendorTypeFilter === 'indian') {
+      out = out.filter(r => (r['Document Currency'] || 'INR') === 'INR')
+    } else if (vendorTypeFilter === 'foreign') {
+      out = out.filter(r => (r['Document Currency'] || 'INR') !== 'INR')
+    }
+
+    // 2. Holiday Exception Filter
+    if (holidayFilter === 'holiday_only') {
+      out = out.filter(r => (r['Holiday & Sunday Exception'] || '').startsWith('Holiday'))
+    }
+
+    // 3. 5% Financial Exception Filter
+    if (excess5PctFilter === 'qty') {
+      out = out.filter(r => r['QTY Difference'] === 'Exception' || (parseFloat(String(r['Excess Qty Variation %']).replace(/,/g, '')) > 5))
+    } else if (excess5PctFilter === 'rate') {
+      out = out.filter(r => r['Rate Difference'] === 'Exception' || (parseFloat(String(r['Excess Rate Variation %']).replace(/,/g, '')) > 5))
+    } else if (excess5PctFilter === 'price') {
+      out = out.filter(r => r['Line Total Difference'] === 'Exception' || (parseFloat(String(r['Excess Price Variation %']).replace(/,/g, '')) > 5))
+    }
+
+    // Search term filter
+    const term = searchTerm.trim().toLowerCase()
+    if (term) {
+      out = out.filter(r => Object.entries(r).some(([k, v]) => k !== 'Key' && String(v).toLowerCase().includes(term)))
+    }
+
+    // Date range filter
     if (startDate || endDate) {
       const start = startDate ? new Date(startDate) : null
       if (start) start.setHours(0, 0, 0, 0)
       const end = endDate ? new Date(endDate) : null
       if (end) end.setHours(23, 59, 59, 999)
       out = out.filter(r => {
-        const dateVal = parseDate(r['PO Date'])
+        const dateVal = parseDate(r['Posting Date'] || r['Document Date'])
         if (!dateVal) return false
         if (start && dateVal < start) return false
         if (end && dateVal > end) return false
@@ -139,6 +201,7 @@ export default function PoStatus({ data }) {
       })
     }
 
+    // Column filters
     const activeFilters = Object.entries(colFilters).filter(([, v]) => v.trim())
     if (activeFilters.length > 0) {
       out = out.filter(r =>
@@ -148,27 +211,92 @@ export default function PoStatus({ data }) {
       )
     }
 
+    // Sorting
     if (sortCol) {
       out = [...out].sort((a, b) => {
         const av = a[sortCol] ?? ''
         const bv = b[sortCol] ?? ''
-        const an = parseFloat(av), bn = parseFloat(bv)
+        const an = parseFloat(String(av).replace(/,/g, '')), bn = parseFloat(String(bv).replace(/,/g, ''))
         const cmp = (!isNaN(an) && !isNaN(bn)) ? an - bn : String(av).localeCompare(String(bv))
         return sortDir === 'asc' ? cmp : -cmp
       })
     }
     return out
-  }, [rows, searchTerm, colFilters, sortCol, sortDir, startDate, endDate])
+  }, [rows, vendorTypeFilter, holidayFilter, excess5PctFilter, searchTerm, colFilters, sortCol, sortDir, startDate, endDate])
+
+  // Reactive Dynamic KPI Recalculation based on filtered rows
+  const dynamicKpis = useMemo(() => {
+    const uniquePos = new Set(filtered.map(r => r['PO No']).filter(p => p && p !== '0' && p !== '—')).size
+    const totalPoVal = filtered.reduce((acc, r) => acc + (parseFloat(String(r['Line Total']).replace(/,/g, '')) || 0), 0)
+    const canceledCount = filtered.filter(r => r['Canceled Status'] === 'Yes').length
+    const holidayCount = filtered.filter(r => (r['Holiday & Sunday Exception'] || '').startsWith('Holiday')).length
+    const sundayCount = filtered.filter(r => r['Holiday & Sunday Exception'] === 'Sunday').length
+    
+    const cntExcessQty = filtered.filter(r => r['QTY Difference'] === 'Exception').length
+    const sumExcessQty = filtered.reduce((acc, r) => acc + (parseFloat(String(r['Excess QTY']).replace(/,/g, '')) || 0), 0)
+    
+    const cntExcessRate = filtered.filter(r => r['Rate Difference'] === 'Exception').length
+    const sumExcessRate = filtered.reduce((acc, r) => acc + (parseFloat(String(r['Excess Rate']).replace(/,/g, '')) || 0), 0)
+    
+    const cntExcessPrice = filtered.filter(r => r['Line Total Difference'] === 'Exception').length
+    const sumExcessPrice = filtered.reduce((acc, r) => acc + (parseFloat(String(r['Excess Price']).replace(/,/g, '')) || 0), 0)
+
+    return {
+      unique_po_raise: uniquePos,
+      total_po_value: `${(totalPoVal / 1e7).toFixed(2)} Cr`,
+      canceled_po_count: canceledCount,
+      holiday_exception: holidayCount,
+      sunday_exception: sundayCount,
+      count_of_excess_qty: cntExcessQty,
+      sum_of_excess_qty: `${(sumExcessQty / 1e5).toFixed(2)} Lakh`,
+      count_of_excess_rate: cntExcessRate,
+      sum_of_excess_rate: sumExcessRate,
+      count_of_excess_price: cntExcessPrice,
+      sum_of_excess_price: `${(sumExcessPrice / 1e5).toFixed(2)} Lakh`,
+    }
+  }, [filtered])
+
+  // Dynamic Chart Calculations based on filtered rows
+  const dynamicCharts = useMemo(() => {
+    const totalLines = filtered.length
+    const openLines = filtered.filter(r => String(r['Document Status']).toLowerCase() === 'open').length
+    const closedLines = totalLines - openLines
+
+    const openPct = totalLines ? Math.round((openLines / totalLines) * 1000) / 10 : 0
+    const closedPct = totalLines ? Math.round((closedLines / totalLines) * 1000) / 10 : 0
+
+    const totalVal = filtered.reduce((acc, r) => acc + (parseFloat(String(r['Line Total']).replace(/,/g, '')) || 0), 0)
+    const openVal = filtered.filter(r => String(r['Document Status']).toLowerCase() === 'open').reduce((acc, r) => acc + (parseFloat(String(r['Line Total']).replace(/,/g, '')) || 0), 0)
+    const closedVal = totalVal - openVal
+
+    const closedValCr = (closedVal / 1e7).toFixed(2)
+    const openValCr = (openVal / 1e7).toFixed(2)
+
+    const closedValPct = totalVal ? Math.round((closedVal / totalVal) * 100) : 0
+    const openValPct = totalVal ? Math.round((openVal / totalVal) * 100) : 0
+
+    return {
+      totalLines,
+      openLines,
+      closedLines,
+      openPct,
+      closedPct,
+      closedValCr,
+      openValCr,
+      closedValPct,
+      openValPct
+    }
+  }, [filtered])
 
   const openExceptionModal = (titleStr, filterFn, dedupeKey, isExc = true) => {
     setExceptionTitle(titleStr)
     setIsModalException(isExc)
-    let res = rows.filter(filterFn)
+    let res = filtered.filter(filterFn)
     if (dedupeKey) {
       const seen = new Set()
       res = res.filter(r => {
         const kVal = r[dedupeKey]
-        if (!kVal || kVal === '—' || seen.has(kVal)) return false
+        if (!kVal || kVal === '—' || kVal === '0' || seen.has(kVal)) return false
         seen.add(kVal)
         return true
       })
@@ -182,101 +310,95 @@ export default function PoStatus({ data }) {
   const startRec    = filtered.length === 0 ? 0 : (currentPage - 1) * ITEMS_PER_PAGE + 1
   const endRec      = Math.min(currentPage * ITEMS_PER_PAGE, filtered.length)
 
+  // 11 Verified KPI Cards (Removed Foreign Vendor KPI as requested)
   const kpiCards = [
-    { 
-      label: 'Unique POs',            
-      value: kpis.unique_pos,         
-      fmt: 'int',      
+    {
+      label: 'Unique PO Raise',
+      value: dynamicKpis.unique_po_raise,
+      fmt: 'int',
       accent: 'blue',
       isException: false,
-      onCardClick: () => openExceptionModal('Unique Purchase Orders', r => r['PO Number'] && r['PO Number'] !== '—', 'PO Number', false)
+      onCardClick: () => openExceptionModal('Unique Purchase Orders', r => r['PO No'] && r['PO No'] !== '0', 'PO No', false)
     },
-    { 
-      label: 'PO Lines',              
-      value: kpis.po_lines,           
-      fmt: 'int',      
+    {
+      label: 'Total PO Value',
+      value: dynamicKpis.total_po_value,
+      fmt: 'text',
       accent: 'blue',
       isException: false,
-      onCardClick: () => openExceptionModal('All Purchase Order Lines', r => true, null, false)
+      onCardClick: () => openExceptionModal('All PO Value Records', r => true, null, false)
     },
-    { 
-      label: 'Open Lines',            
-      value: kpis.open_lines_pending, 
-      fmt: 'int',      
-      accent: 'amber', 
-      isException: true,
-      onCardClick: () => openExceptionModal(
-        'Open / Pending PO Lines',
-        r => r['Doc Status'] === 'Open' || r['Pending Flag'] === 1,
-        null,
-        true
-      )
-    },
-    { 
-      label: 'PO Value – India',      
-      value: kpis.po_value_india,     
-      fmt: 'currency', 
-      accent: 'blue',
-      isException: false,
-      onCardClick: () => openExceptionModal('PO Lines – India Vendors', r => String(r['Vendor Country'] || '').toLowerCase().includes('india') || !r['Vendor Country'], null, false)
-    },
-    { 
-      label: 'PO Value – Foreign',    
-      value: kpis.po_value_foreign,   
-      fmt: 'currency', 
-      accent: 'blue',
-      isException: false,
-      onCardClick: () => openExceptionModal('PO Lines – Foreign Vendors', r => r['Vendor Country'] && !String(r['Vendor Country']).toLowerCase().includes('india'), null, false)
-    },
-    { 
-      label: 'Open PO Value',         
-      value: kpis.open_po_value,      
-      fmt: 'currency', 
+    {
+      label: 'Cancled PO Count',
+      value: dynamicKpis.canceled_po_count,
+      fmt: 'int',
       accent: 'amber',
-      isException: false,
-      onCardClick: () => openExceptionModal('Open PO Value Lines', r => (parseFloat(r['Open PO Value']) > 0 || r['Doc Status'] === 'Open'), null, false)
-    },
-    { 
-      label: 'Recv < 50%',            
-      value: kpis.recv_lt_50,         
-      fmt: 'int',      
-      accent: kpis.recv_lt_50 > 0 ? 'rose' : 'blue', 
       isException: true,
-      onCardClick: () => openExceptionModal(
-        'PO Lines Received < 50%',
-        r => r['Recv<50%'] === 1 || r['Recv<50%'] === '1',
-        null,
-        true
-      )
+      onCardClick: () => openExceptionModal('Canceled Purchase Orders', r => r['Canceled Status'] === 'Yes', 'PO No', true)
     },
-    { 
-      label: 'Unique GRN Nos.',       
-      value: kpis.unique_grn_nos,     
-      fmt: 'int',      
-      accent: 'blue',
-      isException: false,
-      onCardClick: () => openExceptionModal('Unique Goods Receipts (GRN)', r => r['GRN Number'] && r['GRN Number'] !== '—', 'GRN Number', false)
-    },
-    { 
-      label: 'Unique AP Invoices',    
-      value: kpis.unique_ap_invoices, 
-      fmt: 'int',      
-      accent: 'blue',
-      isException: false,
-      onCardClick: () => openExceptionModal('Unique AP Invoices', r => r['AP Invoice Number'] && r['AP Invoice Number'] !== '—', 'AP Invoice Number', false)
-    },
-    { 
-      label: 'Flagged POs',           
-      value: kpis.unique_pos_flagged, 
-      fmt: 'int',      
-      accent: kpis.unique_pos_flagged > 0 ? 'rose' : 'blue', 
+    {
+      label: 'Holiday Exception',
+      value: dynamicKpis.holiday_exception,
+      fmt: 'int',
+      accent: 'rose',
       isException: true,
-      onCardClick: () => openExceptionModal(
-        'Unique Flagged Purchase Orders',
-        r => r['Pending Flag'] === 1 || r['Open>90d & No receipt'] === 1 || r['Recv<50%'] === 1 || r['Holiday flag'] === 1 || r['variance>5%'] === 1 || r.is_flagged === 1,
-        'PO Number',
-        true
-      )
+      onCardClick: () => openExceptionModal('Holiday Exception POs', r => (r['Holiday & Sunday Exception'] || '').startsWith('Holiday'), 'PO No', true)
+    },
+    {
+      label: 'Sunday Exception',
+      value: dynamicKpis.sunday_exception,
+      fmt: 'int',
+      accent: 'rose',
+      isException: true,
+      onCardClick: () => openExceptionModal('Sunday Exception POs', r => r['Holiday & Sunday Exception'] === 'Sunday', 'PO No', true)
+    },
+    {
+      label: 'Count of Excess QTY',
+      value: dynamicKpis.count_of_excess_qty,
+      fmt: 'int',
+      accent: 'rose',
+      isException: true,
+      onCardClick: () => openExceptionModal('Count of Excess QTY Exceptions', r => r['QTY Difference'] === 'Exception', null, true)
+    },
+    {
+      label: 'Sum of Excess QTY',
+      value: dynamicKpis.sum_of_excess_qty,
+      fmt: 'text',
+      accent: 'rose',
+      isException: true,
+      onCardClick: () => openExceptionModal('Sum of Excess QTY Exceptions', r => r['QTY Difference'] === 'Exception', null, true)
+    },
+    {
+      label: 'Count of Excess Rate',
+      value: dynamicKpis.count_of_excess_rate,
+      fmt: 'int',
+      accent: 'rose',
+      isException: true,
+      onCardClick: () => openExceptionModal('Count of Excess Rate Exceptions', r => r['Rate Difference'] === 'Exception', null, true)
+    },
+    {
+      label: 'Sum of Excess Rate',
+      value: dynamicKpis.sum_of_excess_rate,
+      fmt: 'number',
+      accent: 'rose',
+      isException: true,
+      onCardClick: () => openExceptionModal('Sum of Excess Rate Exceptions', r => r['Rate Difference'] === 'Exception', null, true)
+    },
+    {
+      label: 'Count of Excess Price',
+      value: dynamicKpis.count_of_excess_price,
+      fmt: 'int',
+      accent: 'rose',
+      isException: true,
+      onCardClick: () => openExceptionModal('Count of Excess Price Exceptions', r => r['Line Total Difference'] === 'Exception', null, true)
+    },
+    {
+      label: 'Sum of Excess Price',
+      value: dynamicKpis.sum_of_excess_price,
+      fmt: 'text',
+      accent: 'rose',
+      isException: true,
+      onCardClick: () => openExceptionModal('Sum of Excess Price Exceptions', r => r['Line Total Difference'] === 'Exception', null, true)
     },
   ]
 
@@ -288,69 +410,124 @@ export default function PoStatus({ data }) {
 
   const fmtVal = (fmt, val) => {
     if (val === null || val === undefined) return '—'
-    if (fmt === 'currency') return formatCurrency(val)
     if (fmt === 'int') return typeof val === 'number' ? val.toLocaleString() : val
-    return val
+    if (fmt === 'number') return typeof val === 'number' ? val.toFixed(2) : val
+    return String(val)
+  }
+
+  if (viewMode === 'po_missing') {
+    return <PoMissingView data={data} onBack={() => setViewMode('main')} />
   }
 
   return (
     <div className="space-y-6">
-      {/* Header with Refresh + Export Action Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 pb-2 border-b border-slate-200/60 dark:border-slate-800/60">
+      {/* Header Action Bar */}
+      <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4 pb-2 border-b border-slate-200/60 dark:border-slate-800/60">
         <div>
-          <p className="text-sm text-slate-500 dark:text-slate-400">
-            Full lifecycle analysis of Purchase Orders — open status, quantity fulfilment rates, GRPO linkages, and AP Invoicing match.
+          <h2 className="text-xl font-black text-slate-900 dark:text-white tracking-tight">Procurement Transaction Compliance Review</h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            Real-time audit analytics & S3 sheet trace inspection for purchase order lifecycle compliance.
           </p>
         </div>
-        <div className="flex items-center gap-3">
+
+        {/* 3 Header Filters + Actions (Placed left of Export to Excel) */}
+        <div className="flex items-center gap-2.5 flex-wrap">
+          
+          {/* Filter 1: Vendor Type */}
+          <div className="flex items-center gap-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-1.5 shadow-sm">
+            <Filter className="w-3.5 h-3.5 text-blue-500" />
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Vendor:</span>
+            <select
+              value={vendorTypeFilter}
+              onChange={(e) => { setVendorTypeFilter(e.target.value); setCurrentPage(1); }}
+              className="text-xs font-bold bg-transparent text-slate-800 dark:text-slate-200 focus:outline-none cursor-pointer"
+            >
+              <option value="all">All Vendors</option>
+              <option value="indian">Indian Vendors (INR)</option>
+              <option value="foreign">Foreign Vendors</option>
+            </select>
+          </div>
+
+          {/* Filter 2: Holiday Exception */}
+          <div className="flex items-center gap-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-1.5 shadow-sm">
+            <Filter className="w-3.5 h-3.5 text-amber-500" />
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Holiday:</span>
+            <select
+              value={holidayFilter}
+              onChange={(e) => { setHolidayFilter(e.target.value); setCurrentPage(1); }}
+              className="text-xs font-bold bg-transparent text-slate-800 dark:text-slate-200 focus:outline-none cursor-pointer"
+            >
+              <option value="all">All POs</option>
+              <option value="holiday_only">Holiday Exceptions Only</option>
+            </select>
+          </div>
+
+          {/* Filter 3: 5% Financial Exception */}
+          <div className="flex items-center gap-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-1.5 shadow-sm">
+            <Filter className="w-3.5 h-3.5 text-rose-500" />
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">5% Exception:</span>
+            <select
+              value={excess5PctFilter}
+              onChange={(e) => { setExcess5PctFilter(e.target.value); setCurrentPage(1); }}
+              className="text-xs font-bold bg-transparent text-slate-800 dark:text-slate-200 focus:outline-none cursor-pointer"
+            >
+              <option value="all">All Items</option>
+              <option value="qty">Qty Excess (&gt;5%)</option>
+              <option value="rate">Rate Excess (&gt;5%)</option>
+              <option value="price">Price Excess (&gt;5%)</option>
+            </select>
+          </div>
+
+          {/* Refresh Button */}
           <button
             onClick={handleRefresh}
             disabled={refreshing}
-            className="flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 shadow-sm transition-all active:scale-95 disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 shadow-sm transition-all active:scale-95 disabled:opacity-50"
             title="Refresh page data"
           >
-            <RefreshCw className={`w-4 h-4 text-blue-500 ${refreshing ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 text-blue-500 ${refreshing ? 'animate-spin' : ''}`} />
             <span>{refreshing ? 'Refreshing...' : 'Refresh'}</span>
           </button>
 
+          {/* Export to Excel Button */}
           <button
             onClick={() => setShowExportModal(true)}
-            className="flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm transition-all active:scale-95"
+            className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm transition-all active:scale-95"
             title="Export page data to Excel"
           >
-            <FileSpreadsheet className="w-4 h-4" />
+            <FileSpreadsheet className="w-3.5 h-3.5" />
             <span>Export to Excel</span>
           </button>
         </div>
       </div>
 
-      <AiInsightBox section="postatus" kpis={kpis} />
+      <AiInsightBox section="postatus" kpis={dynamicKpis} />
 
-      {/* KPI Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+      {/* 11 KPI Grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
         {kpiCards.map((k) => {
           const ac = accentMap[k.accent] || accentMap.blue
           return (
-            <div 
+            <div
               key={k.label}
               onClick={k.onCardClick}
-              className={`relative bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm transition-all duration-200 overflow-hidden flex flex-col justify-between cursor-pointer hover:shadow-md active:scale-[0.98] ${
+              className={`relative bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-3.5 shadow-sm transition-all duration-200 overflow-hidden flex flex-col justify-between cursor-pointer hover:shadow-md active:scale-[0.98] ${
                 k.isException ? 'hover:border-rose-500/50' : 'hover:border-blue-500/50'
               }`}
             >
               <div className={`absolute top-0 left-0 right-0 h-0.5 ${ac.bar}`} />
               <div>
                 <div className="flex items-center justify-between gap-1 mb-2">
-                  <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-widest leading-tight">
+                  <p className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider leading-tight">
                     {k.label}
                   </p>
                   {k.isException && (
-                    <span className="flex items-center gap-0.5 text-[9px] font-bold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 px-1.5 py-0.5 rounded-full border border-rose-200 dark:border-rose-800/40">
+                    <span className="flex items-center gap-0.5 text-[8px] font-extrabold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 px-1 py-0.5 rounded-md border border-rose-200 dark:border-rose-800/40">
                       <AlertTriangle className="w-2.5 h-2.5" /> Exception
                     </span>
                   )}
                 </div>
-                <p className={`text-xl font-black tracking-tight leading-none ${ac.text}`}>
+                <p className={`text-lg font-black tracking-tight leading-none ${ac.text}`}>
                   {fmtVal(k.fmt, k.value)}
                 </p>
               </div>
@@ -359,14 +536,176 @@ export default function PoStatus({ data }) {
         })}
       </div>
 
-      {/* Main Table */}
+      {/* Visual Analytics / Chart Section */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* PO Status Distribution Card */}
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-5 shadow-sm flex flex-col justify-between">
+          <div>
+            <h3 className="text-base font-bold text-slate-900 dark:text-white tracking-tight">PO Status Distribution</h3>
+            <p className="text-xs text-slate-400 mt-0.5 font-medium">Open vs Closed line items</p>
+          </div>
+
+          <div className="my-5 flex flex-col sm:flex-row items-center justify-between gap-6">
+            {/* Donut Chart */}
+            <div className="relative w-36 h-36 flex items-center justify-center shrink-0">
+              <svg className="w-full h-full transform -rotate-90" viewBox="0 0 36 36">
+                {/* Background Ring */}
+                <path
+                  className="text-slate-100 dark:text-slate-800"
+                  strokeWidth="3.8"
+                  stroke="currentColor"
+                  fill="none"
+                  d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                />
+                {/* Green (Closed) Segment */}
+                <path
+                  className="text-emerald-600 transition-all duration-1000 ease-out"
+                  strokeDasharray={`${dynamicCharts.closedPct}, 100`}
+                  strokeWidth="3.8"
+                  strokeLinecap="round"
+                  stroke="currentColor"
+                  fill="none"
+                  d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                />
+                {/* Amber (Open) Segment */}
+                <path
+                  className="text-amber-500 transition-all duration-1000 ease-out"
+                  strokeDasharray={`${dynamicCharts.openPct}, 100`}
+                  strokeDashoffset={`-${dynamicCharts.closedPct}`}
+                  strokeWidth="3.8"
+                  strokeLinecap="round"
+                  stroke="currentColor"
+                  fill="none"
+                  d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                />
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                <span className="text-xl font-black text-slate-900 dark:text-white tracking-tight leading-none">
+                  {dynamicCharts.totalLines.toLocaleString()}
+                </span>
+                <span className="text-[10px] font-semibold text-slate-400 mt-1 uppercase tracking-wider">
+                  Total Lines
+                </span>
+              </div>
+            </div>
+
+            {/* Right Legend & Progress */}
+            <div className="w-full space-y-4">
+              {/* Open Item */}
+              <div>
+                <div className="flex items-center justify-between text-xs font-semibold mb-1.5">
+                  <span className="flex items-center gap-2 text-slate-700 dark:text-slate-200">
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block" />
+                    Open
+                  </span>
+                  <span className="text-slate-500 dark:text-slate-400 font-bold">
+                    {dynamicCharts.openLines.toLocaleString()} <span className="text-slate-400 dark:text-slate-500 font-normal">({dynamicCharts.openPct}%)</span>
+                  </span>
+                </div>
+                <div className="h-2 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                  <div className="h-full bg-amber-500 rounded-full transition-all duration-500" style={{ width: `${dynamicCharts.openPct}%` }} />
+                </div>
+              </div>
+
+              {/* Closed Item */}
+              <div>
+                <div className="flex items-center justify-between text-xs font-semibold mb-1.5">
+                  <span className="flex items-center gap-2 text-slate-700 dark:text-slate-200">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-600 inline-block" />
+                    Closed
+                  </span>
+                  <span className="text-slate-500 dark:text-slate-400 font-bold">
+                    {dynamicCharts.closedLines.toLocaleString()} <span className="text-slate-400 dark:text-slate-500 font-normal">({dynamicCharts.closedPct}%)</span>
+                  </span>
+                </div>
+                <div className="h-2 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                  <div className="h-full bg-emerald-600 rounded-full transition-all duration-500" style={{ width: `${dynamicCharts.closedPct}%` }} />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* PO Value Exposure Card */}
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/80 dark:border-slate-800 p-5 shadow-sm flex flex-col justify-between">
+          <div>
+            <h3 className="text-base font-bold text-slate-900 dark:text-white tracking-tight">PO Value Exposure</h3>
+            <p className="text-xs text-slate-400 mt-0.5 font-medium">Financial commitment split – Closed vs Open</p>
+          </div>
+
+          <div className="my-5 space-y-6">
+            {/* Closed Value */}
+            <div>
+              <div className="flex items-center justify-between text-xs font-bold mb-2">
+                <span className="text-slate-700 dark:text-slate-200 font-extrabold">Closed Value</span>
+                <span className="text-slate-900 dark:text-white font-black text-sm">₹{dynamicCharts.closedValCr} Cr</span>
+              </div>
+              <div className="h-7 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden relative flex items-center">
+                <div
+                  className="h-full bg-emerald-500 rounded-full flex items-center justify-center transition-all duration-500 shadow-sm"
+                  style={{ width: `${dynamicCharts.closedValPct}%` }}
+                >
+                  {dynamicCharts.closedValPct > 10 && (
+                    <span className="text-xs font-black text-white px-2 tracking-wider">{dynamicCharts.closedValPct}%</span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Open Value */}
+            <div>
+              <div className="flex items-center justify-between text-xs font-bold mb-2">
+                <span className="text-slate-700 dark:text-slate-200 font-extrabold">Open Value</span>
+                <span className="text-slate-900 dark:text-white font-black text-sm">₹{dynamicCharts.openValCr} Cr</span>
+              </div>
+              <div className="h-7 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden relative flex items-center">
+                <div
+                  className="h-full bg-amber-500 rounded-full flex items-center justify-center transition-all duration-500 shadow-sm"
+                  style={{ width: `${dynamicCharts.openValPct}%` }}
+                >
+                  {dynamicCharts.openValPct > 10 && (
+                    <span className="text-xs font-black text-white px-2 tracking-wider">{dynamicCharts.openValPct}%</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <p className="text-[11px] text-slate-400 dark:text-slate-500 text-center font-medium border-t border-slate-100 dark:border-slate-800/80 pt-3">
+            Open PO value represents uncommitted cash and pending material deliveries.
+          </p>
+        </div>
+      </div>
+
+      {/* Main Audit Detail Table */}
       <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
         <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex flex-col gap-3">
           <div className="flex items-center justify-between flex-wrap gap-3">
-            <div>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white">Purchase Order Status — Full Audit Detail</h3>
-              <p className="text-xs text-slate-400 mt-0.5">PO lines matched against GRPO and AP Invoice reports</p>
+            <div className="flex items-center gap-3 flex-wrap">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <span>Purchase Order Status — Full Audit Detail</span>
+                  <span className="text-[10px] font-normal text-blue-600 bg-blue-50 dark:bg-blue-950/40 px-2 py-0.5 rounded-full border border-blue-200 dark:border-blue-800/40">
+                    Click any row to inspect 3 S3 source sheets
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">38 Verified Audit Columns from Purchase Status Report</p>
+              </div>
+
+              {/* PO Missing Button */}
+              <button
+                onClick={() => setViewMode('po_missing')}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white text-xs font-bold shadow-sm transition-all active:scale-95 shrink-0"
+                title="Inspect 3 PO Missing Sub-Sheets (FOC, Job Work, Repair & Maintenance)"
+              >
+                <FileWarning className="w-3.5 h-3.5" />
+                <span>PO Missing Audit</span>
+                <span className="ml-1 text-[10px] bg-amber-950/50 px-2 py-0.5 rounded-full font-extrabold border border-amber-300/40">
+                  {((data?.po_missing?.foc_items?.rows?.length || 0) + (data?.po_missing?.job_work?.rows?.length || 0) + (data?.po_missing?.repair_maintenance?.rows?.length || 0)).toLocaleString()}
+                </span>
+              </button>
             </div>
+
             <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
               <div className="relative">
                 <svg className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none"
@@ -387,7 +726,7 @@ export default function PoStatus({ data }) {
                   <svg className="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
-                  PO Date:
+                  Date Range:
                 </span>
                 <input
                   type="date"
@@ -464,7 +803,7 @@ export default function PoStatus({ data }) {
           </div>
         </div>
 
-        <div className="overflow-x-auto" style={{ maxHeight: '520px', overflowY: 'auto' }}>
+        <div className="overflow-x-auto" style={{ maxHeight: '540px', overflowY: 'auto' }}>
           <table className="w-full text-left border-collapse text-xs">
             <thead className="sticky top-0 z-20 bg-slate-50 dark:bg-slate-800/95 backdrop-blur-sm">
               <tr>
@@ -479,10 +818,10 @@ export default function PoStatus({ data }) {
                     onDragEnd={() => { setDragCol(null); setDragOverCol(null); }}
                     onClick={() => handleSort(c)}
                     title="Click to sort · Drag to reorder"
-                    className={`px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap cursor-grab active:cursor-grabbing select-none border-b border-slate-200 dark:border-slate-700 hover:text-slate-600 dark:hover:text-slate-300 transition-colors ${
+                    className={`px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider whitespace-nowrap cursor-pointer select-none border-b border-slate-200 dark:border-slate-700 hover:text-blue-600 dark:hover:text-blue-400 transition-colors ${
                       colFilters[c]?.trim()
                         ? 'text-blue-600 dark:text-blue-400 bg-blue-50/60 dark:bg-blue-950/20'
-                        : 'text-slate-400 dark:text-slate-500'
+                        : 'text-slate-500 dark:text-slate-400'
                     } ${dragCol === c ? 'opacity-40' : ''} ${dragOverCol === c && dragCol !== c ? 'bg-blue-100/70 dark:bg-blue-900/30 border-l-2 border-l-blue-500' : ''}`}
                   >
                     {c}
@@ -514,41 +853,48 @@ export default function PoStatus({ data }) {
               {paginated.length === 0 ? (
                 <tr>
                   <td colSpan={visibleCols.length} className="px-6 py-12 text-center text-sm text-slate-400">
-                    {rows.length === 0 ? 'Upload files to populate this table.' : 'No records match your search.'}
+                    {rows.length === 0 ? 'Upload files to populate this table.' : 'No records match your search or active filters.'}
                   </td>
                 </tr>
               ) : paginated.map((r, i) => (
-                <tr key={i} className="hover:bg-blue-50/30 dark:hover:bg-blue-950/10 transition-colors duration-100">
+                <tr
+                  key={i}
+                  onClick={() => { setSelectedTraceRow(r); setShowTraceModal(true); }}
+                  className="hover:bg-blue-50/50 dark:hover:bg-blue-950/30 cursor-pointer transition-colors duration-100"
+                  title="Click to inspect 3 S3 source input sheets for this line item"
+                >
                   {visibleCols.map(c => {
                     const val = r[c]
 
-                    if (INT_COLS.includes(c)) return (
-                      <td key={c} className="px-4 py-2 whitespace-nowrap font-mono text-slate-700 dark:text-slate-300 text-right">
-                        {typeof val === 'number' ? val.toLocaleString() : String(val ?? '—')}
-                      </td>
-                    )
-
-                    if (c === 'Line Total (INR)' || c === 'Open PO Value') return (
-                      <td key={c} className="px-4 py-2 whitespace-nowrap font-mono text-slate-700 dark:text-slate-300 text-right font-semibold">
-                        {typeof val === 'number' ? formatCurrency(val) : String(val ?? '—')}
-                      </td>
-                    )
-
-                    if (c === 'Doc Status') return (
+                    if (c === 'QTY Difference' || c === 'Rate Difference' || c === 'Line Total Difference') return (
                       <td key={c} className="px-4 py-2 font-mono text-center">
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                          val === 'Closed'
-                            ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40'
-                            : 'bg-amber-50 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800/40'
+                          val === 'Exception'
+                            ? 'bg-rose-100 dark:bg-rose-950/40 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-800/40'
+                            : val === 'Tolerable'
+                            ? 'bg-amber-50 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800/40'
+                            : 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40'
                         }`}>
                           {val || '—'}
                         </span>
                       </td>
                     )
 
-                    if (['Pending Flag', 'Open>90d & No receipt', 'Recv<50%', 'Holiday flag', 'variance>5%'].includes(c)) return (
-                      <td key={c} className={`px-4 py-2 font-mono text-center ${val === 1 || val === '1' ? 'bg-rose-50/30 dark:bg-rose-950/10 text-rose-600 font-bold' : 'text-slate-700 dark:text-slate-300'}`}>
-                        {val === null || val === undefined || val === '' ? '—' : <TruncatedCell value={val} />}
+                    if (c === 'Document Status' || c === 'Canceled Status') return (
+                      <td key={c} className="px-4 py-2 font-mono text-center">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                          val === 'Yes' || val === 'Closed'
+                            ? 'bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/40'
+                            : 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/40'
+                        }`}>
+                          {val || '—'}
+                        </span>
+                      </td>
+                    )
+
+                    if (NUMERIC_COLS.includes(c)) return (
+                      <td key={c} className="px-4 py-2 whitespace-nowrap font-mono text-slate-700 dark:text-slate-300 text-right">
+                        {typeof val === 'number' ? val.toLocaleString(undefined, { maximumFractionDigits: 2 }) : String(val ?? '—')}
                       </td>
                     )
 
@@ -602,7 +948,7 @@ export default function PoStatus({ data }) {
         onClose={() => setShowExportModal(false)}
         title="Export Purchase Order Status Data"
         columns={ALL_COLS}
-        data={rows}
+        data={filtered}
         filenamePrefix="PO_Status_Audit"
       />
 
@@ -616,6 +962,13 @@ export default function PoStatus({ data }) {
         rows={exceptionModalRows}
         filenamePrefix="PO_Status_Records"
         isException={isModalException}
+      />
+
+      {/* 3-Sheet Line Item Source Trace Modal */}
+      <LineItemSourceTraceModal
+        isOpen={showTraceModal}
+        onClose={() => setShowTraceModal(false)}
+        selectedRow={selectedTraceRow}
       />
     </div>
   )
