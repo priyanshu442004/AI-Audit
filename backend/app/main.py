@@ -672,15 +672,64 @@ def get_result(session_id: str, entity: str = "ITL", process: str = "P2P"):
                 print(f"Failed to read pipeline_result cache: {e}")
 
         sess = session_store.get_session("combined")
-        if sess is None or sess.result is None:
-            active_files = get_active_files(entity=entity, process=process)
-            if active_files:
-                raise HTTPException(404, "Result not yet computed")
-            else:
-                raise HTTPException(404, "No files uploaded")
-        add_audit_log("Dashboard Fetched", "N/A", f"Loaded dashboard values from memory [{entity}/{process}]")
-        return sanitize_for_json(sess.result)
-        
+        if sess is not None and sess.result is not None:
+            add_audit_log("Dashboard Fetched", "N/A", f"Loaded dashboard values from memory [{entity}/{process}]")
+            return sanitize_for_json(sess.result)
+
+        # On-demand fallback: Compute results from active S3 files if cache is missing on server
+        active_files = get_active_files(entity=entity, process=process)
+        if active_files:
+            try:
+                print(f"[On-Demand Pipeline] Computing audit results from S3 files for {entity}-{process}...")
+                dfs = load_combined_dfs(entity=entity, process=process)
+                if dfs:
+                    results = {}
+                    if "purchase_order" in dfs:
+                        results["postatus"] = po_status.run(dfs)
+                    if "gate_entry" in dfs:
+                        results["gateentry"] = gate_entry.run(dfs)
+                    if "grpo" in dfs:
+                        results["grntoap"] = grn_to_ap.run(dfs)
+                    if "purchase_order" in dfs and "grpo" in dfs:
+                        results["qtyvariance"] = qty_variance.run(dfs["purchase_order"], dfs["grpo"])
+                    if "grpo" in dfs:
+                        results["pricevariance"] = price_variance.run(dfs["grpo"])
+                    if "general_ledger" in dfs:
+                        results["glbalances"] = gl_balances.run(dfs["general_ledger"])
+                    if "purchase_register" in dfs:
+                        results["paymentaging"] = payment_aging.run(dfs["purchase_register"])
+                    if "purchase_register" in dfs and "vendor_master" in dfs:
+                        results["msme"] = msme.run(dfs["purchase_register"], dfs["vendor_master"])
+                    if "vendor_master" in dfs:
+                        results["vendormaster"] = vendor_master.run(dfs["vendor_master"])
+                    if "item_master" in dfs:
+                        results["itemmaster"] = item_master.run(dfs)
+                    if "grpo" in dfs and "gate_entry" in dfs and "purchase_register" in dfs:
+                        results["grpoexcept"] = grpo_exceptions.run(dfs["grpo"], dfs["gate_entry"], dfs["purchase_register"])
+                    if "purchase_order" in dfs and "grpo" in dfs and "purchase_register" in dfs:
+                        results["threeway"] = three_way.run(dfs["purchase_order"], dfs["grpo"], dfs["purchase_register"])
+                    results["executive"] = executive.run(results)
+
+                    os.makedirs(CACHE_DIR, exist_ok=True)
+                    out_path = os.path.join(CACHE_DIR, f"pipeline_result_{entity.upper()}_{process.upper()}.pkl")
+                    try:
+                        with open(out_path, "wb") as f:
+                            pickle.dump(results, f)
+                        with open(os.path.join(CACHE_DIR, "pipeline_result.pkl"), "wb") as f:
+                            pickle.dump(results, f)
+                    except Exception as ce:
+                        print(f"Failed to write disk cache: {ce}")
+
+                    sess = session_store.get_or_create_session("combined")
+                    sess.result = results
+                    add_audit_log("Dashboard Computed", "S3 Data", f"Dynamically computed audit values [{entity}/{process}]")
+                    return sanitize_for_json(results)
+            except Exception as exc:
+                print(f"[On-Demand Pipeline] Auto-compute failed: {exc}")
+                raise HTTPException(500, f"Error computing results from active files: {exc}")
+
+        raise HTTPException(404, "No active files uploaded")
+
     sess = session_store.get_session(session_id)
     if sess is None:
         raise HTTPException(404, "Session not found.")
