@@ -45,5 +45,10 @@ Thumbs.db
 *.njsproj
 *.sln
 *.swp
-backend/.cache_dfs/
+backend/.cache_dfs/*
+!backend/.cache_dfs/pipeline_result*.pkl
+!backend/.cache_dfs/aging_*.pkl
+!backend/.cache_dfs/price_variance_*.pkl
+!backend/.cache_dfs/three_way_matching.pkl
+!backend/.cache_dfs/vendor_master_new.pkl
 *.timestamp-*.mjs
