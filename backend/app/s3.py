@@ -24,21 +24,22 @@ def get_cache_path(s3_key: str) -> str:
     return os.path.join(CACHE_DIR, f"{key_hash}.pkl")
 
 def get_s3_client():
-    if not AWS_ACCESS_KEY_ID or not AWS_SECRET_ACCESS_KEY:
-        raise ValueError("AWS credentials are not set in environment variables.")
     # Configure client timeouts to avoid infinite stalls
     config = Config(
         connect_timeout=10,
         read_timeout=30,
         retries={'max_attempts': 3}
     )
-    return boto3.client(
-        's3',
-        aws_access_key_id=AWS_ACCESS_KEY_ID,
-        aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
-        region_name=AWS_REGION,
-        config=config
-    )
+    # boto3 uses the EC2 instance profile automatically in production.  The
+    # explicit keys remain an optional local-development fallback.
+    client_args = {
+        'region_name': AWS_REGION,
+        'config': config,
+    }
+    if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY:
+        client_args['aws_access_key_id'] = AWS_ACCESS_KEY_ID
+        client_args['aws_secret_access_key'] = AWS_SECRET_ACCESS_KEY
+    return boto3.client('s3', **client_args)
 
 def upload_file_to_s3(file_data: bytes, filename: str, role: str) -> dict:
     s3_client = get_s3_client()
