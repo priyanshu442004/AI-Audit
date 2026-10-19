@@ -5,6 +5,8 @@ export const SECTION_LABELS = {
   gateentry: 'Gate Entry',
   pricevariancesame: 'Price Variance (Same Vendor)',
   pricevariancecross: 'Price Variance (Cross Vendor)',
+  vendorpricecomparison: 'Vendor Price Comparison',
+  stockverifiedreport: 'Stock Verified Report',
   grntoap: 'GRN to AP Invoice',
   glbalances: 'GL Balances',
   paymentaging: 'Payment Aging',
@@ -29,6 +31,11 @@ export function getSectionRows(sectionKey, storeState) {
   if (sectionKey === 'threewaymatching') return storeState.threeWayMatching?.rows || []
   if (sectionKey === 'pricevariancesame') return storeState.priceVarianceSame?.rows || []
   if (sectionKey === 'pricevariancecross') return storeState.priceVarianceCross?.rows || []
+  if (sectionKey === 'vendorpricecomparison') {
+    const vpc = storeState.vendorPriceComparison
+    return [...(vpc?.same_vendor?.rows || []), ...(vpc?.different_vendor?.rows || [])]
+  }
+  if (sectionKey === 'stockverifiedreport') return storeState.stockVerifiedReport?.rows || []
 
   const res = storeState.results?.[sectionKey]
   if (res?.tables && res.tables.length > 0) {
@@ -44,7 +51,7 @@ export function getCrossReferences(value, storeState) {
   const results = {}
   const sectionsToScan = [
     'postatus', 'gateentry', 'grntoap', 'pricevariancesame', 
-    'pricevariancecross', 'glbalances', 'paymentaging', 'paymentagingdomestic', 
+    'pricevariancecross', 'vendorpricecomparison', 'stockverifiedreport', 'glbalances', 'paymentaging', 'paymentagingdomestic', 
     'paymentagingforeign', 'paymentagingrelated', 'paymentagingmsme', 
     'vendormasternew', 'threewaymatching', 'msme', 'vendormaster', 'itemmaster'
   ]

@@ -1,0 +1,184 @@
+--- PAGE 1 ---
+ISPL P2P AUDIT — DATA QUALITY & FILE
+HEALTH REVIEW
+Target Entity: ISPL | Process: Procure-to-Pay (P2P) Audit | Files Reviewed: 8 Data Files
+This report summarizes the data health check conducted on the 8 Excel files provided for ISPL's P2P Audit. It
+highlights what each file is used for, what specific issues were found in simple language, what impact these issues
+cause in the audit, and the exact action required from your IT / ERP team.
+1. Executive Summary Table
+File Name
+Audit Role
+Status
+Main Issue Identified
+Action Needed
+Item Master ISPL.xls
+Item Master
+■ High Issue
+Over 70% of active bought items
+are missing from this master list.
+Provide full updated
+Item Master export.
+GRPO Report Item
+Wise.xls
+Goods Receipt
+(GRN)
+■ High Issue
+Missing 'Purchase Order No' (PO
+No) column.
+Add PO No column to
+GRPO export query.
+Purchase Register
+ISPL-C.xls
+Purchase
+Invoices
+■ High Issue
+Missing 'Purchase Order No' (PO
+No) column.
+Add PO No column to
+Purchase Register
+export.
+BP MASTER-S.xls
+Vendor Master
+■ Medium
+Issue
+Missing MSME classification;
+Vendor V000128 missing.
+Add MSME category &
+missing vendor to BP
+Master.
+Gate Entry Report.xls
+Security Gate
+Log
+■ Medium
+Issue
+Missing Bill Date; 222 PO
+numbers not found in PO Report.
+Add Bill Date & verify
+222 PO numbers.
+General Ledger.xls
+GL Journal
+■ Medium
+Issue
+Missing Vendor Code column
+(uses GL Offset Account).
+Include Vendor Code in
+GL export.
+Purchase Order
+Report.xls
+PO Details
+■ Good
+Clean formatting and complete
+data (1,649 POs).
+None (Ready for use).
+AP Credit Note-C.xls
+Credit Memos
+■ Good
+Clean formatting and complete
+line data (613 rows).
+None (Ready for use).
+2. Detailed File Analysis & Audit Impact
+1. Item Master ISPL.xls   |  Role: Material & Item Master
+ ■ HIGH IMPACT
+What this file is for: List of all raw materials, components, and items purchased or manufactured.
+The Problem Found: Severe Missing Data: Over 70% of active items present in purchase receipts (GRPO) are
+missing from this master list. Out of 3,773 item codes in GRPO, 2,701 items do not exist in this file.
+What it Causes in Audit: The audit system cannot verify item descriptions, standard unit prices, or categories for
+missing items. Quantity and rate variance reports will flag these items as 'Unregistered Master Items'.
+Action Required: Request your IT/SAP team to download a complete, updated export of the Item Master containing
+all currently active item codes.
+Page 1 of 3
+CONFIDENTIAL — For Internal & Management Review Only
+
+
+--- PAGE 2 ---
+2. GRPO Report Item Wise.xls   |  Role: Goods Receipt (GRN)
+ ■ HIGH IMPACT
+What this file is for: Record of all physical goods received and accepted at the factory warehouse.
+The Problem Found: Missing Column: The 'Purchase Order Number' (PO No) column is missing from this file
+export.
+What it Causes in Audit: The system cannot directly link received goods back to their original Purchase Order
+numbers. 3-Way Matching (PO vs Goods Receipt vs Invoice) cannot automatically verify if correct PO quantities were
+received.
+Action Required: Ask your IT team to include the 'PO No' (or Base PO Ref) column in the GRPO report export
+query.
+3. Purchase Register Item Wise ISPL-C.xls   |  Role: Purchase Invoices
+ ■ HIGH IMPACT
+What this file is for: Complete register of vendor tax invoices entered into accounting.
+The Problem Found: Missing Column: The 'Purchase Order Number' (PO No) column is missing from this register.
+What it Causes in Audit: Invoice line items cannot be automatically cross-matched to originating PO numbers,
+making it difficult to detect over-billing against PO price limits.
+Action Required: Ask your IT team to add the 'PO No' column into the Purchase Register export query.
+4. BP MASTER-S.xls   |  Role: Vendor Master
+ ■ MEDIUM IMPACT
+What this file is for: Directory of all approved suppliers, vendors, and business partners.
+The Problem Found: Missing MSME Field & Vendor Code: No MSME / Udyam registration classification column
+(Micro, Small, Medium, Non-MSME) is provided. Additionally, active vendor V000128 is missing from this file.
+What it Causes in Audit: The system cannot automatically classify vendors under the legal 45-day MSME payment
+rule. Transactions for vendor V000128 will show as 'Unregistered Vendor'.
+Action Required: Provide an updated Vendor Master file that includes the MSME Category column and includes
+vendor V000128.
+5. Gate Entry Report.xls   |  Role: Security Gate Entry Log
+ ■ MEDIUM IMPACT
+What this file is for: Record of physical trucks and material inward entries logged at factory security gates.
+The Problem Found: Missing Bill Date & Unmatched POs: Lacks Vendor Bill Date column. Furthermore, 222 PO
+numbers referenced at the gate (e.g. PO #13267, #13054) do not exist in the Purchase Order Report file.
+What it Causes in Audit: Cannot calculate exact delivery delay between Vendor Invoice Date and Gate Entry Date.
+Gate entries for those 222 POs cannot be verified against official POs.
+Action Required: Ask IT to include 'Vendor Bill Date' in the gate entry export, and check if those 222 POs belong to
+another branch or series.
+6. General Ledger.xls   |  Role: Accounting Journal Ledger
+ ■ MEDIUM IMPACT
+What this file is for: Detailed financial transaction journal showing all account entries and payments.
+ISPL P2P Audit — File Review & Action Plan Report
+Page 2 of 3
+CONFIDENTIAL — For Internal & Management Review Only
+
+
+--- PAGE 3 ---
+The Problem Found: Missing Vendor Code Column: The file exports GL Offset Account numbers instead of
+specific Vendor Codes (V000xxx). Headers use 'Debit (LC)' and 'Credit (LC)'.
+What it Causes in Audit: Payment aging and vendor ledger reconciliation cannot map accounting entries directly to
+individual vendor codes.
+Action Required: Ensure GL export query includes the Vendor Code (BP Code) column alongside general ledger
+account numbers.
+7. Purchase Order Report.xls   |  Role: PO Header & Line Items
+ ■ GOOD CONDITION
+What this file is for: Official Purchase Orders issued to vendors containing ordered quantities, rates, and terms.
+The Problem Found: No Issues Found: File is cleanly structured with 6,869 rows and 1,649 unique PO numbers.
+All key columns are 100% complete.
+What it Causes in Audit: None. File is ready for full audit processing.
+Action Required: No action required for this file.
+8. AP Credit Note-C.xls   |  Role: Credit Notes & Adjustments
+ ■ GOOD CONDITION
+What this file is for: Record of vendor credit notes, price deductions, and returned goods.
+The Problem Found: No Issues Found: File is cleanly structured with 613 rows. All required line fields are present.
+What it Causes in Audit: None. File is ready for full audit processing.
+Action Required: No action required for this file.
+3. Quick Action Checklist for IT / SAP Team
+Please share the following checklist with your IT / ERP team so they can re-export the files with the missing columns:
+Item #
+Target File
+Exact Action Required from IT Team
+1
+Item Master ISPL.xls
+Export a complete Item Master containing all active item codes (currently
+>70% of active items are missing).
+2
+GRPO Report Item Wise.xls
+Add the PO No (or Base PO Ref) column into the GRPO report export.
+3
+Purchase Register ISPL-C.xls
+Add the PO No column into the Purchase Register export.
+4
+BP MASTER-S.xls
+Add the MSME Category column (Micro / Small / Medium / Non-MSME) and
+include vendor V000128.
+5
+Gate Entry Report.xls
+Add Vendor Bill Date column, and verify the 222 missing PO numbers.
+6
+General Ledger.xls
+Include the Vendor Code (BP Code) column alongside account numbers.
+ISPL P2P Audit — File Review & Action Plan Report
+Page 3 of 3
+CONFIDENTIAL — For Internal & Management Review Only

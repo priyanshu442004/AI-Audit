@@ -39,9 +39,11 @@ cached_vendor_master_new: dict | None = None
 cached_three_way_matching: dict | None = None
 cached_price_variance_same: dict | None = None
 cached_price_variance_cross: dict | None = None
+cached_vendor_price_comparison: dict | None = None
+cached_stock_verified_report: dict | None = None
 
 def clear_calculation_caches(entity: str = "ITL", process: str = "P2P"):
-    global cached_dfs_dict, cached_aging_domestic, cached_aging_foreign, cached_aging_related, cached_aging_msme, cached_vendor_master_new, cached_three_way_matching, cached_price_variance_same, cached_price_variance_cross
+    global cached_dfs_dict, cached_aging_domestic, cached_aging_foreign, cached_aging_related, cached_aging_msme, cached_vendor_master_new, cached_three_way_matching, cached_price_variance_same, cached_price_variance_cross, cached_vendor_price_comparison, cached_stock_verified_report
     key = (entity.upper(), process.upper())
     if key in cached_dfs_dict:
         del cached_dfs_dict[key]
@@ -54,6 +56,8 @@ def clear_calculation_caches(entity: str = "ITL", process: str = "P2P"):
     cached_three_way_matching = None
     cached_price_variance_same = None
     cached_price_variance_cross = None
+    cached_vendor_price_comparison = None
+    cached_stock_verified_report = None
     
     # Invalidate session result
     combined_sess = session_store.get_session("combined")
@@ -71,7 +75,9 @@ def clear_calculation_caches(entity: str = "ITL", process: str = "P2P"):
         "vendor_master_new.pkl",
         "three_way_matching.pkl",
         "price_variance_same.pkl",
-        "price_variance_cross.pkl"
+        "price_variance_cross.pkl",
+        "vendor_price_comparison.pkl",
+        "stock_verified_report.pkl"
     ]
     for fn in calc_files:
         p = os.path.join(CACHE_DIR, fn)
@@ -176,7 +182,7 @@ def load_combined_dfs(entity: str = "ITL", process: str = "P2P", on_progress=Non
         # 2. Download from S3 and parse
         try:
             data = download_file_from_s3(s3_key)
-            df = load_file(io.BytesIO(data), fi['filename'])
+            df = load_file(io.BytesIO(data), fi["filename"], role=role)
             
             # Save to cache for next time
             try:
@@ -788,6 +794,36 @@ async def get_price_variance_cross():
         return res
     except Exception as e:
         raise HTTPException(500, f"Error computing cross-vendor price variance: {str(e)}")
+
+@app.get("/api/analysis/vendor-price-comparison")
+async def get_vendor_price_comparison():
+    global cached_vendor_price_comparison
+    if cached_vendor_price_comparison is not None:
+        return cached_vendor_price_comparison
+    try:
+        loop = asyncio.get_running_loop()
+        dfs = await loop.run_in_executor(None, get_cached_dfs_or_load)
+        from app.analysis.vendor_price_comparison import run_vendor_price_comparison
+        res = await loop.run_in_executor(None, lambda: get_cached_or_compute("vendor_price_comparison", lambda: run_vendor_price_comparison(dfs)))
+        cached_vendor_price_comparison = res
+        return res
+    except Exception as e:
+        raise HTTPException(500, f"Error computing vendor price comparison: {str(e)}")
+
+@app.get("/api/analysis/stock-verified-report")
+async def get_stock_verified_report():
+    global cached_stock_verified_report
+    if cached_stock_verified_report is not None:
+        return cached_stock_verified_report
+    try:
+        loop = asyncio.get_running_loop()
+        dfs = await loop.run_in_executor(None, get_cached_dfs_or_load)
+        from app.analysis.stock_verified_report import run_stock_verified_report
+        res = await loop.run_in_executor(None, lambda: get_cached_or_compute("stock_verified_report", lambda: run_stock_verified_report(dfs)))
+        cached_stock_verified_report = res
+        return res
+    except Exception as e:
+        raise HTTPException(500, f"Error computing stock verified report: {str(e)}")
 
 @app.get("/api/analysis/payment-aging-domestic")
 async def get_payment_aging_domestic():

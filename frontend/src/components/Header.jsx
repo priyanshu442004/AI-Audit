@@ -11,6 +11,8 @@ const SECTION_TITLES = {
   pricevariance:'Price Variance & Savings',
   pricevariancesame: 'Same-Vendor Price Variance',
   pricevariancecross: 'Cross-Vendor Price Variance',
+  vendorpricecomparison: 'Vendor Price Comparison Analysis',
+  stockverifiedreport: 'Stock Verified Report',
   vendormaster: 'Vendor Master',
   vendormasternew: 'Vendor Master Analysis',
   grpoexcept:   'GRPO Exceptions',
@@ -34,6 +36,8 @@ export default function Header({ onMenuClick }) {
     selectedProcess,
     setPriceVarianceSame,
     setPriceVarianceCross,
+    setVendorPriceComparison,
+    setStockVerifiedReport,
     setPaymentAgingDomestic,
     setPaymentAgingForeign,
     setPaymentAgingRelated,
@@ -52,6 +56,10 @@ export default function Header({ onMenuClick }) {
         setPriceVarianceSame(null)
       } else if (activeSection === 'pricevariancecross') {
         setPriceVarianceCross(null)
+      } else if (activeSection === 'vendorpricecomparison') {
+        setVendorPriceComparison(null)
+      } else if (activeSection === 'stockverifiedreport') {
+        setStockVerifiedReport(null)
       } else if (activeSection === 'paymentagingdomestic') {
         setPaymentAgingDomestic(null)
       } else if (activeSection === 'paymentagingforeign') {

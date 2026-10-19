@@ -2,6 +2,8 @@ import { useStore } from '../store'
 import {
   fetchPriceVarianceSame,
   fetchPriceVarianceCross,
+  fetchVendorPriceComparison,
+  fetchStockVerifiedReport,
   fetchPaymentAgingDomestic,
   fetchPaymentAgingForeign,
   fetchPaymentAgingRelated,
@@ -13,6 +15,8 @@ import {
 export const PREFETCH_TASKS = [
   { key: 'priceVarianceSame', fetchFn: fetchPriceVarianceSame, setter: 'setPriceVarianceSame' },
   { key: 'priceVarianceCross', fetchFn: fetchPriceVarianceCross, setter: 'setPriceVarianceCross' },
+  { key: 'vendorPriceComparison', fetchFn: fetchVendorPriceComparison, setter: 'setVendorPriceComparison' },
+  { key: 'stockVerifiedReport', fetchFn: fetchStockVerifiedReport, setter: 'setStockVerifiedReport' },
   { key: 'paymentAgingDomestic', fetchFn: fetchPaymentAgingDomestic, setter: 'setPaymentAgingDomestic' },
   { key: 'paymentAgingForeign', fetchFn: fetchPaymentAgingForeign, setter: 'setPaymentAgingForeign' },
   { key: 'paymentAgingRelated', fetchFn: fetchPaymentAgingRelated, setter: 'setPaymentAgingRelated' },

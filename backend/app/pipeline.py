@@ -42,7 +42,7 @@ async def run_pipeline(
         dfs = {}
         for role, uf in files.items():
             try:
-                df = load_file(io.BytesIO(uf.data), uf.filename)
+                df = load_file(io.BytesIO(uf.data), uf.filename, role=role)
                 dfs[role] = df
             except Exception as exc:
                 raise ValueError(f"Failed to read {uf.filename} ({role}): {exc}") from exc

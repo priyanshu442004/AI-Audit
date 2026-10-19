@@ -182,6 +182,26 @@ export async function fetchPriceVarianceCross() {
 }
 
 /**
+ * Fetch vendor price comparison (same vendor + different vendor modules).
+ * @returns {Promise<{same_vendor: {columns: Array, rows: Array}, different_vendor: {columns: Array, rows: Array}}>}
+ */
+export async function fetchVendorPriceComparison() {
+  const res = await fetch(`${BASE}/analysis/vendor-price-comparison`, {})
+  if (!res.ok) throw new Error('Failed to load vendor price comparison analysis')
+  return res.json()
+}
+
+/**
+ * Fetch the stock verified report (Inventory Report reconciled with the Purchase Register).
+ * @returns {Promise<{columns: Array, rows: Array, kpis: object, pr_not_in_inventory: Array, warnings: Array}>}
+ */
+export async function fetchStockVerifiedReport() {
+  const res = await fetch(`${BASE}/analysis/stock-verified-report`, {})
+  if (!res.ok) throw new Error('Failed to load stock verified report')
+  return res.json()
+}
+
+/**
  * Fetch payment aging (domestic).
  * @returns {Promise<{rows: Array, kpis: object}>}
  */

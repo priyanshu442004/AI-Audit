@@ -4,23 +4,28 @@ import io
 import pandas as pd
 from pathlib import Path
 
+# Roles whose text cells must be kept as written: pandas otherwise reads values such as
+# "NA", "N/A" or "NULL" as blank, which would drop an item literally coded or named "NA".
+KEEP_NA_TEXT_ROLES = {"inventory_report"}
 
-def load_file(path_or_bytes, filename: str) -> pd.DataFrame:
+
+def load_file(path_or_bytes, filename: str, role: str | None = None) -> pd.DataFrame:
     """
     Read an .xlsx, .xls, or .csv file and return a DataFrame.
     Supports binary Excel, openpyxl, xlrd, HTML tables, and text files (CSV/TSV)
     in UTF-16, UTF-8, etc.
     """
+    na_opts = {"keep_default_na": False, "na_values": [""]} if role in KEEP_NA_TEXT_ROLES else {}
     ext = Path(filename).suffix.lower()
     if ext in (".xlsx", ".xls"):
-        return _load_excel(path_or_bytes, filename)
+        return _load_excel(path_or_bytes, filename, na_opts)
     elif ext == ".csv":
-        return _load_csv(path_or_bytes)
+        return _load_csv(path_or_bytes, na_opts)
     else:
         raise ValueError(f"Unsupported file type '{ext}' for file '{filename}'.")
 
 
-def _load_excel(path_or_bytes, filename: str) -> pd.DataFrame:
+def _load_excel(path_or_bytes, filename: str, na_opts: dict) -> pd.DataFrame:
     ext = Path(filename).suffix.lower()
     engines_to_try = ["openpyxl", None, "xlrd"] if ext == ".xlsx" else [None, "xlrd", "openpyxl"]
 
@@ -30,7 +35,7 @@ def _load_excel(path_or_bytes, filename: str) -> pd.DataFrame:
             try:
                 if hasattr(path_or_bytes, "seek"):
                     path_or_bytes.seek(0)
-                df = pd.read_excel(path_or_bytes, engine=engine, header=hdr, dtype=str)
+                df = pd.read_excel(path_or_bytes, engine=engine, header=hdr, dtype=str, **na_opts)
                 if df is not None and not df.empty and len(df.columns) > 1:
                     return df.dropna(how="all").reset_index(drop=True)
             except Exception:
@@ -53,14 +58,14 @@ def _load_excel(path_or_bytes, filename: str) -> pd.DataFrame:
     try:
         if hasattr(path_or_bytes, "seek"):
             path_or_bytes.seek(0)
-        return _load_csv(path_or_bytes)
+        return _load_csv(path_or_bytes, na_opts)
     except Exception:
         pass
 
     raise ValueError(f"Could not parse Excel file '{filename}'. Ensure it is a valid .xlsx, .xls, or CSV file.")
 
 
-def _load_csv(path_or_bytes) -> pd.DataFrame:
+def _load_csv(path_or_bytes, na_opts: dict) -> pd.DataFrame:
     if isinstance(path_or_bytes, (str, Path)):
         with open(path_or_bytes, "rb") as f:
             data = f.read()
@@ -84,7 +89,7 @@ def _load_csv(path_or_bytes) -> pd.DataFrame:
                 for hdr in (0, 1):
                     try:
                         df = pd.read_csv(
-                            io.StringIO(decoded_str), sep=sep, header=hdr, dtype=str
+                            io.StringIO(decoded_str), sep=sep, header=hdr, dtype=str, **na_opts
                         )
                         if df is not None and not df.empty and len(df.columns) > 1:
                             return df.dropna(how="all").reset_index(drop=True)
@@ -93,4 +98,4 @@ def _load_csv(path_or_bytes) -> pd.DataFrame:
 
         raise ValueError("Could not decode CSV/TSV with any known encoding or delimiter.")
 
-    return pd.read_csv(data, dtype=str).dropna(how="all").reset_index(drop=True)
+    return pd.read_csv(data, dtype=str, **na_opts).dropna(how="all").reset_index(drop=True)

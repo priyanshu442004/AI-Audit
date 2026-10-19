@@ -13,8 +13,8 @@ load_dotenv(os.path.join(os.path.dirname(__file__), '../../.env'))
 
 AWS_ACCESS_KEY_ID = os.environ.get("AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY = os.environ.get("AWS_SECRET_ACCESS_KEY")
-AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
-AWS_BUCKET_NAME = os.environ.get("AWS_BUCKET_NAME", "james-fixer")
+AWS_REGION = os.environ.get("AWS_REGION", "ap-south-1")
+AWS_BUCKET_NAME = os.environ.get("AWS_BUCKET_NAME", "cla-online-books")
 
 CACHE_DIR = os.path.join(os.path.dirname(__file__), "../.cache_dfs")
 os.makedirs(CACHE_DIR, exist_ok=True)
@@ -46,7 +46,7 @@ def upload_file_to_s3(file_data: bytes, filename: str, role: str) -> dict:
     
     # 1. Parse the file into a DataFrame
     try:
-        df = load_file(io.BytesIO(file_data), filename)
+        df = load_file(io.BytesIO(file_data), filename, role=role)
         row_count = len(df)
     except Exception as e:
         raise ValueError(f"Unable to parse file '{filename}': {e}")
