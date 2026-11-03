@@ -97,7 +97,7 @@ def _parse_single_date(val):
         dt = pd.to_datetime(val, format="%d-%m-%Y", errors="coerce")
         if pd.notna(dt):
             return dt
-        return pd.to_datetime(val, errors="coerce", dayfirst=True)
+        return _parse_date_col(pd.Series([val])).iloc[0]
     except Exception:
         return pd.NaT
 
@@ -115,7 +115,9 @@ def _parse_date_col(series: pd.Series) -> pd.Series:
     # Final fallback
     mask2 = result.isna()
     if mask2.any():
-        result[mask2] = pd.to_datetime(series[mask2], errors="coerce", dayfirst=True)
+        from app.analysis.holiday_utils import parse_p2p_dates
+
+        result[mask2] = parse_p2p_dates(series[mask2])
     return result
 
 

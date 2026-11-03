@@ -29,6 +29,8 @@ from app.s3 import upload_file_to_s3, download_file_from_s3
 
 # Initialize the database on startup
 init_db()
+from app.kpi_service.persistence import init_management_report_tables
+init_management_report_tables()
 
 cached_dfs_dict: dict[tuple[str, str], dict[str, pd.DataFrame]] = {}
 cached_aging_domestic: dict | None = None
@@ -236,7 +238,11 @@ def load_combined_dfs(entity: str = "ITL", process: str = "P2P", on_progress=Non
                 dfs[role] = role_dfs[0]
             else:
                 dfs[role] = pd.concat(role_dfs, ignore_index=True)
-                
+
+    from app.analysis.holiday_utils import load_p2p_holiday_frame
+    holidays_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "holidays"))
+    dfs["holiday"] = load_p2p_holiday_frame(holidays_dir)
+
     return dfs
 
 
@@ -249,6 +255,21 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+from app.kpi_service.api import router as management_report_router
+from app.kpi_service.scheduler import start_scheduler, stop_scheduler
+
+app.include_router(management_report_router)
+
+
+@app.on_event("startup")
+def start_management_report_scheduler():
+    start_scheduler()
+
+
+@app.on_event("shutdown")
+def stop_management_report_scheduler():
+    stop_scheduler()
 
 
 @app.get("/api/file-slots")
@@ -1092,4 +1113,3 @@ async def update_profile(
         return profile
     except Exception as e:
         raise HTTPException(500, f"Error updating profile: {str(e)}")
-

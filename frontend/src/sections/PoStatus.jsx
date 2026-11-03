@@ -224,8 +224,18 @@ export default function PoStatus({ data }) {
     return out
   }, [rows, vendorTypeFilter, holidayFilter, excess5PctFilter, searchTerm, colFilters, sortCol, sortDir, startDate, endDate])
 
-  // Reactive Dynamic KPI Recalculation based on filtered rows
+  const hasDashboardFilters = vendorTypeFilter !== 'all'
+    || holidayFilter !== 'all'
+    || excess5PctFilter !== 'all'
+    || Boolean(searchTerm.trim())
+    || Object.values(colFilters).some(value => value.trim())
+    || Boolean(startDate)
+    || Boolean(endDate)
+
+  // Use the shared dashboard payload until the user narrows the displayed rows.
   const dynamicKpis = useMemo(() => {
+    if (!hasDashboardFilters && data?.dashboard_kpis) return data.dashboard_kpis
+
     const uniquePos = new Set(filtered.map(r => r['PO No']).filter(p => p && p !== '0' && p !== '—')).size
     const totalPoVal = filtered.reduce((acc, r) => acc + (parseFloat(String(r['Line Total']).replace(/,/g, '')) || 0), 0)
     const canceledCount = filtered.filter(r => r['Canceled Status'] === 'Yes').length
@@ -254,7 +264,7 @@ export default function PoStatus({ data }) {
       count_of_excess_price: cntExcessPrice,
       sum_of_excess_price: `${(sumExcessPrice / 1e5).toFixed(2)} Lakh`,
     }
-  }, [filtered])
+  }, [data, filtered, hasDashboardFilters])
 
   // Dynamic Chart Calculations based on filtered rows
   const dynamicCharts = useMemo(() => {

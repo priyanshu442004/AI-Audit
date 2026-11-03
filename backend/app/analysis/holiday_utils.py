@@ -3,6 +3,7 @@ import os
 import re
 import pandas as pd
 from datetime import datetime, timedelta
+from pathlib import Path
 
 STATIC_HOLIDAYS_MAP = {
     # 2025
@@ -16,6 +17,91 @@ STATIC_HOLIDAYS_MAP = {
     "2026-10-22": "Diwali", "2026-11-09": "Dipavali", "2026-11-10": "Govardhan Puja", "2026-11-11": "Bhai Dooj", "2026-12-25": "Christmas"
 }
 
+
+def parse_p2p_dates(values: pd.Series) -> pd.Series:
+    parsed = pd.to_datetime(values, errors="coerce", dayfirst=True, format="mixed")
+    iso_dates = values.astype("string").str.match(r"^\d{4}-\d{2}-\d{2}(?:$|[ T])", na=False)
+    if iso_dates.any():
+        parsed.loc[iso_dates] = pd.to_datetime(
+            values.loc[iso_dates],
+            errors="coerce",
+            dayfirst=False,
+        )
+    return parsed
+
+
+def load_p2p_holiday_frame(holidays_dir: str | os.PathLike) -> pd.DataFrame:
+    """Load the user-managed holiday calendar, falling back to the existing static list."""
+    static = pd.DataFrame(
+        [{"Holiday": name, "Date": day} for day, name in STATIC_HOLIDAYS_MAP.items()]
+    )
+    static.attrs["source"] = "static"
+    static.attrs["covered_years"] = {int(day[:4]) for day in STATIC_HOLIDAYS_MAP}
+
+    directory = Path(holidays_dir)
+    if not directory.is_dir():
+        return static
+    files = sorted(
+        (
+            path for path in directory.iterdir()
+            if path.is_file()
+            and path.suffix.lower() in {".csv", ".xls", ".xlsx"}
+            and not path.stem.lower().startswith("dummy")
+        ),
+        key=lambda path: path.stat().st_mtime,
+    )
+    if not files:
+        return static
+
+    from app.loaders import load_file
+
+    custom = load_file(files[-1], files[-1].name, role="holiday")
+    normalized = {
+        re.sub(r"[^a-z0-9]", "", str(column).lower()): column
+        for column in custom.columns
+    }
+    date_column = next(
+        (
+            normalized[name]
+            for name in ("date", "holidaydate", "holidate")
+            if name in normalized
+        ),
+        None,
+    )
+    if date_column is None:
+        date_candidates = [
+            (column, parse_p2p_dates(custom[column]).notna().mean())
+            for column in custom.columns
+        ]
+        date_column = max(date_candidates, key=lambda item: item[1])[0] if date_candidates else None
+        if date_column is None or parse_p2p_dates(custom[date_column]).notna().sum() == 0:
+            raise ValueError(f"Holiday calendar {files[-1].name!r} has no parseable date column.")
+
+    name_column = next(
+        (
+            normalized[name]
+            for name in ("holiday", "holidayname", "festival", "name")
+            if name in normalized and normalized[name] != date_column
+        ),
+        None,
+    )
+    dates = parse_p2p_dates(custom[date_column])
+    valid = dates.notna()
+    if not valid.any():
+        raise ValueError(f"Holiday calendar {files[-1].name!r} contains no valid holiday dates.")
+    custom_frame = pd.DataFrame({
+        "Holiday": custom[name_column].astype(str) if name_column else "Public Holiday",
+        "Date": dates.dt.strftime("%Y-%m-%d"),
+    }).loc[valid]
+    combined = pd.concat([static, custom_frame], ignore_index=True)
+    combined = combined.drop_duplicates(subset="Date", keep="last").reset_index(drop=True)
+    combined.attrs["source"] = "uploaded"
+    combined.attrs["covered_years"] = set(
+        pd.to_datetime(combined["Date"], errors="coerce").dropna().dt.year
+    )
+    return combined
+
+
 def load_holiday_map(dfs) -> dict[str, str]:
     """Extract holiday date -> name mapping from dfs or fallback static list."""
     holiday_map = dict(STATIC_HOLIDAYS_MAP)
@@ -25,7 +111,7 @@ def load_holiday_map(dfs) -> dict[str, str]:
         for _, row in holidays_df.iterrows():
             for cell in row:
                 if pd.notna(cell):
-                    dt = pd.to_datetime(cell, errors='coerce', dayfirst=True)
+                    dt = parse_p2p_dates(pd.Series([cell])).iloc[0]
                     if pd.notna(dt) and 2000 <= dt.year <= 2100:
                         holiday_map[dt.strftime("%Y-%m-%d")] = "Holiday"
     return holiday_map
@@ -39,8 +125,8 @@ def calc_business_days(start_val, end_val, holiday_set: set[str] = None) -> int 
     if start_val is None or end_val is None:
         return None
     try:
-        d_start = pd.to_datetime(start_val, errors="coerce", dayfirst=True)
-        d_end   = pd.to_datetime(end_val,   errors="coerce", dayfirst=True)
+        d_start = parse_p2p_dates(pd.Series([start_val])).iloc[0]
+        d_end   = parse_p2p_dates(pd.Series([end_val])).iloc[0]
         if pd.isna(d_start) or pd.isna(d_end):
             return None
         
