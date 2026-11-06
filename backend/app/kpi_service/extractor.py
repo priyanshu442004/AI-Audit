@@ -38,6 +38,22 @@ _KPI_SOURCES = {
 }
 
 
+def has_dashboard_kpis(dashboard_results: dict[str, Any]) -> bool:
+    """Return whether a cached dashboard result includes the complete PO KPI contract."""
+    postatus = dashboard_results.get("postatus")
+    if not isinstance(postatus, dict):
+        return False
+    dashboard_kpis = postatus.get("dashboard_kpis")
+    if not isinstance(dashboard_kpis, dict):
+        return False
+    required_keys = {
+        source_key
+        for source_result, source_container, source_key in _KPI_SOURCES.values()
+        if source_result == "postatus" and source_container == "dashboard_kpis"
+    }
+    return required_keys.issubset(dashboard_kpis)
+
+
 def _clean_value(value: Any) -> Any:
     if value is None:
         return None

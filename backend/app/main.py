@@ -31,6 +31,7 @@ from app.s3 import upload_file_to_s3, download_file_from_s3
 init_db()
 from app.kpi_service.persistence import init_management_report_tables
 init_management_report_tables()
+from app.kpi_service.extractor import has_dashboard_kpis
 
 cached_dfs_dict: dict[tuple[str, str], dict[str, pd.DataFrame]] = {}
 cached_aging_domestic: dict | None = None
@@ -542,25 +543,28 @@ async def analyze(session_id: str, entity: str = "ITL", process: str = "P2P"):
             
         cache_fn = f"pipeline_result_{entity.upper()}_{process.upper()}.pkl"
         cache_file = os.path.join(CACHE_DIR, cache_fn)
-        if not os.path.exists(cache_file):
-            cache_file = os.path.join(CACHE_DIR, "pipeline_result.pkl")
-        if os.path.exists(cache_file):
+        cached_file = cache_file
+        if not os.path.exists(cached_file):
+            cached_file = os.path.join(CACHE_DIR, "pipeline_result.pkl")
+        if os.path.exists(cached_file):
             try:
-                with open(cache_file, "rb") as f:
+                with open(cached_file, "rb") as f:
                     result = pickle.load(f)
-                sess = session_store.get_or_create_session("combined")
-                sess.result = result
-                
-                async def cached_event_generator():
-                    sanitized_res = sanitize_for_json(result)
-                    yield {"data": json.dumps({"stage": "loading", "pct": 100, "message": "Loading from cache..."})}
-                    await asyncio.sleep(0.05)
-                    yield {"data": json.dumps({"stage": "result", "pct": 100, "result": sanitized_res}, default=str)}
-                
-                add_audit_log("Dashboard Fetched", "N/A", f"Loaded dashboard values from disk cache [{entity}/{process}]")
-                return EventSourceResponse(cached_event_generator())
+                if has_dashboard_kpis(result):
+                    sess = session_store.get_or_create_session("combined")
+                    sess.result = result
+
+                    async def cached_event_generator():
+                        sanitized_res = sanitize_for_json(result)
+                        yield {"data": json.dumps({"stage": "loading", "pct": 100, "message": "Loading from cache..."})}
+                        await asyncio.sleep(0.05)
+                        yield {"data": json.dumps({"stage": "result", "pct": 100, "result": sanitized_res}, default=str)}
+
+                    add_audit_log("Dashboard Fetched", "N/A", f"Loaded dashboard values from disk cache [{entity}/{process}]")
+                    return EventSourceResponse(cached_event_generator())
+                print(f"Ignoring outdated pipeline cache without dashboard KPIs: {cached_file}")
             except Exception as e:
-                print(f"Failed to read pipeline_result cache: {e}")
+                print(f"Failed to read pipeline_result cache {cached_file}: {e}")
 
         async def event_generator():
             queue: asyncio.Queue = asyncio.Queue()
@@ -685,21 +689,24 @@ def get_result(session_id: str, entity: str = "ITL", process: str = "P2P"):
     if session_id == "combined":
         cache_fn = f"pipeline_result_{entity.upper()}_{process.upper()}.pkl"
         cache_file = os.path.join(CACHE_DIR, cache_fn)
-        if not os.path.exists(cache_file):
-            cache_file = os.path.join(CACHE_DIR, "pipeline_result.pkl")
-        if os.path.exists(cache_file):
+        cached_file = cache_file
+        if not os.path.exists(cached_file):
+            cached_file = os.path.join(CACHE_DIR, "pipeline_result.pkl")
+        if os.path.exists(cached_file):
             try:
-                with open(cache_file, "rb") as f:
+                with open(cached_file, "rb") as f:
                     result = pickle.load(f)
-                sess = session_store.get_or_create_session("combined")
-                sess.result = result
-                add_audit_log("Dashboard Fetched", "N/A", f"Loaded dashboard values from disk cache [{entity}/{process}]")
-                return sanitize_for_json(result)
+                if has_dashboard_kpis(result):
+                    sess = session_store.get_or_create_session("combined")
+                    sess.result = result
+                    add_audit_log("Dashboard Fetched", "N/A", f"Loaded dashboard values from disk cache [{entity}/{process}]")
+                    return sanitize_for_json(result)
+                print(f"Ignoring outdated pipeline cache without dashboard KPIs: {cached_file}")
             except Exception as e:
-                print(f"Failed to read pipeline_result cache: {e}")
+                print(f"Failed to read pipeline_result cache {cached_file}: {e}")
 
         sess = session_store.get_session("combined")
-        if sess is not None and sess.result is not None:
+        if sess is not None and has_dashboard_kpis(sess.result or {}):
             add_audit_log("Dashboard Fetched", "N/A", f"Loaded dashboard values from memory [{entity}/{process}]")
             return sanitize_for_json(sess.result)
 

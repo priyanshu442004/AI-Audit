@@ -10,7 +10,7 @@ from pypdf import PdfReader
 from app.analysis.holiday_utils import load_p2p_holiday_frame, parse_p2p_dates
 from app.analysis.po_status import _dashboard_kpis
 from app.kpi_service.email import build_email
-from app.kpi_service.extractor import extract_kpis
+from app.kpi_service.extractor import extract_kpis, has_dashboard_kpis
 from app.kpi_service.kpi_definitions import KPI_DEFINITIONS, KPI_MODULES
 from app.kpi_service import persistence
 from app.kpi_service.report_pdf import _fit_line, render_management_pdf
@@ -150,6 +150,21 @@ def test_extractor_copies_dashboard_response_values_without_recalculating():
     assert extracted["source_results"]["stock_verified"] is stock
     assert extracted["report_period"]["start"] == "2026-10-12"
     assert extracted["report_period"]["end"] == "2026-10-12"
+
+
+def test_dashboard_cache_contract_rejects_legacy_result_without_dashboard_kpis():
+    legacy_result = _dashboard_results()
+    legacy_result["postatus"].pop("dashboard_kpis")
+
+    assert not has_dashboard_kpis(legacy_result)
+    assert has_dashboard_kpis(_dashboard_results())
+
+
+def test_dashboard_cache_contract_rejects_partial_dashboard_kpis():
+    incomplete_result = _dashboard_results()
+    incomplete_result["postatus"]["dashboard_kpis"].pop("sum_of_excess_rate")
+
+    assert not has_dashboard_kpis(incomplete_result)
 
 
 def test_po_dashboard_kpis_match_the_unfiltered_frontend_cards():
