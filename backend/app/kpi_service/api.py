@@ -29,6 +29,30 @@ router = APIRouter(prefix="/api/management-report", tags=["management-report"])
 _executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="kpi-management-report")
 
 
+def _resolve_report_pdf(
+    filename: str,
+    stored_path: str | None,
+    output_dir: Path,
+) -> Path | None:
+    if not filename or Path(filename).name != filename or "/" in filename or "\\" in filename:
+        return None
+
+    output_dir = output_dir.resolve()
+    default_output_dir = (Path(__file__).resolve().parents[2] / "generated_reports").resolve()
+    allowed_dirs = {output_dir, default_output_dir}
+    candidates = [output_dir / filename, default_output_dir / filename]
+    if stored_path:
+        stored = Path(stored_path).resolve()
+        if stored.name == filename and stored.parent in allowed_dirs:
+            candidates.insert(0, stored)
+
+    for candidate in candidates:
+        path = candidate.resolve()
+        if path.name == filename and path.parent in allowed_dirs and path.is_file():
+            return path
+    return None
+
+
 def _require_admin(token: str | None) -> None:
     expected = os.getenv("KPI_ADMIN_TOKEN", "")
     if not expected:
@@ -100,12 +124,12 @@ def download_management_report_pdf(
     saved = get_pdf_path(execution_id)
     if not saved:
         raise HTTPException(404, "No PDF is available for this execution.")
-    filename, raw_path = saved
+    filename, stored_path = saved
     output_dir = Path(
         os.getenv("KPI_PDF_OUTPUT_DIR", "").strip()
         or Path(__file__).resolve().parents[2] / "generated_reports"
-    ).resolve()
-    path = Path(raw_path).resolve()
-    if path.parent != output_dir or not path.is_file():
+    )
+    path = _resolve_report_pdf(filename, stored_path, output_dir)
+    if path is None:
         raise HTTPException(404, "The report PDF is unavailable.")
     return FileResponse(path, media_type="application/pdf", filename=filename)

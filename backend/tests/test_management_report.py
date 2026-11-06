@@ -13,6 +13,7 @@ from app.kpi_service.email import build_email
 from app.kpi_service.extractor import extract_kpis, has_dashboard_kpis
 from app.kpi_service.kpi_definitions import KPI_DEFINITIONS, KPI_MODULES
 from app.kpi_service import persistence
+from app.kpi_service.api import _resolve_report_pdf
 from app.kpi_service.report_pdf import _fit_line, render_management_pdf
 from app.kpi_service.workflow import build_report_data, report_timezone, scheduler_cron
 
@@ -58,6 +59,29 @@ def test_scheduler_defaults_to_nine_am_india(monkeypatch):
 
     assert scheduler_cron() == "0 9 * * *"
     assert report_timezone().key == "Asia/Kolkata"
+
+
+def test_report_download_resolves_pdf_from_current_output_dir(tmp_path, monkeypatch):
+    output_dir = tmp_path / "reports"
+    output_dir.mkdir()
+    filename = "P2P_Audit_Management_Summary_2026-09-30.pdf"
+    pdf_path = output_dir / filename
+    pdf_path.write_bytes(b"%PDF-1.4 test")
+
+    resolved = _resolve_report_pdf(
+        filename,
+        str(tmp_path / "previous-deployment" / filename),
+        output_dir,
+    )
+
+    assert resolved == pdf_path.resolve()
+
+
+def test_report_download_rejects_paths_outside_report_directories(tmp_path):
+    secret_file = tmp_path / "secret.pdf"
+    secret_file.write_bytes(b"not a report")
+
+    assert _resolve_report_pdf("../secret.pdf", str(secret_file), tmp_path) is None
 
 
 def _dashboard_results():

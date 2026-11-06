@@ -391,7 +391,7 @@ def get_latest_successful_execution() -> dict[str, Any] | None:
     return next((row for row in rows if row["status"] == "completed"), None)
 
 
-def get_pdf_path(execution_id: str) -> tuple[str, str] | None:
+def get_pdf_path(execution_id: str) -> tuple[str, str | None] | None:
     conn = get_connection()
     cur = conn.cursor()
     try:
@@ -400,6 +400,6 @@ def get_pdf_path(execution_id: str) -> tuple[str, str] | None:
             (execution_id,),
         )
         row = cur.fetchone()
-        return tuple(row) if row and row[0] and row[1] else None
+        return tuple(row) if row and row[0] else None
     finally:
         _release_read_connection(conn, cur)
