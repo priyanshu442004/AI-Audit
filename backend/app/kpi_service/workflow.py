@@ -49,7 +49,7 @@ def scheduler_enabled() -> bool:
 
 
 def scheduler_cron() -> str:
-    return os.getenv("KPI_SCHEDULE_CRON", "0 8 * * *").strip()
+    return os.getenv("KPI_SCHEDULE_CRON", "0 9 * * *").strip()
 
 
 def admin_token_configured() -> bool:

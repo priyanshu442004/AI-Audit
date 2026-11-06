@@ -14,7 +14,7 @@ from app.kpi_service.extractor import extract_kpis
 from app.kpi_service.kpi_definitions import KPI_DEFINITIONS, KPI_MODULES
 from app.kpi_service import persistence
 from app.kpi_service.report_pdf import _fit_line, render_management_pdf
-from app.kpi_service.workflow import build_report_data
+from app.kpi_service.workflow import build_report_data, report_timezone, scheduler_cron
 
 
 PO_VALUES = {
@@ -50,6 +50,14 @@ DASHBOARD_PO_VALUES = {
     "holiday_exception": 9,
     "sum_of_excess_rate": 234.56,
 }
+
+
+def test_scheduler_defaults_to_nine_am_india(monkeypatch):
+    monkeypatch.delenv("KPI_SCHEDULE_CRON", raising=False)
+    monkeypatch.delenv("KPI_SCHEDULE_TIMEZONE", raising=False)
+
+    assert scheduler_cron() == "0 9 * * *"
+    assert report_timezone().key == "Asia/Kolkata"
 
 
 def _dashboard_results():

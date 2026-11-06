@@ -176,7 +176,7 @@ required dashboard KPI or reporting date is missing.
 6. Configure `KPI_REPORT_ENTITY` (`ITL` or `ISPL`), then start the normal FastAPI
    service. The report uses the same active source files and dashboard analysis
    functions without an additional report-only date filter. The scheduler uses
-   `KPI_SCHEDULE_CRON` and `KPI_SCHEDULE_TIMEZONE`; the default is 8:00 AM
+   `KPI_SCHEDULE_CRON` and `KPI_SCHEDULE_TIMEZONE`; the default is 9:00 AM
    Asia/Kolkata each day.
    Keep the service running at the scheduled time. The scheduler's job records
    are stored in PostgreSQL; unique execution and per-recipient local delivery
@@ -216,7 +216,7 @@ service.
 | `MAIL_FROM` | Verified sender address shown on management emails. |
 | `KPI_EMAIL_RECIPIENTS` | Comma-separated recipient addresses; defaults to the two requested management addresses. |
 | `KPI_SCHEDULER_ENABLED` | Enables the scheduled daily workflow; defaults to `true`. |
-| `KPI_SCHEDULE_CRON` | Five-field cron expression; defaults to `0 8 * * *`. |
+| `KPI_SCHEDULE_CRON` | Five-field cron expression; defaults to `0 9 * * *`. |
 | `KPI_SCHEDULE_TIMEZONE` | Scheduler timezone; defaults to `Asia/Kolkata`. |
 | `KPI_REPORT_ENTITY` | P2P entity whose existing source files are used; `ITL` by default. |
 | `KPI_ADMIN_TOKEN` | Required server-side secret for administrator report endpoints; never expose it in frontend build configuration. |
