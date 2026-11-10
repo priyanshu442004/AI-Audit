@@ -55,23 +55,6 @@ def _count(value: Any) -> str:
     return "N/A" if number is None else f"{int(number):,}"
 
 
-def _percent(numerator: Any, denominator: Any) -> str:
-    first, second = _number(numerator), _number(denominator)
-    if first is None or second is None or second == 0:
-        return "N/A"
-    return f"{first / second * 100:.1f}"
-
-
-def _price_excess_cr(value: Any) -> str:
-    if value is None:
-        return "N/A"
-    if isinstance(value, str) and value.endswith("Lakh"):
-        amount = _number(value)
-        return "N/A" if amount is None else f"{amount / 100:.2f}"
-    amount = _number(value)
-    return "N/A" if amount is None else f"{amount / 10_000_000:.2f}"
-
-
 def _module_label(module: dict[str, Any]) -> str:
     status_text = {
         "green": "Green – satisfactory",
@@ -80,6 +63,10 @@ def _module_label(module: dict[str, Any]) -> str:
         "review": "Needs review",
     }
     return status_text.get(module["status"], module["rating"])
+
+
+def _single_line(value: Any) -> str:
+    return " ".join(str(value).split())
 
 
 def build_email(report: dict[str, Any], pdf_content: bytes, recipient: str) -> EmailMessage:
@@ -96,7 +83,8 @@ def build_email(report: dict[str, Any], pdf_content: bytes, recipient: str) -> E
         fy_text = fy
     subject = f"P2P Audit Analytics – Management Summary Report | {fy}"
     reporting_scope = (
-        f"Reporting period: {period['label']}. Entity: {report.get('source_entity', 'N/A')}."
+        f"Reporting period: {_single_line(period['label'])}. "
+        f"Entity: {_single_line(report.get('source_entity', 'N/A'))}."
     )
     kpis = report["kpis"]
     procurement = report["modules"]["procurement"]
@@ -113,81 +101,48 @@ def build_email(report: dict[str, Any], pdf_content: bytes, recipient: str) -> E
     if pr_exc is not None and closing_exc is not None:
         stock_exc = int(pr_exc + closing_exc)
 
+    procurement_summary = (
+        f"Procurement: {_single_line(procurement['name'])} ({_single_line(_module_label(procurement))}); "
+        f"{_count(kpis['unique_po_raise']['value'])} POs worth "
+        f"{_single_line(kpis['total_po_value']['display_value'])} reviewed, "
+        f"{_single_line(closed_pct)}% closed; "
+        f"{_count(kpis['cancelled_po_count']['value'])} cancelled and "
+        f"{_count(kpis['holiday_exception']['value'])} holiday exceptions; "
+        f"{_count(kpis['count_of_excess_price']['value'])} price, "
+        f"{_count(kpis['count_of_excess_qty']['value'])} quantity and "
+        f"{_count(kpis['count_of_excess_rate']['value'])} rate cases above 5%."
+    )
+    gate_summary = (
+        f"Gate entry: {_single_line(gate['name'])} ({_single_line(_module_label(gate))}); "
+        f"{_count(kpis['sequence_exceptions']['value'])} of "
+        f"{_count(kpis['total_gate_entry']['value'])} entries dated after goods receipt; "
+        f"{_count(kpis['exceeds_3_day_window']['value'])} receipts posted over 3 days later."
+    )
+    stock_summary = (
+        f"Stock: {_single_line(stock['name'])} ({_single_line(_module_label(stock))}); "
+        f"{_count(kpis['items_verified']['value'])} items verified, "
+        f"{_count(stock_exc)} exceptions."
+    )
+    if stock_snapshot:
+        stock_summary += f" Snapshot as of {_single_line(stock_snapshot)}."
+
     plain_lines = [
         "Dear Management Team,",
-        "",
-        f"Please find attached the P2P Audit Analytics – Management Summary for FY {fy_text}. It is a 3-page report that explains, in simple terms, how well the Procure-to-Pay (P2P) process is being followed, based on our audit analytics portal.",
-        reporting_scope,
-        "",
-        "Key highlights:",
-        "",
-        f"1. {procurement['name']} ({_module_label(procurement)})",
-        "",
-        f"- {_count(kpis['unique_po_raise']['value'])} POs worth {kpis['total_po_value']['display_value']} reviewed; {closed_pct}% of the value is already closed.",
-        f"- {_count(kpis['cancelled_po_count']['value'])} cancelled POs and {_count(kpis['holiday_exception']['value'])} holiday exceptions.",
-        f"- {_count(kpis['sunday_exception']['value'])} Sunday exceptions flagged; {_count(kpis['count_of_excess_price']['value'])} price, {_count(kpis['count_of_excess_qty']['value'])} quantity and {_count(kpis['count_of_excess_rate']['value'])} rate cases went above the 5% limit (price excess approximately ₹{_price_excess_cr(kpis['sum_of_excess_price']['value'])} Cr).",
-        "",
-        f"2. {gate['name']} ({_module_label(gate)})",
-        "",
-        f"- {_count(kpis['sequence_exceptions']['value'])} of {_count(kpis['total_gate_entry']['value'])} gate entries ({_percent(kpis['sequence_exceptions']['value'], kpis['total_gate_entry']['value'])}%) show the gate entry dated after the goods receipt.",
-        f"- {_count(kpis['exceeds_3_day_window']['value'])} goods receipts were posted more than 3 days after gate entry; average gate-entry-to-GRN time is {kpis['avg_grn_days']['display_value']}.",
-        "",
-        f"3. {stock['name']} ({_module_label(stock)})",
-        "",
-        f"- {_count(kpis['items_verified']['value'])} items verified with {_count(stock_exc)} exceptions in closing stock and purchase register checks.",
-        *(
-            [f"- Stock verification uses the latest Inventory Report snapshot as of {stock_snapshot}."]
-            if stock_snapshot
-            else []
-        ),
-        "",
-        "Suggested priorities:",
+        f"Attached is the P2P Audit Analytics Management Summary for FY {_single_line(fy_text)}. {reporting_scope}",
+        procurement_summary,
+        gate_summary,
+        f"{stock_summary} See the attached report for suggested priorities. Exceptions are review flags, not confirmed errors.",
+        "Regards, IKIO Technologies Limited.",
     ]
-    for action in report.get("management_actions", []):
-        plain_lines.append(f"- {action['action']}")
-    plain_lines.extend([
-        "",
-        "The full report, with charts and the complete action list, is attached.",
-        "",
-        "Please note that the exceptions are flags for review and not confirmed errors. I would be happy to walk you through the findings at your convenience.",
-        "",
-        "Regards,",
-        "",
-        "IKIO Technologies Limited",
-    ])
     plain = "\n".join(plain_lines)
     html_lines = [
         "<p>Dear Management Team,</p>",
-        f"<p>Please find attached the P2P Audit Analytics – Management Summary for FY {escape(fy_text)}. It is a 3-page report that explains, in simple terms, how well the Procure-to-Pay (P2P) process is being followed, based on our audit analytics portal.</p>",
-        f"<p>{escape(reporting_scope)}</p>",
-        "<p><strong>Key highlights:</strong></p>",
-        f"<p><strong>1. {escape(procurement['name'])} ({escape(_module_label(procurement))})</strong></p>",
-        "<ul>",
-        f"<li>{escape(_count(kpis['unique_po_raise']['value']))} POs worth {escape(kpis['total_po_value']['display_value'])} reviewed; {escape(str(closed_pct))}% of the value is already closed.</li>",
-        f"<li>{escape(_count(kpis['cancelled_po_count']['value']))} cancelled POs and {escape(_count(kpis['holiday_exception']['value']))} holiday exceptions.</li>",
-        f"<li>{escape(_count(kpis['sunday_exception']['value']))} Sunday exceptions flagged; {escape(_count(kpis['count_of_excess_price']['value']))} price, {escape(_count(kpis['count_of_excess_qty']['value']))} quantity and {escape(_count(kpis['count_of_excess_rate']['value']))} rate cases went above the 5% limit (price excess approximately ₹{escape(_price_excess_cr(kpis['sum_of_excess_price']['value']))} Cr).</li>",
-        "</ul>",
-        f"<p><strong>2. {escape(gate['name'])} ({escape(_module_label(gate))})</strong></p>",
-        "<ul>",
-        f"<li>{escape(_count(kpis['sequence_exceptions']['value']))} of {escape(_count(kpis['total_gate_entry']['value']))} gate entries ({escape(_percent(kpis['sequence_exceptions']['value'], kpis['total_gate_entry']['value']))}%) show the gate entry dated after the goods receipt.</li>",
-        f"<li>{escape(_count(kpis['exceeds_3_day_window']['value']))} goods receipts were posted more than 3 days after gate entry; average gate-entry-to-GRN time is {escape(kpis['avg_grn_days']['display_value'])}.</li>",
-        "</ul>",
-        f"<p><strong>3. {escape(stock['name'])} ({escape(_module_label(stock))})</strong></p>",
-        f"<ul><li>{escape(_count(kpis['items_verified']['value']))} items verified with {escape(_count(stock_exc))} exceptions in closing stock and purchase register checks.</li></ul>",
-        *(
-            [f"<p>Stock verification uses the latest Inventory Report snapshot as of {escape(stock_snapshot)}.</p>"]
-            if stock_snapshot
-            else []
-        ),
-        "<p><strong>Suggested priorities:</strong></p><ul>",
+        f"<p>Attached is the P2P Audit Analytics Management Summary for FY {escape(_single_line(fy_text))}. {escape(reporting_scope)}</p>",
+        f"<p>{escape(procurement_summary)}</p>",
+        f"<p>{escape(gate_summary)}</p>",
+        f"<p>{escape(stock_summary)} See the attached report for suggested priorities. Exceptions are review flags, not confirmed errors.</p>",
+        "<p>Regards, IKIO Technologies Limited.</p>",
     ]
-    html_lines.extend(f"<li>{escape(action['action'])}</li>" for action in report.get("management_actions", []))
-    html_lines.extend([
-        "</ul>",
-        "<p>The full report, with charts and the complete action list, is attached.</p>",
-        "<p>Please note that the exceptions are flags for review and not confirmed errors. I would be happy to walk you through the findings at your convenience.</p>",
-        "<p>Regards,<br><br>IKIO Technologies Limited</p>",
-    ])
 
     message = EmailMessage()
     message["Subject"] = subject

@@ -331,12 +331,14 @@ def test_email_is_composed_with_required_subject_bodies_and_single_pdf_attachmen
     assert message["To"] == "qa@example.test"
     plain = message.get_body(preferencelist=("plain",)).get_content()
     html = message.get_body(preferencelist=("html",)).get_content()
+    assert len(plain.splitlines()) == 6
+    assert len(html.splitlines()) == 6
     assert "Dear Management Team," in plain
     assert "Reporting period: 12 Oct 2026. Entity: ITL." in plain
-    assert "1. Procurement Transaction Compliance" in plain
-    assert "2. GRN & Gate Entry Compliance" in plain
-    assert "3. Stock Verified Report" in plain
-    assert "snapshot as of 2026-10-12" in plain
+    assert "Procurement Transaction Compliance" in plain
+    assert "GRN & Gate Entry Compliance" in plain
+    assert "Stock Verified Report" in plain
+    assert "Snapshot as of 2026-10-12" in plain
     assert "Dear Management Team" in html
     attachments = list(message.iter_attachments())
     assert len(attachments) == 1
