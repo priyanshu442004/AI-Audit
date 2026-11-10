@@ -8,6 +8,7 @@ import os
 import re
 import pandas as pd
 import numpy as np
+from app.analysis.holiday_utils import STATIC_HOLIDAYS_MAP, parse_p2p_dates
 
 
 def clean_num(series) -> pd.Series:
@@ -19,7 +20,7 @@ def clean_num(series) -> pd.Series:
 def safe_parse_date(series) -> pd.Series:
     if series is None:
         return pd.Series(dtype='datetime64[ns]')
-    return pd.to_datetime(series, dayfirst=True, errors='coerce')
+    return parse_p2p_dates(series)
 
 
 def find_col(df: pd.DataFrame, aliases: list[str]) -> str | None:
@@ -30,6 +31,35 @@ def find_col(df: pd.DataFrame, aliases: list[str]) -> str | None:
         if str(col).lower().strip() in aliases_set:
             return col
     return None
+
+
+def _dashboard_kpis(df_res: pd.DataFrame) -> dict:
+    def dashboard_number(column):
+        values = df_res[column].astype(str).str.replace(',', '', regex=False)
+        return pd.to_numeric(values, errors='coerce').fillna(0)
+
+    dashboard_po_numbers = df_res['PO No'].fillna('').astype(str)
+    return {
+        "unique_po_raise": int(
+            dashboard_po_numbers[
+                (dashboard_po_numbers != '')
+                & (dashboard_po_numbers != '0')
+                & (dashboard_po_numbers != '—')
+            ].nunique()
+        ),
+        "total_po_value": f"{dashboard_number('Line Total').sum() / 1e7:.2f} Cr",
+        "canceled_po_count": int((df_res['Canceled Status'] == 'Yes').sum()),
+        "holiday_exception": int(
+            df_res['Holiday & Sunday Exception'].fillna('').astype(str).str.startswith('Holiday').sum()
+        ),
+        "sunday_exception": int((df_res['Holiday & Sunday Exception'] == 'Sunday').sum()),
+        "count_of_excess_qty": int((df_res['QTY Difference'] == 'Exception').sum()),
+        "sum_of_excess_qty": f"{dashboard_number('Excess QTY').sum() / 1e5:.2f} Lakh",
+        "count_of_excess_rate": int((df_res['Rate Difference'] == 'Exception').sum()),
+        "sum_of_excess_rate": float(dashboard_number('Excess Rate').sum()),
+        "count_of_excess_price": int((df_res['Line Total Difference'] == 'Exception').sum()),
+        "sum_of_excess_price": f"{dashboard_number('Excess Price').sum() / 1e5:.2f} Lakh",
+    }
 
 
 def compute_po_missing(df_grpo: pd.DataFrame | None) -> dict:
@@ -225,7 +255,10 @@ def run(dfs_or_df: dict[str, pd.DataFrame] | pd.DataFrame) -> dict:
             grpo_po_to_grn_no = df_first_grn.set_index(g_po_no)[g_grn_no].to_dict()
 
     # Holiday mapping
-    holiday_map = {}
+    holiday_map = {
+        pd.Timestamp(day).date(): name
+        for day, name in STATIC_HOLIDAYS_MAP.items()
+    }
     if df_holiday is not None and not df_holiday.empty:
         for _, h_row in df_holiday.iterrows():
             d_val = h_row.iloc[-1]
@@ -410,6 +443,8 @@ def run(dfs_or_df: dict[str, pd.DataFrame] | pd.DataFrame) -> dict:
     cnt_excess_price = int((df_res['Line Total Difference'] == 'Exception').sum())
     sum_excess_price_lakh = round(float(df_res[df_res['Line Total Difference'] == 'Exception']['Excess Price'].sum()) / 100000.0, 2)
 
+    dashboard_kpis = _dashboard_kpis(df_res)
+
     kpi_contract = {
         "foreign_vendor": "FILTER",
         "unique_po_raise": unique_po_count,
@@ -473,6 +508,7 @@ def run(dfs_or_df: dict[str, pd.DataFrame] | pd.DataFrame) -> dict:
 
     return {
         "kpis": kpi_contract,
+        "dashboard_kpis": dashboard_kpis,
         "charts": charts_contract,
         "po_missing": compute_po_missing(df_grpo),
         "tables": [
